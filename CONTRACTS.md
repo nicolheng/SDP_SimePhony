@@ -1,8 +1,5 @@
 # CONTRACTS
 
-> **Draft.** Finalise together in the Day 1 morning session (~2 h) before splitting up.
-> After that, changes go through a PR that every affected owner approves.
-
 ## 1. Case statuses
 
 ```
