@@ -14,7 +14,8 @@ SUBMITTED → INFO_NEEDED → ASSIGNED → VISIT_SCHEDULED → VALID / INVALID
 | `INFO_NEEDED` | IntakeAgent needs more info (missing room, blurry photo…) | IntakeAgent |
 | `ASSIGNED` | Technician picked | TriageAgent |
 | `VISIT_SCHEDULED` | Inspection slot booked | TriageAgent |
-| `VALID` / `INVALID` | Technician verdict | technician app |
+| `VALID` | Technician confirmed the defect | technician app |
+| `INVALID` | Technician rejected the defect. **Terminal** — the case ends here | technician app |
 | `REPAIR_BOOKED` | Buyer booked a repair slot | buyer app / CommsAgent |
 | `REPAIRED` | Technician marked fixed | technician app |
 | `PENDING_SIGNOFF` | Waiting for developer + buyer sign-off | system |
@@ -23,7 +24,15 @@ SUBMITTED → INFO_NEEDED → ASSIGNED → VISIT_SCHEDULED → VALID / INVALID
 | `ESCALATION_PENDING` | Waiting for SDP staff to approve extra inspection | RecurrenceAgent |
 | `EXTRA_INSPECTION` | Approved; InitialInspectionAgent brief attached | InitialInspectionAgent |
 
-> TODO Day 1: agree whether `INVALID` is terminal or can be disputed → SDP review.
+**Terminal statuses:** `INVALID` and `CLOSED`. Only `CLOSED` can be reopened.
+
+**`INVALID` rules:**
+- No transition out of `INVALID`. `reopen_case` rejects `INVALID` cases.
+- The CommsAgent's invalid update gives the technician's reason and says: if the problem
+  gets worse or changes, submit a new report. It does not offer a dispute.
+- A new report for the same problem is a new case. SimilarDefectAgent still links it to the
+  earlier `INVALID` case and shows it in the history.
+- `INVALID` cases do not count toward the escalation threshold (3rd occurrence / stack cluster).
 
 ## 2. MCP tools
 
@@ -40,7 +49,7 @@ Inputs/outputs are drafts — fill in exact types on Day 1. Stubs live in
 | `book_slot` | case_id, slot_id, kind (`visit`/`repair`) | `{ok, booking_id}` | P3 | P2 |
 | `record_verdict` | case_id, verdict (`VALID`/`INVALID`), note, photo_path? | `{ok}` | P3 | P2 |
 | `record_signoff` | case_id, party (`developer`/`buyer`) | `{ok, both_signed}` | P3 | P2 |
-| `reopen_case` | case_id, photo_path, description | `{ok, reopen_count}` or error if outside grace | P3 | P2 |
+| `reopen_case` | case_id, photo_path, description | `{ok, reopen_count}` or error if outside grace or case is `INVALID` | P3 | P2 |
 | `send_email` | to, subject, body, case_id | `{status: "sent" \| "logged, not sent"}` | P3 | P1, P2 |
 | `get_case_history` | case_id or unit_id | `[event]` | P4 | P1, P2 |
 | `find_similar_cases` | case_id or text, filters (unit/floor/stack/category/contractor), top_k | `[{case_id, score, reason}]` | P4 | P1, P2 |
