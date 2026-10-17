@@ -1,8 +1,8 @@
 "use client";
-import { Mail, MessageSquare } from "lucide-react";
+import { Mail, MailOpen, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { MobileHeader } from "@/components/mobile";
+import { EmptyState, MobileHeader } from "@/components/mobile";
 import { DEMO_BUYER } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
@@ -19,8 +19,8 @@ export default function Inbox() {
 
   return (
     <div>
-      <MobileHeader title="Inbox" back="/buyer" />
-      <div className="sticky top-14 z-10 grid grid-cols-2 border-b bg-white text-sm font-medium">
+      <MobileHeader title="My Inbox" back="/buyer" badge={updates.length} />
+      <div className="grid grid-cols-2 border-b bg-white text-sm font-medium">
         {(["updates", "emails"] as const).map((t) => (
           <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-11 capitalize", tab === t ? "border-b-2 border-brand text-brand" : "text-zinc-500")}>
             {t === "emails" ? "Email outbox" : "App updates"}
@@ -53,7 +53,11 @@ export default function Inbox() {
               <p className="mt-1 text-[11px] text-zinc-400">{fmtDateTime(e.at)}</p>
             </li>
           ))}
-        {(tab === "updates" ? updates : emails).length === 0 && <li className="py-10 text-center text-sm text-zinc-500">Nothing here yet.</li>}
+        {(tab === "updates" ? updates : emails).length === 0 && (
+          <li>
+            <EmptyState icon={<MailOpen className="size-16" strokeWidth={1.5} />} text="You're all caught up! There are no new notifications." />
+          </li>
+        )}
       </ul>
     </div>
   );

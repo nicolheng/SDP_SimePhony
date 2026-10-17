@@ -3,13 +3,13 @@ import { Bell, ClipboardList, Home, PlusCircle } from "lucide-react";
 import { useMemo } from "react";
 import { BottomNav } from "@/components/mobile";
 import { DEMO_BUYER } from "@/lib/constants";
+import { buyerNeedsAction } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 
-const ACTION = ["INFO_NEEDED", "VALID", "PENDING_VERIFICATION"];
 
 export function BuyerNav() {
   const cases = useDemo((s) => s.cases);
-  const action = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id && ACTION.includes(c.status)).length, [cases]);
+  const action = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id && buyerNeedsAction(c)).length, [cases]);
   return (
     <BottomNav
       items={[

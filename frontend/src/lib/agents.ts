@@ -169,9 +169,9 @@ export function commsAgent(kind: string, c: Case, extra: Record<string, string> 
     case "repair_booked":
       return { title: "Repair booked", body: `${ref}. Repair is booked for ${extra.slot}.` };
     case "verify":
-      return { title: "Please check the repair", body: `${ref}. The repair is done. Follow the short checklist in the app to confirm it is fixed.` };
+      return { title: "Please check the repair and sign off", body: `${ref}. The repair is done. Follow the short checklist in the app, then sign off if it is fixed.` };
     case "closed":
-      return { title: "Case closed", body: `${ref}. Thank you for confirming the repair. You can reopen this case within ${RULES.gracePeriodDays} days if the problem returns.` };
+      return { title: "Case closed", body: `${ref}. You and the developer have both signed off. You can reopen this case within ${RULES.gracePeriodDays} days if the problem returns.` };
     case "reopened":
       return { title: "Case reopened", body: `${ref}. We've reopened your case with the new photo you provided. We'll update you on the next step shortly.` };
     case "escalated":
@@ -235,7 +235,7 @@ export function verificationAgent(c: Case): VerificationGuide {
   return {
     intro: `Your ${c.summary.toLowerCase()} was repaired.${c.repairNote ? ` Technician's note: "${c.repairNote}".` : ""} Please check only these points:`,
     steps,
-    ifFails: `If any check fails, choose "Still not fixed" and add a photo. Your case will be reopened.`,
+    ifFails: `If any check fails, do not sign off: choose "Still not fixed" and add a photo. Your case will be reopened.`,
   };
 }
 

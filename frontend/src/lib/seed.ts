@@ -1,6 +1,7 @@
 // Deterministic demo data: 18 months of noisy history plus the planted A-12-08 / stack 08 leak story.
 import { BLOCKS, DEMO_START, FLOORS, STACKS, TECHNICIANS, RULES, unitId } from "./constants";
 import { addDays } from "./dates";
+import { verificationAgent } from "./agents";
 import type { Case, Category, DemoState, SystemicIssue } from "./types";
 
 function mulberry32(seed: number) {
@@ -78,6 +79,14 @@ function historyCase(
     verdict: { outcome: opts.invalid ? "INVALID" : "VALID", note: opts.invalid ? "Within normal tolerance, not a defect." : "Confirmed on site.", at: addDays(created, 3) },
     createdAt: created,
     closedAt: addDays(created, opts.closeAfter ?? 12),
+    repairedAt: opts.invalid ? undefined : addDays(created, (opts.closeAfter ?? 12) - 2),
+    repairNote: opts.invalid ? undefined : "Repaired on site.",
+    signoff: opts.invalid
+      ? undefined
+      : {
+          buyer: { at: addDays(created, (opts.closeAfter ?? 12) - 1), note: "" },
+          developer: { at: addDays(created, opts.closeAfter ?? 12), by: "SDP Defect Team" },
+        },
     historical: true,
   };
 }
@@ -153,9 +162,14 @@ export function buildSeed(): DemoState {
     ["B-7-02", "electrical", -6, "VISIT_SCHEDULED", 2],
     ["C-3-05", "tiles", -9, "REPAIR_BOOKED", 3],
     ["A-4-01", "door_window", -4, "VALID", 0],
-    ["B-14-09", "paint", -12, "PENDING_VERIFICATION", 0],
+    ["B-14-09", "paint", -12, "PENDING_SIGNOFF", 0],
     ["C-10-04", "drainage", -3, "VISIT_SCHEDULED", 1],
     ["A-6-10", "wall_crack", -8, "INVALID", 0],
+    // Jobs for the default technician (T-01 Hafiz) so the technician view has work on day one.
+    ["B-3-06", "water_leak", -2, "VISIT_SCHEDULED", 0.25],
+    ["A-8-03", "plumbing", -7, "REPAIR_BOOKED", 1.08],
+    ["B-2-09", "water_leak", -5, "VALID", 0],
+    ["B-11-01", "drainage", -10, "PENDING_SIGNOFF", 0],
   ];
   live.forEach(([unit, category, offset, status, slotDays], i) => {
     const pick = HISTORY_TEMPLATES[category][0];
@@ -170,23 +184,29 @@ export function buildSeed(): DemoState {
       c.visitSlot = addDays(DEMO_START, slotDays);
     } else if (status === "REPAIR_BOOKED") {
       c.repairSlot = addDays(DEMO_START, slotDays);
-    } else if (status === "PENDING_VERIFICATION") {
-      c.repairNote = "Scraped and repainted affected area.";
-      c.verificationGuide = {
-        intro: "Paint peeling near the bedroom 2 window was scraped and repainted.",
-        steps: ["Look at the repainted area near the bedroom 2 window: check it is smooth with no bubbles or flaking."],
-        ifFails: "Choose Still Not Fixed and add a photo.",
-      };
+    } else if (status === "PENDING_SIGNOFF") {
+      c.repairNote = category === "paint" ? "Scraped and repainted affected area." : "Cleared and resealed the floor trap.";
+      c.repairedAt = addDays(DEMO_START, -1);
+      c.signoff = undefined;
+      c.verificationGuide = verificationAgent(c);
     } else if (status === "INVALID") {
       c.closedAt = addDays(created, 3);
     }
     cases.push(c);
   });
 
+  // Seeded jobs hold their technician's slot so triage won't double-book it.
+  const bookings: DemoState["bookings"] = cases
+    .filter((c) => !c.historical && c.technicianId && (c.status === "VISIT_SCHEDULED" || c.status === "REPAIR_BOOKED"))
+    .map((c) => {
+      const kind = c.status === "REPAIR_BOOKED" ? "repair" : "visit";
+      return { slot: (kind === "repair" ? c.repairSlot : c.visitSlot)!, technicianId: c.technicianId!, caseId: c.id, kind };
+    });
+
   cases.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   return {
-    version: 1,
+    version: 3,
     now: DEMO_START,
     cases,
     events: [],
@@ -194,7 +214,7 @@ export function buildSeed(): DemoState {
     outbox: [],
     approvals: [],
     systemicIssues,
-    bookings: [],
+    bookings,
     seq: { case: 1, event: 1, si: 2 },
   };
 }

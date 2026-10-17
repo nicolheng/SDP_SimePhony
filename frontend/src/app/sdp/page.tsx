@@ -1,5 +1,5 @@
 "use client";
-import { ArrowRight, Bot, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowRight, ShieldAlert, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { EventTimeline } from "@/components/case-views";
@@ -15,8 +15,10 @@ export default function SdpOverview() {
   const now = useDemo((s) => s.now);
   const k = useMemo(() => kpis(cases), [cases]);
   const trend = useMemo(() => monthly(cases, now), [cases, now]);
-  const text = useMemo(() => insight(cases), [cases]);
+  const records = useDemo((s) => s.systemicIssues);
+  const text = useMemo(() => insight(cases, records), [cases, records]);
   const pending = approvals.filter((a) => a.status === "pending");
+  const awaitingDev = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && !c.signoff?.developer), [cases]);
   const recent = useMemo(() => events.filter((e) => e.type !== "agent.step").slice(-8), [events]);
 
   return (
@@ -31,10 +33,25 @@ export default function SdpOverview() {
           <ShieldAlert className="size-6 shrink-0" />
           <div className="flex-1">
             <p className="font-semibold">{pending.length} extra inspection request(s) waiting for your decision</p>
-            <p className="text-sm text-white/80">The RecurrenceAgent found a recurring or clustered defect. A human decides.</p>
+            <p className="text-base text-white/80">The RecurrenceAgent found a recurring or clustered defect. A human decides.</p>
           </div>
           <ArrowRight className="size-5" />
         </Link>
+      )}
+
+      {awaitingDev.length > 0 && (
+        <Panel title={`${awaitingDev.length} case(s) awaiting developer sign-off`} className="mb-6">
+          <ul className="flex flex-wrap gap-2">
+            {awaitingDev.map((c) => (
+              <li key={c.id}>
+                <Link href={`/sdp/defects/${c.id}`} className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-base ring-1 ring-zinc-200 hover:ring-brand">
+                  <span className="font-mono text-sm">{c.id}</span> {c.summary}
+                  {c.signoff?.buyer && <span className="text-sm text-emerald-700">buyer signed</span>}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Panel>
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -49,21 +66,18 @@ export default function SdpOverview() {
           <TrendLine data={trend} />
         </Panel>
         <Panel>
-          <p className="flex items-center gap-2 text-sm font-semibold">
-            <Sparkles className="size-4 text-brand" /> AI insight
+          <p className="flex items-center gap-2 text-base font-semibold">
+            <Sparkles className="size-5 text-brand" /> Systemic issue detection
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-700">{text}</p>
-          <Link href="/sdp/analytics" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-brand">
-            View stack heatmap <ArrowRight className="size-4" />
+          <p className="mt-3 text-base leading-relaxed text-zinc-700">{text}</p>
+          <Link href="/sdp/analytics" className="mt-4 inline-flex items-center gap-1 text-base font-semibold text-brand">
+            See systemic issues <ArrowRight className="size-4" />
           </Link>
-          <p className="mt-4 flex items-center gap-1 text-[11px] text-zinc-400">
-            <Bot className="size-3" /> Placeholder summary until P1&apos;s analytics agent is wired in
-          </p>
         </Panel>
       </div>
 
-      <Panel title="Recent activity" className="mt-6" action={<Link href="/sdp/trace" className="text-xs font-semibold text-brand">Agent trace →</Link>}>
-        <EventTimeline events={recent} />
+      <Panel title="Recent activity" className="mt-6" action={<Link href="/sdp/trace" className="text-sm font-semibold text-brand">Agent trace →</Link>}>
+        <EventTimeline large events={recent} />
       </Panel>
     </div>
   );

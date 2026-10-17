@@ -27,7 +27,7 @@ export default function Approvals() {
         <Panel>
           <div className="py-8 text-center">
             <ShieldCheck className="mx-auto size-8 text-zinc-300" />
-            <p className="mt-2 text-sm text-zinc-500">No requests waiting. They appear here when a case recurs a 3rd time or a stack cluster is detected.</p>
+            <p className="mt-2 text-base text-zinc-500">No requests waiting. They appear here when a case recurs a 3rd time or a stack cluster is detected.</p>
           </div>
         </Panel>
       )}
@@ -38,17 +38,17 @@ export default function Approvals() {
       </div>
       {decided.length > 0 && (
         <Panel title="Decided" className="mt-8">
-          <ul className="divide-y text-sm">
+          <ul className="divide-y text-base">
             {decided.map((a) => (
               <li key={a.id} className="flex items-center gap-3 py-2">
-                <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", a.status === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-600")}>
+                <span className={cn("rounded-full px-2 py-0.5 text-sm font-medium", a.status === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-600")}>
                   {a.status}
                 </span>
-                <Link href={`/sdp/defects/${a.caseId}`} className="font-mono text-xs hover:underline">
+                <Link href={`/sdp/defects/${a.caseId}`} className="font-mono text-sm hover:underline">
                   {a.caseId}
                 </Link>
                 <span className="text-zinc-600">{a.systemicIssueId}</span>
-                <span className="ml-auto text-xs text-zinc-500">{a.decidedAt && fmtDateTime(a.decidedAt)}</span>
+                <span className="ml-auto text-sm text-zinc-500">{a.decidedAt && fmtDateTime(a.decidedAt)}</span>
               </li>
             ))}
           </ul>
@@ -82,14 +82,14 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
   }
 
   return (
-    <Panel className="ring-2 ring-violet-200">
+    <Panel id={a.id} className="scroll-mt-6 ring-2 ring-violet-200">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-violet-700">
+          <p className="text-sm font-medium text-violet-700">
             {a.id} · {si?.id} · raised {fmtDateTime(a.createdAt)}
           </p>
           <h2 className="mt-1 text-lg font-semibold">Extra inspection for {c.unitId}?</h2>
-          <p className="text-sm text-zinc-600">
+          <p className="text-base text-zinc-600">
             <Link href={`/sdp/defects/${c.id}`} className="font-mono hover:underline">
               {c.id}
             </Link>{" "}
@@ -102,16 +102,16 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
       <div className="mt-5 grid gap-6 md:grid-cols-[1fr_auto]">
         <div className="space-y-4">
           <div className="rounded-xl bg-violet-50 p-4">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-violet-800">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-violet-800">
               <Bot className="size-3.5" /> Why the agent is asking
             </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-violet-950">
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-base text-violet-950">
               {a.reasons.map((r) => (
                 <li key={r}>{r}</li>
               ))}
             </ul>
-            {si && <p className="mt-3 text-sm text-violet-950"><span className="font-medium">Recommended:</span> {si.recommendedAction}</p>}
-            {si && <p className="mt-1 text-xs text-violet-700">Confidence {(si.confidence * 100).toFixed(0)}%</p>}
+            {si && <p className="mt-3 text-base text-violet-950"><span className="font-medium">Recommended:</span> {si.recommendedAction}</p>}
+            {si && <p className="mt-1 text-sm text-violet-700">Confidence {(si.confidence * 100).toFixed(0)}%</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
@@ -119,12 +119,12 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
           </div>
         </div>
         <div>
-          <p className="mb-1.5 text-xs font-medium text-zinc-500">
+          <p className="mb-1.5 text-sm font-medium text-zinc-500">
             Stack {unit.block}-{unit.stack}
           </p>
           <ol className="space-y-0.5">
             {stackUnits.map((u) => (
-              <li key={u.id} className="flex items-center gap-2 text-[11px]">
+              <li key={u.id} className="flex items-center gap-2 text-sm">
                 <span className="w-7 text-right text-zinc-400">L{u.floor}</span>
                 <span className={cn("h-3.5 w-14 rounded-sm", u.id === c.unitId ? "bg-red-600 cell-pulse" : u.hit ? "bg-orange-400" : "bg-zinc-100")} />
                 {u.hit && <span className="font-mono text-zinc-600">{u.id}</span>}
@@ -139,7 +139,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
           type="button"
           disabled={busy}
           onClick={() => decide(true)}
-          className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
         >
           <Check className="size-4" /> Approve extra inspection
         </button>
@@ -147,7 +147,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
           type="button"
           disabled={busy}
           onClick={() => decide(false)}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border border-zinc-300 bg-white px-5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-11 items-center gap-2 rounded-xl border border-zinc-300 bg-white px-5 text-base font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
           <X className="size-4" /> Reject (normal repair)
         </button>

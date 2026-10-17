@@ -1,8 +1,8 @@
 // Derived numbers for the SDP console (P4's get_recurring_stats will replace these).
-import { CATEGORY_LABEL, FLOORS, getUnit, STACKS } from "./constants";
+import { CATEGORY_LABEL, FLOORS, getUnit, RULES, STACKS } from "./constants";
 import { addDays, daysBetween } from "./dates";
 import { isOpen } from "./status";
-import type { Case, Category } from "./types";
+import type { Case, Category, SystemicIssue } from "./types";
 
 export function kpis(cases: Case[]) {
   const open = cases.filter((c) => isOpen(c.status));
@@ -73,33 +73,89 @@ export interface HeatCell {
   stack: string;
   count: number;
   open: boolean;
+  /** Part of the selected systemic issue (false = shown muted). */
+  inIssue: boolean;
 }
 
-export function stackHeatmap(cases: Case[], block: string, category: Category | "all"): HeatCell[][] {
+export function stackHeatmap(cases: Case[], block: string, category: Category | "all", issueUnits?: Set<string>): HeatCell[][] {
   const rows: HeatCell[][] = [];
   for (let floor = FLOORS; floor >= 1; floor--) {
     rows.push(
       STACKS.map((stack) => {
         const unitId = `${block}-${floor}-${stack}`;
         const hits = cases.filter((c) => c.unitId === unitId && c.status !== "INVALID" && (category === "all" || c.category === category));
-        return { unitId, floor, stack, count: hits.length + hits.reduce((a, c) => a + c.reopenCount, 0), open: hits.some((c) => isOpen(c.status)) };
+        return {
+          unitId,
+          floor,
+          stack,
+          count: hits.length + hits.reduce((a, c) => a + c.reopenCount, 0),
+          open: hits.some((c) => isOpen(c.status)),
+          inIssue: !issueUnits || issueUnits.has(unitId),
+        };
       }),
     );
   }
   return rows;
 }
 
-/** Short "analytics insight" text — placeholder for P1's AI summary. */
-export function insight(cases: Case[]) {
-  const top = topRecurring(cases, 1)[0];
-  if (!top) return "No recurring problems detected.";
-  const u = getUnit(top.unitId);
-  const stack = cases.filter((c) => {
-    const x = getUnit(c.unitId);
-    return c.category === top.category && x.block === u.block && x.stack === u.stack && c.status !== "INVALID";
-  });
-  const units = new Set(stack.map((c) => c.unitId)).size;
-  return `${CATEGORY_LABEL[top.category]} is the top recurring problem: ${top.unitId} has ${top.count} reports${
-    top.reopens ? ` and ${top.reopens} reopen(s)` : ""
-  }. ${units} units in stack ${u.block}-${u.stack} share it, which points to a shared source (e.g. the riser or the bathroom waterproofing above) rather than separate defects.`;
+/** Clusters below this confidence go on the watchlist instead of being called systemic. */
+export const SYSTEMIC_CONFIDENCE = 0.7;
+
+export interface DetectedIssue {
+  key: string;
+  block: string;
+  stack: string;
+  category: Category;
+  caseIds: string[];
+  units: string[];
+  reopened: number;
+  openCases: number;
+  confidence: number;
+  headline: string;
+  /** The escalated systemic issue record, once the RecurrenceAgent has raised one. */
+  record?: SystemicIssue;
+}
+
+/**
+ * Systemic issue detection: cluster valid cases by block + stack + category and keep clusters that
+ * reach the stack threshold in rules.yaml. The heatmap visualises these clusters, not raw cases.
+ */
+export function detectSystemicIssues(cases: Case[], records: SystemicIssue[]): DetectedIssue[] {
+  const groups = new Map<string, Case[]>();
+  for (const c of cases) {
+    if (c.status === "INVALID") continue;
+    const u = getUnit(c.unitId);
+    const key = `${u.block}|${u.stack}|${c.category}`;
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  const out: DetectedIssue[] = [];
+  for (const [key, list] of groups) {
+    const units = [...new Set(list.map((c) => c.unitId))];
+    if (units.length < RULES.stackClusterThreshold) continue;
+    const [block, stack, category] = key.split("|") as [string, string, Category];
+    const reopened = list.reduce((a, c) => a + c.reopenCount, 0);
+    const openCases = list.filter((c) => isOpen(c.status)).length;
+    const repeatUnits = units.filter((u) => list.filter((c) => c.unitId === u).length > 1).length;
+    out.push({
+      key,
+      block,
+      stack,
+      category,
+      caseIds: list.map((c) => c.id),
+      units: units.sort((a, b) => getUnit(b).floor - getUnit(a).floor),
+      reopened,
+      openCases,
+      confidence: Math.min(0.95, 0.35 + units.length * 0.08 + repeatUnits * 0.05 + reopened * 0.05),
+      headline: `${list.length} related ${CATEGORY_LABEL[category].toLowerCase()} cases concentrated in Block ${block} / Stack ${stack}`,
+      record: records.find((r) => r.block === block && r.stack === stack && r.category === category),
+    });
+  }
+  return out.sort((a, b) => b.confidence - a.confidence || b.caseIds.length - a.caseIds.length);
+}
+
+/** Short "analytics insight" text for the overview, led by the strongest detected systemic issue. */
+export function insight(cases: Case[], records: SystemicIssue[] = []) {
+  const top = detectSystemicIssues(cases, records).find((d) => d.confidence >= SYSTEMIC_CONFIDENCE);
+  if (!top) return "No systemic issues detected. Defects are spread out with no stack clusters.";
+  return `Systemic issue detected: ${top.headline} (${top.units.length} units${top.reopened ? `, ${top.reopened} reopen(s)` : ""}). Units stacked vertically share risers and bathrooms, so this points to a shared source rather than separate defects.`;
 }

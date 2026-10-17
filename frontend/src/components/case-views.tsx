@@ -57,8 +57,26 @@ export function CaseProgress({ c }: { c: Case }) {
   );
 }
 
-export function EventTimeline({ events, compact }: { events: CaseEvent[]; compact?: boolean }) {
-  if (!events.length) return <p className="text-sm text-zinc-500">No activity yet.</p>;
+const EVENT_LABEL: Partial<Record<CaseEvent["type"], string>> = {
+  "case.created": "Reported",
+  "case.info_needed": "Info needed",
+  "case.assigned": "Assigned",
+  "verdict.recorded": "Inspection result",
+  "repair.booked": "Repair booked",
+  "repair.done": "Repaired",
+  "verification.requested": "Sign-off requested",
+  "verification.completed": "Buyer check",
+  "signoff.completed": "Signed off",
+  "case.closed": "Closed",
+  "case.reopened": "Reopened",
+  "recurrence.detected": "Recurrence detected",
+  "inspection.requested": "Extra inspection requested",
+  "inspection.approved": "Extra inspection approved",
+  "inspection.rejected": "Extra inspection rejected",
+};
+
+export function EventTimeline({ events, compact, large }: { events: CaseEvent[]; compact?: boolean; large?: boolean }) {
+  if (!events.length) return <p className={cn("text-zinc-500", large ? "text-base" : "text-sm")}>No activity yet.</p>;
   return (
     <ol className="relative space-y-3 border-l border-zinc-200 pl-4">
       {[...events].reverse().map((e) => {
@@ -72,7 +90,7 @@ export function EventTimeline({ events, compact }: { events: CaseEvent[]; compac
                 isAgent ? "bg-violet-500" : isEmail ? "bg-sky-500" : "bg-brand",
               )}
             />
-            <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-zinc-500">
+            <div className={cn("flex flex-wrap items-center gap-x-2 text-zinc-500", large ? "text-sm" : "text-[11px]")}>
               <span>{compact ? fmtShort(e.at) : fmtDateTime(e.at)}</span>
               {isAgent ? (
                 <span className="inline-flex items-center gap-1 font-medium text-violet-700">
@@ -83,10 +101,10 @@ export function EventTimeline({ events, compact }: { events: CaseEvent[]; compac
                   <Mail className="size-3" /> Email sent
                 </span>
               ) : (
-                <code className="text-[10px] text-zinc-400">{e.type}</code>
+                <span className="font-medium text-zinc-600">{EVENT_LABEL[e.type] ?? "Update"}</span>
               )}
             </div>
-            <p className="text-sm text-zinc-800">{e.message}</p>
+            <p className={cn("text-zinc-800", large ? "text-base" : "text-sm")}>{e.message}</p>
           </li>
         );
       })}

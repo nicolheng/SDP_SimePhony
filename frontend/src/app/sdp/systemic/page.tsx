@@ -26,13 +26,13 @@ export default function SystemicIssues() {
           <Panel key={si.id}>
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="font-mono text-xs text-zinc-500">{si.id}</p>
+                <p className="font-mono text-sm text-zinc-500">{si.id}</p>
                 <h2 className="text-lg font-semibold">{si.title}</h2>
-                <p className="text-sm text-zinc-600">
+                <p className="text-base text-zinc-600">
                   {CATEGORY_LABEL[si.category]} · Block {si.block} / Stack {si.stack}
                 </p>
               </div>
-              <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_CLS[si.status])}>{si.status.replace("_", " ")}</span>
+              <span className={cn("rounded-full px-2 py-0.5 text-sm font-medium", STATUS_CLS[si.status])}>{si.status.replace("_", " ")}</span>
             </div>
             <dl className="mt-4 grid grid-cols-3 gap-3 text-center">
               {[
@@ -42,19 +42,19 @@ export default function SystemicIssues() {
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl bg-zinc-50 p-3">
                   <dd className="text-xl font-semibold tabular-nums">{v}</dd>
-                  <dt className="text-[11px] text-zinc-500">{k}</dt>
+                  <dt className="text-sm text-zinc-500">{k}</dt>
                 </div>
               ))}
             </dl>
-            <p className="mt-4 text-sm">
+            <p className="mt-4 text-base">
               <span className="font-medium">Recommended action:</span> {si.recommendedAction}
             </p>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-sm text-zinc-500">
               Detected {fmtDate(si.detectedAt)} · approval: {si.approvalStatus}
             </p>
             <div className="mt-3 flex flex-wrap gap-1">
               {si.relatedCases.slice(0, 12).map((id) => (
-                <Link key={id} href={`/sdp/defects/${id}`} className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 hover:bg-zinc-200">
+                <Link key={id} href={`/sdp/defects/${id}`} className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-600 hover:bg-zinc-200">
                   {id}
                 </Link>
               ))}

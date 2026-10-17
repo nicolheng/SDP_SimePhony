@@ -9,6 +9,9 @@ import { addDays, daysBetween, fmtDateTime } from "./dates";
 import { getState, resetState, update } from "./store";
 import type { AgentName, Case, DemoState, EventType, Photo } from "./types";
 
+/** Base URL for links in emails (the app's own origin in the browser). */
+const APP_URL = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const STEP_MS = 700;
 
@@ -30,6 +33,12 @@ function notifyBuyer(d: DemoState, c: Case, kind: string, extra: Record<string, 
   d.messages.push({ id: d.messages.length + 1, caseId: c.id, at: d.now, ...msg });
   step(d, c.id, "CommsAgent", `Drafted buyer update "${msg.title}" (passed liability guardrail)`);
   if (c.buyerId === DEMO_BUYER.id) email(d, c.id, DEMO_BUYER.email, `[${c.id}] ${msg.title}`, msg.body);
+}
+
+/** Notify the assigned technician (shows in the technician inbox; email is logged to the outbox). */
+function notifyTech(d: DemoState, c: Case, subject: string, body: string) {
+  const tech = getTechnician(c.technicianId);
+  if (tech) email(d, c.id, tech.email, `[${c.id}] ${subject}`, body);
 }
 
 function book(d: DemoState, c: Case, slot: string, technicianId: string, kind: "visit" | "repair") {
@@ -140,6 +149,7 @@ async function continueNewCaseFlow(caseId: string) {
     book(d, c, t.slot, t.technicianId, "visit");
     c.status = "VISIT_SCHEDULED";
     notifyBuyer(d, c, "received", { slot: fmtDateTime(t.slot) });
+    notifyTech(d, c, "New inspection job", `${c.unitId}: ${c.summary}. Visit ${fmtDateTime(t.slot)}. ${t.reason}`);
   });
 }
 
@@ -150,6 +160,7 @@ export async function bookRepair(caseId: string, slot: string) {
     c.status = "REPAIR_BOOKED";
     book(d, c, slot, c.technicianId!, "repair");
     log(d, caseId, "repair.booked", `Repair booked for ${fmtDateTime(slot)}`);
+    notifyTech(d, c, "Repair booked", `${c.unitId}: ${c.summary}. Repair ${fmtDateTime(slot)}.`);
     notifyBuyer(d, c, "repair_booked", { slot: fmtDateTime(slot) });
   });
 }
@@ -162,13 +173,32 @@ export async function submitVerification(caseId: string, result: "FIXED" | "NOT_
     log(d, caseId, "verification.completed", `Buyer verification: ${result.replace("_", " ").toLowerCase()}${note ? ` — "${note}"` : ""}`);
     step(d, caseId, "VerificationAgent", `Recorded result ${result}${photoUrl ? " with photo evidence" : ""}`);
     if (result === "FIXED") {
-      c.status = "CLOSED";
-      c.closedAt = d.now;
-      log(d, caseId, "case.closed", "VERIFIED: case closed");
-      notifyBuyer(d, c, "closed");
+      c.signoff = { ...c.signoff, buyer: { at: d.now, note } };
+      log(d, caseId, "signoff.completed", "Buyer signed off the repair");
+      notifyTech(d, c, "Buyer signed off your repair", `${c.unitId}: ${c.summary}.`);
+      closeIfBothSigned(d, c);
     }
   });
   if (result === "NOT_FIXED") await reopen(caseId, note || "Buyer verification failed: still not fixed", null);
+}
+
+function closeIfBothSigned(d: DemoState, c: Case) {
+  if (!c.signoff?.buyer || !c.signoff?.developer) return;
+  c.status = "CLOSED";
+  c.closedAt = d.now;
+  log(d, c.id, "case.closed", "Buyer and developer both signed off: case closed");
+  notifyBuyer(d, c, "closed");
+}
+
+/** SDP staff sign-off on behalf of the developer. */
+export async function developerSignOff(caseId: string, by = "SDP Defect Team") {
+  update((d) => {
+    const c = find(d, caseId);
+    if (c.status !== "PENDING_SIGNOFF") return;
+    c.signoff = { ...c.signoff, developer: { at: d.now, by } };
+    log(d, caseId, "signoff.completed", `Developer signed off (${by})`);
+    closeIfBothSigned(d, c);
+  });
 }
 
 export function canReopen(c: Case, now: string) {
@@ -187,6 +217,7 @@ async function reopen(caseId: string, description: string, photoUrl: string | nu
     c.closedAt = undefined;
     if (photoUrl) c.photos.push(photo(photoUrl, "reopen", d.now));
     log(d, caseId, "case.reopened", `Reopened (#${c.reopenCount}): ${description}`);
+    notifyTech(d, c, "A case you repaired was reopened", `${c.unitId}: ${c.summary}. Buyer says: ${description}`);
     notifyBuyer(d, c, "reopened");
   });
   await sleep(STEP_MS);
@@ -221,7 +252,8 @@ async function reopen(caseId: string, description: string, photoUrl: string | nu
       c.status = "ESCALATION_PENDING";
       log(d, caseId, "recurrence.detected", r.reasons.join(" "), "RecurrenceAgent");
       log(d, caseId, "inspection.requested", `Extra inspection requested (${siId}); waiting for SDP approval`, "RecurrenceAgent");
-      email(d, caseId, SDP_STAFF_EMAIL, `[Approval needed] Extra inspection for ${c.id} (${siId})`, `${r.reasons.join("\n")}\n\nApprove or reject: /sdp/approvals`);
+      const approvalId = d.approvals.at(-1)!.id;
+      email(d, caseId, SDP_STAFF_EMAIL, `[Approval needed] Extra inspection for ${c.id} (${siId})`, `${r.reasons.join("\n")}\n\nApprove or reject: ${APP_URL}/sdp/approvals#${approvalId}`);
       notifyBuyer(d, c, "escalated");
     } else {
       const t = triageAgent(d, c, freeSlotsFor(d, c.category, blockOf(c))[0]);
@@ -231,6 +263,7 @@ async function reopen(caseId: string, description: string, photoUrl: string | nu
       c.status = "VISIT_SCHEDULED";
       book(d, c, t.slot, t.technicianId, "visit");
       step(d, caseId, "TriageAgent", `Below escalation threshold; revisit: ${t.reason}`);
+      notifyTech(d, c, "Revisit job", `${c.unitId}: ${c.summary} came back. Visit ${fmtDateTime(t.slot)}.`);
       notifyBuyer(d, c, "revisit", { slot: fmtDateTime(t.slot) });
     }
   });
@@ -263,6 +296,8 @@ export async function markRepaired(caseId: string, note: string, photoUrl: strin
     const c = find(d, caseId);
     c.status = "REPAIRED";
     c.repairNote = note;
+    c.repairedAt = d.now;
+    c.signoff = undefined;
     if (photoUrl) c.photos.push(photo(photoUrl, "repair", d.now));
     d.bookings = d.bookings.filter((b) => !(b.caseId === c.id && b.kind === "repair"));
     log(d, caseId, "repair.done", `Technician marked repaired: "${note}"`);
@@ -271,9 +306,9 @@ export async function markRepaired(caseId: string, note: string, photoUrl: strin
   update((d) => {
     const c = find(d, caseId);
     c.verificationGuide = verificationAgent(c);
-    c.status = "PENDING_VERIFICATION";
+    c.status = "PENDING_SIGNOFF";
     step(d, caseId, "VerificationAgent", `Retrieved ${CATEGORY_LABEL[c.category].toLowerCase()} protocol; ${c.verificationGuide.steps.length} case-specific checks for the buyer`);
-    log(d, caseId, "verification.requested", "Buyer asked to verify the repair");
+    log(d, caseId, "verification.requested", "Buyer asked to verify the repair and sign off; developer sign-off also required");
     notifyBuyer(d, c, "verify");
   });
 }

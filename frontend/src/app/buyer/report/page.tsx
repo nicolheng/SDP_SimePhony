@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCase, useCaseEvents } from "@/components/case-views";
+import { BuildingBanner } from "@/components/illustrations";
 import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
 import { PhotoInput, samplePhoto } from "@/components/photo";
 import { SlotPicker } from "@/components/slot-picker";
 import { UrgencyBadge } from "@/components/status-badge";
 import { upcomingSlots } from "@/lib/agents";
 import { submitReport } from "@/lib/api";
-import { CATEGORY_LABEL, getTechnician } from "@/lib/constants";
+import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, PROJECT_NAME } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
 
@@ -62,8 +63,18 @@ export default function ReportDefect() {
   return (
     <div>
       <MobileHeader title="Submit Defect" back="/buyer" />
+      <div className="-mt-7 h-44">
+        <BuildingBanner />
+      </div>
+      <div className="relative mx-4 -mt-10 rounded-2xl bg-white p-4 shadow-md ring-1 ring-zinc-200">
+        <p className="text-lg font-semibold">{PROJECT_NAME}</p>
+        <p className="text-sm text-zinc-500">
+          Unit {DEMO_BUYER.unitId} · {DEMO_BUYER.name}
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">Tell us what&apos;s wrong. Our assistant will categorise it and book the right technician.</p>
+      </div>
       <div className="space-y-4 p-4">
-        <Section title="1. Photo of the defect">
+        <Section title="1. Photo of the defect *">
           <PhotoInput value={photo} onChange={setPhoto} label="Take or upload a photo" required />
           {!photo && (
             <button type="button" onClick={() => setPhoto(samplePhoto())} className="mt-2 text-xs font-medium text-brand">
@@ -72,14 +83,16 @@ export default function ReportDefect() {
           )}
         </Section>
 
-        <Section title="2. Describe the problem">
+        <Section title="2. Describe the problem *">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={4}
+            maxLength={500}
             placeholder="What's wrong, which room, and where exactly? English or BM is fine."
             className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
           />
+          <p className="-mt-1 text-right text-xs text-zinc-400">{text.length} / 500</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {EXAMPLES.map((e) => (
               <button key={e} type="button" onClick={() => setText(e)} className="rounded-full bg-zinc-100 px-2.5 py-1 text-left text-[11px] text-zinc-600 hover:bg-zinc-200">
@@ -89,7 +102,7 @@ export default function ReportDefect() {
           </div>
         </Section>
 
-        <Section title="3. Inspection visit">
+        <Section title="3. Inspection visit *">
           <SlotPicker available={slots} value={slot} onChange={setSlot} />
         </Section>
 

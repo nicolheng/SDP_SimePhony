@@ -9,7 +9,7 @@ export type CaseStatus =
   | "INVALID"
   | "REPAIR_BOOKED"
   | "REPAIRED"
-  | "PENDING_VERIFICATION"
+  | "PENDING_SIGNOFF"
   | "CLOSED"
   | "REOPENED"
   | "ESCALATION_PENDING"
@@ -53,6 +53,7 @@ export type EventType =
   | "inspection.requested"
   | "inspection.approved"
   | "inspection.rejected"
+  | "signoff.completed"
   | "case.closed"
   | "email.sent"
   | "agent.step";
@@ -125,6 +126,8 @@ export interface Case {
   repairNote?: string;
   verificationGuide?: VerificationGuide;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
+  signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
+  repairedAt?: string;
   inspectionBrief?: InspectionBrief;
   triageReason?: string;
   createdAt: string;

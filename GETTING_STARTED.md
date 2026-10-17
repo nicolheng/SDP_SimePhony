@@ -17,7 +17,7 @@ What exists today, how to run it, and what you should see.
 | Seed scripts (`seed.db`) | ⬜ Not started | P3 core data, P4 18-month history |
 | Comms / Verification / Recurrence / InitialInspection agents | ⬜ Not started | Event-driven, Day 2–3 |
 | Guardrail callback | ⬜ Not started | P2, Day 1 |
-| Frontend (Next.js) | ⬜ Not started | See `frontend/README.md` for init commands |
+| Frontend (Next.js) | ✅ Runs on mock data | Buyer + technician (mobile) and SDP (dashboard); swap `frontend/src/lib/api.ts` for FastAPI calls later |
 
 ## One-time setup
 
@@ -67,7 +67,17 @@ adk web
 
 If ADK says the API key is missing, also copy `.env` into `agents\simephony\`.
 
-### 3. MCP tool server
+### 3. Frontend
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+**Expect:** http://localhost:3000 shows a role picker (Buyer, Technician, Sime Darby Property staff). No sign-in. Data is mocked in the browser; see `frontend/README.md` for the demo script.
+
+### 4. MCP tool server
 
 ```powershell
 python backend/mcp_server.py
@@ -81,14 +91,14 @@ python backend/mcp_server.py
 |---|---|
 | `adk web` | 8000 |
 | FastAPI | 8001 (use `--port 8001` to avoid clashing with `adk web`) |
-| Next.js (later) | 3000 |
+| Next.js frontend | 3000 |
 
 ## Next steps by role (Day 1)
 
 - **Everyone:** finish `CONTRACTS.md` + `rules.yaml` together, then branch off `main`.
 - **P1:** improve `IntakeAgent` prompt + output schema; build 10 photo/description test pairs.
 - **P2:** make `TriageAgent` read `rules.yaml`; draft the guardrail `after_model_callback`.
-- **P3:** finalise `schema.sql` with P4; write `backend/seed/seed_core.py`; init the frontend; Report Defect screen.
+- **P3:** finalise `schema.sql` with P4; write `backend/seed/seed_core.py`; FastAPI endpoints matching `frontend/src/lib/api.ts`.
 - **P4:** write `backend/seed/seed_history.py` + embeddings; SDP console skeleton (KPI cards, defect list).
 
 ## Troubleshooting

@@ -33,14 +33,24 @@ function emit() {
   listeners.forEach((l) => l());
 }
 
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Persist after the UI has updated; several quick updates (agent steps) share one write. */
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch {
+      // Quota exceeded (large photos): keep going in memory.
+    }
+  }, 150);
+}
+
 export function setState(next: DemoState) {
   state = next;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {
-    // Quota exceeded (large photos): keep going in memory.
-  }
   emit();
+  persist();
 }
 
 export function update(fn: (draft: DemoState) => void) {

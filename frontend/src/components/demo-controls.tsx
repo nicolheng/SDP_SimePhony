@@ -5,21 +5,6 @@ import { resetDemo, simulateRain, skipDays } from "@/lib/api";
 import { fmtDate } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
 
-export function ResetDemoButton() {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        resetDemo();
-        toast.success("Demo data reset");
-      }}
-      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-zinc-200/60 hover:text-zinc-800"
-    >
-      <RotateCcw className="size-3.5" /> Reset demo
-    </button>
-  );
-}
-
 export function DemoControls() {
   const now = useDemo((s) => s.now);
   const btn = "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10 hover:text-white";

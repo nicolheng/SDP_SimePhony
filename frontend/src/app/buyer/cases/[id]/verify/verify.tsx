@@ -17,6 +17,7 @@ export function VerifyRepair() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
 
   if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
   const g = c.verificationGuide;
@@ -30,21 +31,21 @@ export function VerifyRepair() {
     }
     setBusy(true);
     await submitVerification(c!.id, result, note.trim(), photo);
-    toast.success(result === "FIXED" ? "Thanks! Case closed." : result === "NOT_FIXED" ? "Case reopened" : "Saved — verify when you can");
+    toast.success(result === "FIXED" ? "Signed off. Waiting for developer sign-off if not done yet." : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
     router.push(`/buyer/cases/${c!.id}`);
   }
 
-  if (c.status !== "PENDING_VERIFICATION" || !g)
+  if (c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer)
     return (
       <div>
-        <MobileHeader title="Verify Repair" back={`/buyer/cases/${c.id}`} />
-        <p className="p-6 text-sm text-zinc-500">Nothing to verify for this case right now.</p>
+        <MobileHeader title="Check & Sign Off" back={`/buyer/cases/${c.id}`} />
+        <p className="p-6 text-sm text-zinc-500">Nothing to sign off for this case right now.</p>
       </div>
     );
 
   return (
     <div>
-      <MobileHeader title="Verify Repair" back={`/buyer/cases/${c.id}`} />
+      <MobileHeader title="Check & Sign Off" back={`/buyer/cases/${c.id}`} />
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-1.5 text-[11px] font-medium text-violet-700">
@@ -104,14 +105,19 @@ export function VerifyRepair() {
           />
         </Section>
 
+        <label className="flex gap-3 rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-700">
+          <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 size-4 accent-[var(--brand)]" />
+          I have checked the repair and confirm the defect is fixed. The case closes once the developer has also signed off.
+        </label>
+
         <div className="space-y-2">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || !confirm}
             onClick={() => submit("FIXED")}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
           >
-            <Check className="size-4" /> Fixed
+            <Check className="size-4" /> Fixed — Sign Off
           </button>
           <button
             type="button"
