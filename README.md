@@ -7,8 +7,6 @@ Buyers report defects with a photo; AI agents (Google ADK + Gemini Flash) handle
 find similar/recurring defects, assign technicians, write buyer updates, and escalate
 recurring problems to SDP staff for a human-approved extra inspection.
 
-**New here? Start with [GETTING_STARTED.md](GETTING_STARTED.md).**
-
 See [CONTRACTS.md](CONTRACTS.md) for statuses, tools, events and DB rules, and
 [rules.yaml](rules.yaml) for business rules.
 
@@ -25,7 +23,7 @@ frontend/           Next.js buyer / technician / SDP apps (P3, P4)
 data/               seed.db (committed) and simephony.db (live, gitignored)
 uploads/            photo uploads (gitignored)
 rules.yaml          shared business rules
-CONTRACTS.md        shared contracts — agree on Day 1
+CONTRACTS.md        shared contracts 
 ```
 
 ## Setup
@@ -55,7 +53,7 @@ cd agents && adk web
 | Role | Owns |
 |---|---|
 | P1 – AI Engineer A | IntakeAgent, SimilarDefectAgent, InitialInspectionAgent, analytics insight |
-| P2 – AI Engineer B | TriageAgent, CommsAgent, RecurrenceAgent, sign-off logic, guardrails |
+| P2 – AI Engineer B | TriageAgent, CommsAgent, VerificationAgent, RecurrenceAgent, sign-off logic, guardrails |
 | P3 – Full-stack (buyer/technician) | Buyer + technician apps, db.py, booking/scheduling/email tools |
 | P4 – Full-stack (SDP) | SDP console, analytics, approvals, history/analytics tools |
 

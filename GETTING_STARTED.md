@@ -15,7 +15,7 @@ What exists today, how to run it, and what you should see.
 | `agents/simephony` (ADK) | ✅ Runs on stubs | Intake → SimilarDefect → Triage, fake data for A-12-08 |
 | `backend/mcp_server.py` (FastMCP) | 🟡 Skeleton | Loads, but tools raise `NotImplementedError` |
 | Seed scripts (`seed.db`) | ⬜ Not started | P3 core data, P4 18-month history |
-| Comms / Recurrence / InitialInspection agents | ⬜ Not started | Event-driven, Day 2–3 |
+| Comms / Verification / Recurrence / InitialInspection agents | ⬜ Not started | Event-driven, Day 2–3 |
 | Guardrail callback | ⬜ Not started | P2, Day 1 |
 | Frontend (Next.js) | ⬜ Not started | See `frontend/README.md` for init commands |
 

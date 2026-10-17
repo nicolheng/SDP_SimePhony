@@ -89,3 +89,43 @@ All in [`rules.yaml`](rules.yaml): category → skill, urgency rules, grace peri
 - Team Gmail account + app password in `.env` (never committed).
 - `send_email` uses `smtplib`, always writes to `outbox`, emits `email.sent`.
   On failure it still logs and returns `"logged, not sent"`.
+
+## 7. Agents
+
+| Agent | What it does | Triggered by | Owner |
+|---|---|---|---|
+| IntakeAgent | Reads photo + description; category, location, summary; asks for missing info | `case.created` (new-case flow) | P1 |
+| SimilarDefectAgent | Finds related past cases (unit, floor, stack, category, contractor); `recurrence_count` | new-case flow | P1 |
+| TriageAgent | Urgency, category → skill, picks technician + slot, offers alternatives | new-case flow | P2 |
+| CommsAgent | Buyer updates in app + Gmail, within guardrails | status changes | P2 |
+| VerificationAgent | Case-specific guide for the buyer to check the repair before signing off | `repair.done` | P2 |
+| RecurrenceAgent | Reopen logic, `reopen_count`, raises "extra inspection?" to SDP | `case.reopened` | P2 |
+| InitialInspectionAgent | Inspection brief for the technician after SDP approval | `inspection.approved` | P1 |
+
+New-case flow: `SequentialAgent(IntakeAgent → SimilarDefectAgent → TriageAgent)`. The others are event-driven.
+
+### VerificationAgent rules
+
+Runs when the case reaches `REPAIRED`. Its guide is shown on the buyer's sign-off screen
+(and sent by CommsAgent) so the buyer can confirm the fix before signing.
+
+- **Specific to this case only.** Every check must come from this case's category,
+  sub-category, location in the unit, the buyer's original description and photos, and the
+  technician's repair note. E.g. for a master-bedroom ceiling leak: "Run the shower in the
+  unit above for 10 minutes, then check the repaired patch above the wardrobe for damp or
+  staining."
+- **No general guidance.** No generic maintenance tips, no checks for other rooms or other
+  defect types, no home-care advice. If the case lacks the detail needed for specific checks,
+  it says so and asks the technician for the repair note rather than filling in generic steps.
+- **Safe checks only.** Look, touch the surface, run water, use the switch or door as normal.
+  Never ask the buyer to open panels, touch wiring, climb, or use tools.
+- **Same liability guardrail** as CommsAgent: no promises that the defect won't come back,
+  no admission of liability.
+- Ends with what to do if a check fails: don't sign off; reopen within the grace period
+  with a new photo (hands over to RecurrenceAgent).
+
+### RecurrenceAgent rules
+
+- Reopen only a `CLOSED` case, within the grace period, with a mandatory new photo; `reopen_count` goes up.
+- On the 3rd occurrence or a stack cluster → `request_extra_inspection` → pause at `ESCALATION_PENDING`.
+- Approved → trigger InitialInspectionAgent. Rejected → normal repair booking.

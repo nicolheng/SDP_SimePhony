@@ -1,29 +1,73 @@
+
 # Shared business rules — single source of truth for agents and backend.
-# Agree on values in the Day 1 contracts session; change via PR only.
+# Changes require a PR and agreement during the contracts session.
 
 category_to_skill:
-  water_leak: plumbing
-  plumbing: plumbing
-  electrical: electrical
-  wall_crack: civil
-  tiles: civil
-  ceiling: civil
-  door_window: carpentry
-  paint: painting
-  other: general
+  water_leak: [plumbing, waterproofing]
+  plumbing: [plumbing]
+  waterproofing: [waterproofing]
+  drainage: [plumbing]
+  sanitary_fittings: [plumbing]
+  electrical: [electrical]
+  wall_crack: [civil]
+  structural_crack: [civil]
+  tiles: [tiling]
+  flooring: [flooring]
+  ceiling: [civil]
+  roof: [roofing]
+  door_window: [carpentry, glazing]
+  paint: [painting]
+  cabinetry: [carpentry]
+  external_works: [civil]
+  other: [general]
 
+# Urgency is determined by symptoms and risk, not category alone.
 urgency:
   default: normal
-  high:
-    - active water leak
-    - electrical (sparks, exposed wiring, tripping breaker)
-    - ceiling at risk of collapse
-  low:
-    - cosmetic paint
-    - minor hairline crack
 
+  high:
+    - active water leak near electrical fittings
+    - electrical sparks or burning smell
+    - exposed live wiring
+    - repeated breaker tripping
+    - ceiling at risk of collapse
+    - suspected structural movement or major structural crack
+    - severe water ingress or flooding
+    - loose glass or window panel at risk of falling
+    - suspected gas leak
+
+  low:
+    - cosmetic paint defects
+    - minor hairline crack with no signs of movement
+    - superficial scratches
+    - minor cosmetic tile defects
+
+# Rules for repeated or clustered defects.
 grace_period_days: 30
 
 escalation:
-  occurrence_threshold: 3        # 3rd occurrence of the same defect on a case
-  stack_cluster_threshold: 3     # 3+ similar cases in the same stack
+  occurrence_threshold: 3
+  stack_cluster_threshold: 3
+
+  actions:
+    repeated_defect:
+      trigger: occurrence_threshold
+      action: supervisor_review
+      notify:
+        - case_manager
+
+    stack_cluster:
+      trigger: stack_cluster_threshold
+      action: investigate_shared_cause
+      notify:
+        - supervisor
+        - maintenance_team
+
+# Suggested safety behavior for AI agents.
+safety:
+  high_urgency:
+    action: immediate_human_review
+    allow_auto_close: false
+
+  uncertain_urgency:
+    action: request_more_information

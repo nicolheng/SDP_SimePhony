@@ -1,6 +1,6 @@
 """New-case flow: SequentialAgent(IntakeAgent → SimilarDefectAgent → TriageAgent).
 
-Comms, Recurrence and InitialInspection agents are event-driven and will live alongside these.
+Comms, Verification, Recurrence and InitialInspection agents are event-driven and will live alongside these.
 """
 import os
 
