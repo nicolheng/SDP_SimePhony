@@ -7,6 +7,8 @@ Buyers report defects with a photo; AI agents (Google ADK + Gemini Flash) handle
 find similar/recurring defects, assign technicians, write buyer updates, and escalate
 recurring problems to SDP staff for a human-approved extra inspection.
 
+**New here? Start with [GETTING_STARTED.md](GETTING_STARTED.md).**
+
 See [CONTRACTS.md](CONTRACTS.md) for statuses, tools, events and DB rules, and
 [rules.yaml](rules.yaml) for business rules.
 
@@ -38,8 +40,8 @@ cp .env.example .env    # then fill in your own Gemini key + team Gmail app pass
 Run:
 
 ```bash
-# API (http://localhost:8000)
-cd backend && uvicorn main:app --reload
+# API (http://localhost:8001)
+cd backend && uvicorn main:app --reload --port 8001
 
 # MCP tool server
 python backend/mcp_server.py
