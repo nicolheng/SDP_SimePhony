@@ -704,7 +704,7 @@ def seed_history():
         si2_related = ["H-0001", "H-0002", "H-0003", "H-0004", "H-0005", "H-0006", "H-0007"]
         systemic_issues_to_insert.append((
             "SI-002",
-            "Ceiling leak & riser seepage – Stack A-08",
+            "Ceiling leak & riser seepage - Stack A-08",
             "water_leak",
             "A",
             "08",
