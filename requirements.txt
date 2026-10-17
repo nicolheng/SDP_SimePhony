@@ -1,10 +1,16 @@
-google-adk
-mcp
+# Agent Framework & LLM Client
+langgraph
+langchain-core
+openai # Works with Ollama, Groq, and OpenRouter
+
+# Backend
 fastmcp
 fastapi
 uvicorn[standard]
 python-dotenv
 python-multipart
 pyyaml
+
+# Data & Embeddings
 numpy
 sentence-transformers
