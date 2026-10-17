@@ -36,6 +36,8 @@ def get_available_slots(skill: str, block: str) -> dict:
         "slots": [
             {"slot_id": "S-1", "technician_id": f"{prefix}-1", "start": "2026-10-22T14:00:00+08:00"},
             {"slot_id": "S-2", "technician_id": f"{prefix}-2", "start": "2026-10-23T10:00:00+08:00"},
+            {"slot_id": "S-3", "technician_id": f"{prefix}-3", "start": "2026-10-24T11:00:00+08:00"},
+            {"slot_id": "S-4", "technician_id": f"{prefix}-4", "start": "2026-10-25T09:00:00+08:00"},
         ]
     }
 
