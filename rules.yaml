@@ -1,0 +1,29 @@
+# Shared business rules — single source of truth for agents and backend.
+# Agree on values in the Day 1 contracts session; change via PR only.
+
+category_to_skill:
+  water_leak: plumbing
+  plumbing: plumbing
+  electrical: electrical
+  wall_crack: civil
+  tiles: civil
+  ceiling: civil
+  door_window: carpentry
+  paint: painting
+  other: general
+
+urgency:
+  default: normal
+  high:
+    - active water leak
+    - electrical (sparks, exposed wiring, tripping breaker)
+    - ceiling at risk of collapse
+  low:
+    - cosmetic paint
+    - minor hairline crack
+
+grace_period_days: 30
+
+escalation:
+  occurrence_threshold: 3        # 3rd occurrence of the same defect on a case
+  stack_cluster_threshold: 3     # 3+ similar cases in the same stack

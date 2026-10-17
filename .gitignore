@@ -1,0 +1,36 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.adk/
+
+# Live database (seed.db IS committed — it's the clean reset copy)
+data/simephony.db
+data/simephony.db-wal
+data/simephony.db-shm
+*.db-journal
+
+# Uploaded photos (keep the folder)
+uploads/*
+!uploads/.gitkeep
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,10 @@
+google-adk
+mcp
+fastmcp
+fastapi
+uvicorn[standard]
+python-dotenv
+python-multipart
+pyyaml
+numpy
+sentence-transformers
