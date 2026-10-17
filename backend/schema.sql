@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS cases (
     reopen_count     INTEGER NOT NULL DEFAULT 0,
     developer_signed INTEGER NOT NULL DEFAULT 0,
     buyer_signed     INTEGER NOT NULL DEFAULT 0,
+    verification_status TEXT DEFAULT 'pending',  -- pending | verified | not_verified
+    inspection_outcome  TEXT,                     -- VALID_DEFECT | NOT_A_DEFECT | DUPLICATE | INSUFFICIENT_INFORMATION | REQUIRES_FURTHER_INSPECTION
     created_at       TEXT NOT NULL,
     closed_at        TEXT
 );
@@ -100,6 +102,33 @@ CREATE TABLE IF NOT EXISTS outbox (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_cases_unit   ON cases(unit_id);
-CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
-CREATE INDEX IF NOT EXISTS idx_events_case  ON case_events(case_id);
+CREATE TABLE IF NOT EXISTS systemic_issues (
+    issue_id         TEXT PRIMARY KEY,       -- e.g. SI-001
+    category         TEXT NOT NULL,
+    block            TEXT,
+    stack            TEXT,
+    related_cases    TEXT NOT NULL,          -- JSON array of case_ids
+    recurrence_count INTEGER NOT NULL DEFAULT 0,
+    confidence       REAL,                   -- 0.0 to 1.0
+    detected_at      TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'open',   -- open | under_review | resolved
+    recommended_action TEXT,
+    approval_id      TEXT REFERENCES approvals(approval_id)
+);
+
+CREATE TABLE IF NOT EXISTS verifications (
+    verification_id TEXT PRIMARY KEY,       -- e.g. V-0001
+    case_id         TEXT NOT NULL REFERENCES cases(case_id),
+    protocol        TEXT,                   -- predefined protocol retrieved by VerificationAgent
+    outcome         TEXT,                   -- VERIFIED | NOT_VERIFIED | CANNOT_VERIFY_YET
+    evidence_notes  TEXT,
+    photo_path      TEXT,                   -- optional new photo path relative to uploads/
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cases_unit           ON cases(unit_id);
+CREATE INDEX IF NOT EXISTS idx_cases_status         ON cases(status);
+CREATE INDEX IF NOT EXISTS idx_events_case          ON case_events(case_id);
+CREATE INDEX IF NOT EXISTS idx_si_status            ON systemic_issues(status);
+CREATE INDEX IF NOT EXISTS idx_si_block             ON systemic_issues(block, stack);
+CREATE INDEX IF NOT EXISTS idx_verifications_case   ON verifications(case_id);
