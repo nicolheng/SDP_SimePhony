@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS cases (
     missing_info         TEXT,                      -- JSON array of what IntakeAgent still needs
     follow_up_question   TEXT,                      -- question IntakeAgent asks the buyer
     occurrence_count     INTEGER NOT NULL DEFAULT 1,-- reports of this defect in this unit
+    assignment_attempts INTEGER DEFAULT 0,          -- number of technician assignment attempts
+    booking_status       TEXT,                      -- nullable booking negotiation status
     triage_reason        TEXT,                      -- why TriageAgent picked this technician and slot
     verdict_note         TEXT,                      -- technician's reason for VALID / INVALID
     verdict_at           TEXT,                      -- ISO 8601 time of verdict
@@ -66,8 +68,18 @@ CREATE TABLE IF NOT EXISTS cases (
     closed_at            TEXT                       -- ISO 8601 resolution timestamp
 );
 
+CREATE TABLE IF NOT EXISTS assignment_history (
+    assignment_id   TEXT PRIMARY KEY,
+    case_id         TEXT REFERENCES cases(case_id),
+    technician_id   TEXT REFERENCES technicians(technician_id),
+    slot_id         TEXT REFERENCES slots(slot_id),
+    outcome         TEXT NOT NULL,                   -- ACCEPTED | REJECTED
+    rejected_reason TEXT,
+    created_at      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS case_photos (
-    photo_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_id   TEXT PRIMARY KEY,             -- e.g. CP-0001
     case_id    TEXT NOT NULL REFERENCES cases(case_id),
     path       TEXT NOT NULL,              -- path relative to uploads/
     kind       TEXT NOT NULL,              -- original | reopen | verdict
@@ -75,7 +87,7 @@ CREATE TABLE IF NOT EXISTS case_photos (
 );
 
 CREATE TABLE IF NOT EXISTS case_events (
-    event_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   TEXT PRIMARY KEY,             -- e.g. CE-0001
     case_id    TEXT REFERENCES cases(case_id),
     type       TEXT NOT NULL,              -- case.created, case.info_needed, case.assigned, etc.
     payload    TEXT,                       -- JSON payload
@@ -105,7 +117,7 @@ CREATE TABLE IF NOT EXISTS case_embeddings (
 );
 
 CREATE TABLE IF NOT EXISTS outbox (
-    email_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_id   TEXT PRIMARY KEY,             -- e.g. OB-0001
     case_id    TEXT REFERENCES cases(case_id),
     to_addr    TEXT NOT NULL,
     subject    TEXT NOT NULL,
@@ -151,7 +163,7 @@ CREATE TABLE IF NOT EXISTS case_links (
 );
 
 CREATE TABLE IF NOT EXISTS buyer_messages (
-    message_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id  TEXT PRIMARY KEY,            -- e.g. BM-0001
     case_id     TEXT NOT NULL REFERENCES cases(case_id),
     title       TEXT NOT NULL,             -- short headline
     body        TEXT NOT NULL,             -- message text within guardrails
@@ -163,6 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_cases_unit           ON cases(unit_id);
 CREATE INDEX IF NOT EXISTS idx_cases_status         ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_cases_buyer          ON cases(buyer_id);
 CREATE INDEX IF NOT EXISTS idx_events_case          ON case_events(case_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_history_case ON assignment_history(case_id);
 CREATE INDEX IF NOT EXISTS idx_si_status            ON systemic_issues(status);
 CREATE INDEX IF NOT EXISTS idx_si_block             ON systemic_issues(block, stack);
 CREATE INDEX IF NOT EXISTS idx_verifications_case   ON verifications(case_id);

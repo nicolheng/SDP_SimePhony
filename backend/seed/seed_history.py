@@ -151,14 +151,10 @@ def pick_technician_for(category: str, block: str) -> str:
 
 
 def seed_history():
-    print(f"Verifying core baseline in {SEED_DB_PATH}...")
-    conn = db.connect(SEED_DB_PATH)
-    unit_count = conn.execute("SELECT COUNT(*) FROM units").fetchone()[0]
-    conn.close()
-
-    if unit_count < 450:
-        print("⚠️ Core units missing or incomplete. Running seed_core first...")
-        seed_core()
+    print(f"Rebuilding seed database in {SEED_DB_PATH}...")
+    for suffix in ("", "-wal", "-shm"):
+        Path(f"{SEED_DB_PATH}{suffix}").unlink(missing_ok=True)
+    seed_core()
 
     conn = db.connect(SEED_DB_PATH)
     cursor = conn.cursor()
@@ -166,23 +162,12 @@ def seed_history():
     # Re-apply schema to make sure all 15 tables are initialized
     db.init_schema(SEED_DB_PATH)
 
-    # Clear previous history data while preserving core units, buyers, technicians
-    cursor.execute("PRAGMA foreign_keys = OFF")
-    for tbl in [
-        "cases", "case_photos", "case_events", "approvals", "inspection_briefs",
-        "case_embeddings", "outbox", "systemic_issues", "verifications",
-        "case_links", "buyer_messages"
-    ]:
-        cursor.execute(f"DELETE FROM {tbl}")
-    cursor.execute("UPDATE slots SET case_id = NULL, kind = NULL")
-    cursor.execute("PRAGMA foreign_keys = ON")
-    conn.commit()
-
     random.seed(20261019)
     now = datetime(2026, 10, 19, 9, 0, 0, tzinfo=timezone.utc)
 
     try:
         cases_to_insert = []
+        assignment_history_to_insert = []
         photos_to_insert = []
         events_to_insert = []
         verifications_to_insert = []
@@ -227,8 +212,25 @@ def seed_history():
             verification_result: str | None = None,
             verification_note: str | None = None,
             related_case_links: list[tuple[str, str, float]] | None = None,
+            assignment_attempts: int | None = None,
+            booking_status: str | None = None,
+            assignment_slot_id: str | None = None,
         ):
-            buyer_id = f"B-A-12-08" if unit_id == "A-12-08" else f"B-{unit_id}"
+            buyer = conn.execute(
+                "SELECT buyer_id FROM buyers WHERE unit_id = ?", (unit_id,)
+            ).fetchone()
+            if buyer is None:
+                raise RuntimeError(f"No buyer is seeded for unit {unit_id}")
+            buyer_id = buyer["buyer_id"]
+            attempt_count = assignment_attempts
+            if attempt_count is None:
+                attempt_count = 0 if status in ("SUBMITTED", "INFO_NEEDED") else 1
+            current_booking_status = booking_status
+            if current_booking_status is None:
+                if status in ("VISIT_SCHEDULED", "REPAIR_BOOKED"):
+                    current_booking_status = "CONFIRMED"
+                elif status == "ASSIGNED":
+                    current_booking_status = "PENDING"
 
             # Calculate realistic timestamps if not explicitly passed
             t_verdict = verdict_at.isoformat() if verdict_at else None
@@ -260,6 +262,8 @@ def seed_history():
                 json.dumps(missing_info) if missing_info else None,
                 follow_up_question,
                 occurrence_count,
+                attempt_count,
+                current_booking_status,
                 triage_reason or f"Assigned to {technician_id} based on skill '{category}' and availability in Block {unit_id.split('-')[0]}",
                 verdict_note or ("Technician inspected: verified valid defect requiring rectification." if status not in ("INVALID", "SUBMITTED", "INFO_NEEDED", "ASSIGNED", "VISIT_SCHEDULED") else None),
                 t_verdict,
@@ -279,6 +283,17 @@ def seed_history():
                 closed_at.isoformat() if closed_at else None,
             ))
 
+            if attempt_count:
+                assignment_history_to_insert.append((
+                    f"AH-{len(assignment_history_to_insert) + 1:04d}",
+                    case_id,
+                    technician_id,
+                    assignment_slot_id,
+                    "ACCEPTED",
+                    None,
+                    (created_at + timedelta(hours=2)).isoformat(),
+                ))
+
             embed_text = f"{summary}. {description}. Category: {category} ({sub_category}). Location: {location} in unit {unit_id}."
             texts_for_embeddings.append((case_id, embed_text))
 
@@ -293,6 +308,28 @@ def seed_history():
 
             t += timedelta(hours=2)
             events_to_insert.append((case_id, "case.assigned", json.dumps({"technician_id": technician_id}), t.isoformat()))
+            if status in ("ASSIGNED", "VISIT_SCHEDULED", "REPAIR_BOOKED"):
+                events_to_insert.append((
+                    case_id,
+                    "booking.requested",
+                    json.dumps({
+                        "technician_id": technician_id,
+                        "slot_id": assignment_slot_id,
+                        "booking_status": current_booking_status,
+                    }),
+                    t.isoformat(),
+                ))
+            if status in ("VISIT_SCHEDULED", "REPAIR_BOOKED"):
+                events_to_insert.append((
+                    case_id,
+                    "booking.confirmed",
+                    json.dumps({
+                        "technician_id": technician_id,
+                        "slot_id": assignment_slot_id,
+                        "booking_status": "CONFIRMED",
+                    }),
+                    (t + timedelta(minutes=5)).isoformat(),
+                ))
             events_to_insert.append((case_id, "email.sent", json.dumps({"to": "buyer", "subject": f"[{case_id}] Case assigned"}), t.isoformat()))
             outbox_to_insert.append((case_id, f"{buyer_id}@example.com", f"[{case_id}] Technician Assigned", f"Hi, technician {technician_id} has been assigned for {summary}.", "sent", None, t.isoformat()))
             buyer_messages_to_insert.append((case_id, "Technician Assigned", f"Technician {technician_id} has been assigned to inspect your defect.", t.isoformat()))
@@ -319,7 +356,7 @@ def seed_history():
                 t += timedelta(days=1)
                 events_to_insert.append((case_id, "verification.completed", json.dumps({"result": verification_result, "note": verification_note}), t.isoformat()))
                 verifications_to_insert.append((
-                    f"V-{case_id}",
+                    f"V-{len(verifications_to_insert) + 1:04d}",
                     case_id,
                     f"Standard {category} verification procedure",
                     verification_result,
@@ -650,24 +687,38 @@ def seed_history():
         # -------------------------------------------------------------------
         print("Seeding active evaluation cases for all 7 agents...")
         live_cases = [
-            ("L-001", "B-7-02", "electrical", "tripping_breaker", "kitchen", "Main circuit breaker trips intermittently", "VISIT_SCHEDULED", "high", "T-03", 0, -2, 2, "pending", None, 0, 0),
-            ("L-002", "C-3-05", "tiles", "hollow_tiles", "living room", "Several floor tiles sound hollow when stepped on", "REPAIR_BOOKED", "normal", "T-04", 0, -5, 3, "pending", "VALID_DEFECT", 0, 0),
-            ("L-003", "A-4-01", "door_window", "sliding_door_stuck", "balcony", "Balcony sliding door off track and sticking", "VALID", "normal", "T-05", 0, -3, None, "pending", "VALID_DEFECT", 0, 0),
-            ("L-004", "B-14-09", "paint", "paint_peeling", "bedroom 2", "Paint bubbling and flaking near window skirting", "PENDING_SIGNOFF", "normal", "T-04", 0, -7, None, "pending", "VALID_DEFECT", 0, 1),
-            ("L-005", "C-10-04", "drainage", "slow_drain", "shower floor", "Shower floor drain stagnant, water pools for hours", "VISIT_SCHEDULED", "normal", "T-02", 0, -1, 1, "pending", None, 0, 0),
-            ("L-006", "A-6-10", "wall_crack", "hairline_crack", "living room", "Superficial hairline plaster crack above door", "INVALID", "low", "T-04", 0, -4, None, "not_verified", "NOT_A_DEFECT", 0, 1),
-            ("L-007", "C-12-01", "plumbing", "pipe_leak", "kitchen sink", "Slow dripping under kitchen sink drain pipe", "REPAIRED", "normal", "T-02", 0, -4, None, "pending", "VALID_DEFECT", 0, 0),
-            ("L-008", "B-3-08", "water_leak", "ceiling_leak", "bathroom", "Ceiling moisture mark reappeared after rain", "REOPENED", "high", "T-01", 1, -6, None, "not_verified", "VALID_DEFECT", 0, 0),
-            ("L-009", "C-8-06", "sanitary_fittings", "loose_fitting", "master bathroom", "Toilet flush button sticking and constantly running", "SUBMITTED", "normal", "T-02", 0, 0, None, "pending", None, 0, 0),
-            ("L-010", "A-2-05", "electrical", "faulty_socket", "living room", "Power socket sparks when TV plugged in", "ASSIGNED", "high", "T-03", 0, -1, None, "pending", None, 0, 0),
-            ("L-011", "B-11-03", "structural_crack", "beam_crack", "balcony", "Noticed 2mm diagonal crack on balcony beam", "ESCALATION_PENDING", "high", "T-04", 2, -3, None, "pending", "VALID_DEFECT", 0, 0),
-            ("L-012", "A-14-04", "ceiling", "cracked_plasterboard", "foyer ceiling", "Plaster ceiling sagged with visible crack along joist", "EXTRA_INSPECTION", "normal", "T-04", 1, -5, None, "pending", "VALID_DEFECT", 0, 0),
-            ("L-013", "A-3-02", "water_leak", "wall_seepage", "living room", "Wall dampness reported without photo or exact room", "INFO_NEEDED", "normal", "T-01", 0, -1, None, "pending", None, 0, 0),
+            ("C-0001", "B-7-02", "electrical", "tripping_breaker", "kitchen", "Main circuit breaker trips intermittently", "VISIT_SCHEDULED", "high", "T-03", 0, -2, 2, "pending", None, 0, 0),
+            ("C-0002", "C-3-05", "tiles", "hollow_tiles", "living room", "Several floor tiles sound hollow when stepped on", "REPAIR_BOOKED", "normal", "T-04", 0, -5, 3, "pending", "VALID_DEFECT", 0, 0),
+            ("C-0003", "A-4-01", "door_window", "sliding_door_stuck", "balcony", "Balcony sliding door off track and sticking", "VALID", "normal", "T-05", 0, -3, None, "pending", "VALID_DEFECT", 0, 0),
+            ("C-0004", "B-14-09", "paint", "paint_peeling", "bedroom 2", "Paint bubbling and flaking near window skirting", "PENDING_SIGNOFF", "normal", "T-04", 0, -7, None, "pending", "VALID_DEFECT", 0, 1),
+            ("C-0005", "C-10-04", "drainage", "slow_drain", "shower floor", "Shower floor drain stagnant, water pools for hours", "VISIT_SCHEDULED", "normal", "T-02", 0, -1, 1, "pending", None, 0, 0),
+            ("C-0006", "A-6-10", "wall_crack", "hairline_crack", "living room", "Superficial hairline plaster crack above door", "INVALID", "low", "T-04", 0, -4, None, "not_verified", "NOT_A_DEFECT", 0, 1),
+            ("C-0007", "C-12-01", "plumbing", "pipe_leak", "kitchen sink", "Slow dripping under kitchen sink drain pipe", "REPAIRED", "normal", "T-02", 0, -4, None, "pending", "VALID_DEFECT", 0, 0),
+            ("C-0008", "B-3-08", "water_leak", "ceiling_leak", "bathroom", "Ceiling moisture mark reappeared after rain", "REOPENED", "high", "T-01", 1, -6, None, "not_verified", "VALID_DEFECT", 0, 0),
+            ("C-0009", "C-8-06", "sanitary_fittings", "loose_fitting", "master bathroom", "Toilet flush button sticking and constantly running", "SUBMITTED", "normal", "T-02", 0, 0, None, "pending", None, 0, 0),
+            ("C-0010", "A-2-05", "electrical", "faulty_socket", "living room", "Power socket sparks when TV plugged in", "ASSIGNED", "high", "T-03", 0, -1, None, "pending", None, 0, 0),
+            ("C-0011", "B-11-03", "structural_crack", "beam_crack", "balcony", "Noticed 2mm diagonal crack on balcony beam", "ESCALATION_PENDING", "high", "T-04", 2, -3, None, "pending", "VALID_DEFECT", 0, 0),
+            ("C-0012", "A-14-04", "ceiling", "cracked_plasterboard", "foyer ceiling", "Plaster ceiling sagged with visible crack along joist", "EXTRA_INSPECTION", "normal", "T-04", 1, -5, None, "pending", "VALID_DEFECT", 0, 0),
+            ("C-0013", "A-3-02", "water_leak", "wall_seepage", "living room", "Wall dampness reported without photo or exact room", "INFO_NEEDED", "normal", "T-01", 0, -1, None, "pending", None, 0, 0),
+            ("C-0014", "A-12-08", "water_leak", "ceiling_leak", "bathroom ceiling", "Ceiling leak needs a technician visit", "VISIT_SCHEDULED", "high", "T-02", 0, 0, None, "pending", None, 0, 0),
         ]
 
         for cid, uid, cat, sub, loc, summary, status, urg, tid, reopens, created_offset, slot_offset, vstatus, outcome, b_sign, dev_sign in live_cases:
             ct = now + timedelta(days=created_offset)
             cl_at = ct + timedelta(days=2) if status == "INVALID" else None
+            assignment_slot_id = None
+            if cid == "C-0014":
+                accepted_slot = cursor.execute(
+                    "SELECT slot_id FROM slots WHERE technician_id = ? AND start_at LIKE ? ORDER BY start_at LIMIT 1",
+                    ("T-02", "2026-10-20T11:00%"),
+                ).fetchone()
+                rejected_slot = cursor.execute(
+                    "SELECT slot_id FROM slots WHERE technician_id = ? AND start_at LIKE ? ORDER BY start_at LIMIT 1",
+                    ("T-01", "2026-10-20T09:00%"),
+                ).fetchone()
+                if accepted_slot is None or rejected_slot is None:
+                    raise RuntimeError("Unable to find slots for the seeded assignment negotiation")
+                assignment_slot_id = accepted_slot["slot_id"]
 
             missing = ["room_location", "clear_photo"] if status == "INFO_NEEDED" else None
             follow_q = "Could you please specify which room has the wall dampness and attach a close-up photo?" if status == "INFO_NEEDED" else None
@@ -685,7 +736,7 @@ def seed_history():
                 missing_info=missing,
                 follow_up_question=follow_q,
                 technician_id=tid,
-                occurrence_count=3 if cid == "L-011" else 1,
+                occurrence_count=3 if cid == "C-0011" else 1,
                 reopen_count=reopens,
                 created_at=ct,
                 closed_at=cl_at,
@@ -695,7 +746,38 @@ def seed_history():
                 developer_signed=dev_sign,
                 verification_result="NOT_FIXED" if status == "REOPENED" else None,
                 verification_note="Buyer indicated defect returned" if status == "REOPENED" else None,
+                assignment_attempts=2 if cid == "C-0014" else None,
+                assignment_slot_id=assignment_slot_id,
             )
+            if cid == "C-0014":
+                rejection_time = ct + timedelta(hours=1)
+                assignment_history_to_insert.append((
+                    f"AH-{len(assignment_history_to_insert) + 1:04d}",
+                    cid,
+                    "T-01",
+                    rejected_slot["slot_id"],
+                    "REJECTED",
+                    "Emergency elsewhere",
+                    rejection_time.isoformat(),
+                ))
+                events_to_insert.extend([
+                    (
+                        cid,
+                        "booking.requested",
+                        json.dumps({"technician_id": "T-01", "slot_id": rejected_slot["slot_id"]}),
+                        rejection_time.isoformat(),
+                    ),
+                    (
+                        cid,
+                        "booking.rejected",
+                        json.dumps({
+                            "technician_id": "T-01",
+                            "slot_id": rejected_slot["slot_id"],
+                            "reason": "Emergency elsewhere",
+                        }),
+                        (rejection_time + timedelta(minutes=5)).isoformat(),
+                    ),
+                ])
 
         # -------------------------------------------------------------------
         # 5. Seed SI-002 (Stack A-08 Leaks) & Pending Approval
@@ -746,21 +828,39 @@ def seed_history():
                 case_id, unit_id, buyer_id, status, category, sub_category,
                 location_in_unit, summary, description, urgency,
                 missing_info, follow_up_question, occurrence_count,
+                assignment_attempts, booking_status,
                 triage_reason, verdict_note, verdict_at, repair_note,
                 repaired_at, technician_id, reopen_count, developer_signed,
                 buyer_signed, buyer_signed_at, buyer_signoff_note,
                 developer_signed_at, developer_signed_by, verification_status,
                 inspection_outcome, created_at, closed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             cases_to_insert,
         )
 
+        print(f"Inserting {len(assignment_history_to_insert)} assignment attempts...")
+        conn.executemany(
+            """
+            INSERT INTO assignment_history (
+                assignment_id, case_id, technician_id, slot_id, outcome,
+                rejected_reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            assignment_history_to_insert,
+        )
+
         print(f"Inserting {len(photos_to_insert)} photos...")
-        conn.executemany("INSERT INTO case_photos (case_id, path, kind, created_at) VALUES (?, ?, ?, ?)", photos_to_insert)
+        conn.executemany(
+            "INSERT INTO case_photos (photo_id, case_id, path, kind, created_at) VALUES (?, ?, ?, ?, ?)",
+            [(f"CP-{index:04d}", *row) for index, row in enumerate(photos_to_insert, start=1)],
+        )
 
         print(f"Inserting {len(events_to_insert)} case events...")
-        conn.executemany("INSERT INTO case_events (case_id, type, payload, created_at) VALUES (?, ?, ?, ?)", events_to_insert)
+        conn.executemany(
+            "INSERT INTO case_events (event_id, case_id, type, payload, created_at) VALUES (?, ?, ?, ?, ?)",
+            [(f"CE-{index:04d}", *row) for index, row in enumerate(events_to_insert, start=1)],
+        )
 
         print(f"Inserting {len(approvals_to_insert)} approvals...")
         conn.executemany("INSERT INTO approvals (approval_id, case_id, reasons, status, decided_by, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?)", approvals_to_insert)
@@ -794,20 +894,72 @@ def seed_history():
 
         print(f"Inserting {len(buyer_messages_to_insert)} buyer messages...")
         conn.executemany(
-            "INSERT INTO buyer_messages (case_id, title, body, created_at) VALUES (?, ?, ?, ?)",
-            buyer_messages_to_insert,
+            "INSERT INTO buyer_messages (message_id, case_id, title, body, created_at) VALUES (?, ?, ?, ?, ?)",
+            [(f"BM-{index:04d}", *row) for index, row in enumerate(buyer_messages_to_insert, start=1)],
         )
 
         print(f"Inserting {len(outbox_to_insert)} outbox email notifications...")
         conn.executemany(
-            "INSERT INTO outbox (case_id, to_addr, subject, body, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            outbox_to_insert,
+            "INSERT INTO outbox (email_id, case_id, to_addr, subject, body, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(f"OB-{index:04d}", *row) for index, row in enumerate(outbox_to_insert, start=1)],
         )
 
-        # Book slots for active live cases
-        conn.execute("UPDATE slots SET case_id = 'L-001', kind = 'visit' WHERE slot_id = (SELECT slot_id FROM slots WHERE technician_id = 'T-03' AND start_at LIKE '%T09:00%' LIMIT 1)")
-        conn.execute("UPDATE slots SET case_id = 'L-002', kind = 'repair' WHERE slot_id = (SELECT slot_id FROM slots WHERE technician_id = 'T-04' AND start_at LIKE '%T14:00%' LIMIT 1)")
-        conn.execute("UPDATE slots SET case_id = 'L-005', kind = 'visit' WHERE slot_id = (SELECT slot_id FROM slots WHERE technician_id = 'T-02' AND start_at LIKE '%T11:00%' LIMIT 1)")
+        # Occupy a slot only after the seeded case has a confirmed booking.
+        confirmed_bookings = [
+            ("C-0001", "T-03", "%T09:00%", "visit"),
+            ("C-0002", "T-04", "%T14:00%", "repair"),
+            ("C-0005", "T-02", "%T11:00%", "visit"),
+        ]
+        for case_id, technician_id, start_pattern, kind in confirmed_bookings:
+            slot = cursor.execute(
+                "SELECT slot_id FROM slots WHERE technician_id = ? AND start_at LIKE ? ORDER BY start_at LIMIT 1",
+                (technician_id, start_pattern),
+            ).fetchone()
+            if slot is None:
+                raise RuntimeError(f"Unable to find confirmed booking slot for {case_id}")
+            cursor.execute(
+                """
+                UPDATE slots
+                SET case_id = ?, kind = ?
+                WHERE slot_id = ?
+                  AND EXISTS (
+                      SELECT 1 FROM cases
+                      WHERE case_id = ? AND booking_status = 'CONFIRMED'
+                  )
+                """,
+                (case_id, kind, slot["slot_id"], case_id),
+            )
+            cursor.execute(
+                """
+                UPDATE assignment_history
+                SET slot_id = ?
+                WHERE case_id = ? AND outcome = 'ACCEPTED'
+                """,
+                (slot["slot_id"], case_id),
+            )
+
+        accepted_slot = cursor.execute(
+            "SELECT slot_id FROM slots WHERE technician_id = ? AND start_at LIKE ? ORDER BY start_at LIMIT 1",
+            ("T-02", "2026-10-20T11:00%"),
+        ).fetchone()
+        if accepted_slot is None:
+            raise RuntimeError("Unable to find confirmed booking slot for C-0014")
+        cursor.execute(
+            """
+            UPDATE slots
+            SET case_id = ?, kind = 'visit'
+            WHERE slot_id = ?
+              AND EXISTS (
+                  SELECT 1 FROM cases
+                  WHERE case_id = ? AND booking_status = 'CONFIRMED'
+              )
+            """,
+            (
+                "C-0014",
+                accepted_slot["slot_id"],
+                "C-0014",
+            ),
+        )
 
         conn.commit()
 

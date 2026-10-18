@@ -50,10 +50,11 @@ def seed_core():
 
     try:
         # 1. Units & Buyers
-        print("🏢 Seeding 450 units and buyers...")
+        print("Seeding 450 units and buyers...")
         unit_rows = []
         buyer_rows = []
 
+        numeric_buyer_index = 1
         for block in BLOCKS:
             contractor = CONTRACTORS[block]
             for floor in range(1, FLOORS + 1):
@@ -61,27 +62,48 @@ def seed_core():
                     u_id = f"{block}-{floor}-{stack}"
                     unit_rows.append((u_id, block, floor, stack, contractor))
 
-                    # Demo resident for A-12-08
                     if u_id == "A-12-08":
-                        buyer_rows.append(("B-A-12-08", "Aisyah Rahman", "aisyah.demo@example.com", u_id))
+                        buyer_rows.append((f"B-{numeric_buyer_index:04d}", "Aisyah Rahman", "aisyah.demo@example.com", u_id))
                     else:
-                        buyer_rows.append((f"B-{u_id}", f"Resident {u_id}", f"buyer.{u_id.lower().replace('-', '.')}@example.com", u_id))
+                        buyer_rows.append((f"B-{numeric_buyer_index:04d}", f"Resident {u_id}", f"buyer.{u_id.lower().replace('-', '.')}@example.com", u_id))
+                    numeric_buyer_index += 1
 
-        conn.executemany("INSERT OR REPLACE INTO units (unit_id, block, floor, stack, contractor) VALUES (?, ?, ?, ?, ?)", unit_rows)
-        conn.executemany("INSERT OR REPLACE INTO buyers (buyer_id, name, email, unit_id) VALUES (?, ?, ?, ?)", buyer_rows)
-        print(f"✅ Created {len(unit_rows)} units and {len(buyer_rows)} buyers.")
+        conn.executemany(
+            """
+            INSERT INTO units (unit_id, block, floor, stack, contractor)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(unit_id) DO UPDATE SET
+                block = excluded.block,
+                floor = excluded.floor,
+                stack = excluded.stack,
+                contractor = excluded.contractor
+            """,
+            unit_rows,
+        )
+        conn.executemany(
+            """
+            INSERT INTO buyers (buyer_id, name, email, unit_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(buyer_id) DO UPDATE SET
+                name = excluded.name,
+                email = excluded.email,
+                unit_id = excluded.unit_id
+            """,
+            buyer_rows,
+        )
+        print(f"Created {len(unit_rows)} units and {len(buyer_rows)} buyers.")
 
         # 2. Technicians
-        print("👷 Seeding 6 technicians...")
+        print("Seeding 6 technicians...")
         tech_rows = [
             (t["id"], t["name"], t["email"], json.dumps(t["skills"]), json.dumps(t["blocks"]))
             for t in TECHNICIANS
         ]
         conn.executemany("INSERT OR REPLACE INTO technicians (technician_id, name, email, skills, blocks) VALUES (?, ?, ?, ?, ?)", tech_rows)
-        print(f"✅ Created {len(tech_rows)} technicians.")
+        print(f"Created {len(tech_rows)} technicians.")
 
         # 3. Technician Availability Slots (2 weeks: 09:00, 11:00, 14:00, 16:00)
-        print("📅 Seeding 2 weeks of technician booking slots...")
+        print("Seeding 2 weeks of technician booking slots...")
         slot_rows = []
         slot_times = ["09:00", "11:00", "14:00", "16:00"]
         slot_idx = 1
@@ -102,11 +124,11 @@ def seed_core():
                     slot_rows.append((slot_id, tid, start_at, end_at, None, None))
 
         conn.executemany("INSERT OR REPLACE INTO slots (slot_id, technician_id, start_at, end_at, case_id, kind) VALUES (?, ?, ?, ?, ?, ?)", slot_rows)
-        print(f"✅ Created {len(slot_rows)} available slots.")
+        print(f"Created {len(slot_rows)} available slots.")
 
         conn.commit()
         conn.close()
-        print("🎉 seed_core.py completed successfully!")
+        print("seed_core.py completed successfully!")
 
     finally:
         pass
@@ -114,4 +136,3 @@ def seed_core():
 
 if __name__ == "__main__":
     seed_core()
-

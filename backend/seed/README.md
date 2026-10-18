@@ -9,6 +9,8 @@ python backend/seed/seed_history.py
 ```
 *(Then click the **Refresh** button in your VS Code SQLite Viewer tab).*
 
+This rebuilds `data/seed.db` from scratch and replaces `data/simephony.db` with the generated seed. Back up local data first if you need to keep it.
+
 ---
 
 ### 2. If you just pulled from Git:
@@ -27,4 +29,3 @@ copy data\seed.db data\simephony.db
 ## Script Breakdown
 - `seed_core.py` (P3) — 450 units, 450 buyers, 6 technicians, 2 weeks of slots.
 - `seed_history.py` (P4) — 18-month defect history, planted story (A-12-08 & stack 08 leaks), all 13 tables, and sentence-transformers vector embeddings.
-
