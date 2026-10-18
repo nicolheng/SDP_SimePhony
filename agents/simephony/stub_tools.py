@@ -27,3 +27,8 @@ def get_available_slots(skill: str, block: str) -> dict:
 
 def assign_technician(case_id: str, technician_id: str, slot_id: str, reason: str) -> dict:
     return {"ok": True}
+
+# Create a new function that checks if a case is within the 30-day grace period
+def is_within_grace_period(case_id: str) -> bool:
+    # For the purpose of this stub, we will assume that all cases are within the grace period
+    return True

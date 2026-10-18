@@ -11,7 +11,7 @@ client = OpenAI(
 
 # 2. Define which models to use
 MODEL_VL = "llava-llama3"   # For looking at photos
-MODEL_TEXT = "qwen2.5:32b"  # For reading text and reasoning
+MODEL_TEXT = "qwen2.5:7b"  # For reading text and reasoning
 
 def get_client():
     return client
