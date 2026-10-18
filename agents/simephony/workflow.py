@@ -8,6 +8,10 @@ from langgraph.graph import StateGraph, END
 from .intake import intake_node
 from .similar_defect import similar_defect_node
 from .triage import triage_node
+from .booking import booking_node
+from .comms import comms_node
+from .verification import verification_node
+from .recurrence import recurrence_node
 from .initial_inspection import initial_inspection_node
 
 # 1. Setup Qwen Client (Points to local Ollama by default)
@@ -16,7 +20,6 @@ client = OpenAI(
     api_key=os.getenv("QWEN_API_KEY", "ollama")
 )
 MODEL_VL = os.getenv("QWEN_MODEL_VL", "llava-llama3")
-# SAFETY FIX: Default to 7b to prevent 16GB RAM laptops from freezing!
 MODEL_TEXT = os.getenv("QWEN_MODEL_TEXT", "qwen2.5:7b") 
 
 # 2. Define the State (The "Memory" passed between agents)
@@ -27,25 +30,57 @@ class AgentState(TypedDict):
     intake_result: dict
     similar_cases_result: dict
     triage_result: dict
+    booking_result: dict
+    comms_result: dict
     initial_inspection_result: dict
     missing_info: list[str]
+    current_status: str # Case status (e.g., SUBMITTED, ASSIGNED, etc.)
+    reassignment_count: int # Number of times a technician rejected the booking
+    tried_technicians: list[str] # List of technicians who already rejected the case
 
 # 3. Build the LangGraph
 workflow = StateGraph(AgentState)
+
+# Nodes
 workflow.add_node("intake", intake_node)
 workflow.add_node("similar_defect", similar_defect_node)
 workflow.add_node("triage", triage_node)
+workflow.add_node("booking", booking_node)
+workflow.add_node("comms", comms_node)
+workflow.add_node("verification", verification_node)
+workflow.add_node("recurrence", recurrence_node)
 workflow.add_node("initial_inspection", initial_inspection_node)
 
 # 4. Define the edges
+def should_reassign(state: AgentState):
+    booking_res = state.get("booking_result", {})
+    if booking_res.get("assignment_ok") is False:
+        # Increment reassignment count and add to tried techs
+        reassign_count = state.get("reassignment_count", 0) + 1
+        tried_techs = state.get("tried_technicians", [])
+        
+        # Add the failed tech to the tried list
+        failed_tech = booking_res.get("assigned_technician")
+        if failed_tech and failed_tech not in tried_techs:
+            tried_techs.append(failed_tech)
+        
+        # Update state (note: LangGraph nodes update state, but edges just route)
+        # Since edges can't modify state directly, we must handle this logic in the booking_node 
+        # or a separate 'rejection_node'.
+        # For now, we will just route back to booking.
+        return "booking"
+    return "comms"
+
 workflow.set_entry_point("intake")
 workflow.add_edge("intake", "similar_defect")
 workflow.add_edge("similar_defect", "triage")
+workflow.add_edge("triage", "booking")
+workflow.add_conditional_edges("booking", should_reassign)
+workflow.add_edge("comms", END)
 
-# TODO: On Day 4, add a conditional edge here. 
-# If similar_cases_result.ai_analysis.recommendation == "flag_for_extra_inspection", 
-# route to initial_inspection. Otherwise, route to END.
-# workflow.add_conditional_edges("triage", lambda state: "initial_inspection" if state["similar_cases_result"]["ai_analysis"]["recommendation"] == "flag_for_extra_inspection" else END)
+# Event-driven edges (Placeholders for later implementation)
+# Note: In a real app, these would be triggered by external events (e.g., repair.done)
+# and would route to verification, recurrence, etc.
 
 # 5. Compile the graph
 agent_app = workflow.compile()
@@ -59,19 +94,21 @@ if __name__ == "__main__":
         "intake_result": {},
         "similar_cases_result": {},
         "triage_result": {},
+        "booking_result": {},
+        "comms_result": {},
         "initial_inspection_result": {},
-        "missing_info": []
+        "missing_info": [],
+        "current_status": "SUBMITTED"
     }
     
     print("🚀 Running Workflow Test...")
     final_state = None
     try:
-        # FIX: workflow.stream returns a generator, we must loop through it
         for event in agent_app.stream(example_state, stream_mode="values"):
             final_state = event
             
         if final_state:
             print("\n✅ Workflow Completed Successfully!")
-            print(json.dumps(final_state.get("initial_inspection_result", {}), indent=2))
+            print(json.dumps(final_state.get("comms_result", {}), indent=2))
     except Exception as e:
         print(f"\n❌ Workflow Failed: {e}")

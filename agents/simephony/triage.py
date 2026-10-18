@@ -1,9 +1,8 @@
 import yaml
 from .llm_client import get_client, get_models
-from .stub_tools import get_available_slots, assign_technician
 
 def triage_node(state: dict) -> dict:
-    """P2 (Nicol) owns this. Assign technician based on rules.yaml and availability."""
+    """P2 (Nicol) owns this. Determines urgency and required skill for a defect."""
     client = get_client()
     _, text_model = get_models()
 
@@ -44,64 +43,16 @@ def triage_node(state: dict) -> dict:
     skills = rules.get("category_to_skill", {}).get(category, ["general"])
     skill = skills[0] 
     
-    block = state.get("unit_id", "A-12-08").split("-")[0]
-    
-    # 4. Get available slots for that skill
-    slots_data = get_available_slots(skill=skill, block=block)
-    slots = slots_data.get("slots", [])
-    
-    if not slots:
-        state["triage_result"] = {"error": "No available slots for skill: " + skill}
-        return state
-
-    # 5. Slot Selection Logic
-    preferred_slot_id = state.get("preferred_slot_id")
-    chosen_slot = None
-    
-    if preferred_slot_id:
-        # Try to find the preferred slot in the available list
-        chosen_slot = next((s for s in slots if s["slot_id"] == preferred_slot_id), None)
-    
-    # Fallback to the first available slot if preferred is missing or unavailable
-    if not chosen_slot:
-        chosen_slot = slots[0]
-
-    # 6. Assign the technician
-    assignment = assign_technician(
-        case_id="C-NEW", 
-        technician_id=chosen_slot["technician_id"], 
-        slot_id=chosen_slot["slot_id"], 
-        reason=f"Matched skill {skill} and availability"
-    )
-    
-    # 7. Generate Justification
-    justification_prompt = (
-        f"Explain in one professional sentence why this technician was assigned.\n"
-        f"Defect: {category}, Urgency: {urgency}, Technician: {chosen_slot['technician_id']}, "
-        f"Slot: {chosen_slot['start']}. Mention the risk if urgency is HIGH."
-    )
-    
-    try:
-        just_resp = client.chat.completions.create(
-            model=text_model,
-            messages=[{"role": "user", "content": justification_prompt}],
-            temperature=0.1
-        )
-        justification = just_resp.choices[0].message.content.strip()
-    except Exception:
-        justification = f"Assigned {chosen_slot['technician_id']} for {category} repair."
-
-    # 8. Provide Alternatives (Top 3 available slots)
-    # We filter out the chosen slot and take the top 3.
-    alternatives = [s for s in slots if s["slot_id"] != chosen_slot["slot_id"]][:3]
+    # 4. Save Verdict to Database (Planned)
+    # TODO: Call a tool like `update_case_triage(case_id, urgency, triage_reason)`
+    # For now, we just log that we would save it.
+    print(f"💾 [DB SAVE] Case {state.get('case_id', 'C-NEW')}: Urgency={urgency}, Skill={skill}")
 
     state["triage_result"] = {
         "urgency": urgency,
-        "assigned_technician": chosen_slot["technician_id"],
-        "slot_id": chosen_slot["slot_id"],
-        "assignment_ok": assignment.get("ok", False),
         "assigned_skill": skill,
-        "justification": justification,
-        "alternatives": alternatives
+        "category": category,
+        "justification": f"Assigned {skill} based on {category} and {urgency} urgency."
     }
+    
     return state

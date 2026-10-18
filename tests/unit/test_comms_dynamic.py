@@ -25,8 +25,8 @@ def test_dynamic_recipient():
         mock_get_unit.assert_called_once_with("A-12-08")
         
         # Verify send_email was called with the REAL email, not the hardcoded one
-        args, kwargs = mock_send_email.call_args
-        assert args[0] == "real_resident@example.com"
+        _, kwargs = mock_send_email.call_args
+        assert kwargs["to"] == "real_resident@example.com"
 
 def test_dynamic_case_id():
     """Test that the agent uses the case_id from the state."""
@@ -46,8 +46,8 @@ def test_dynamic_case_id():
         comms_node(state)
         
         # Verify send_email was called with the actual case_id from state
-        args, kwargs = mock_send_email.call_args
-        assert args[3] == "C-999" # 4th positional arg is case_id
+        _, kwargs = mock_send_email.call_args
+        assert kwargs["case_id"] == "C-999"
 
 def test_technical_translation():
     """Test that technical notes are translated into resident-friendly language."""
