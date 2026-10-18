@@ -32,17 +32,48 @@ def get_conn(path: Path = DB_PATH):
 def init_schema(path: Path = DB_PATH) -> None:
     with get_conn(path) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        case_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(cases)")
+        }
+        if "assignment_attempts" not in case_columns:
+            conn.execute(
+                "ALTER TABLE cases ADD COLUMN assignment_attempts INTEGER DEFAULT 0"
+            )
+        if "booking_status" not in case_columns:
+            conn.execute("ALTER TABLE cases ADD COLUMN booking_status TEXT")
+
+
+def next_record_id(conn: sqlite3.Connection, table: str) -> str:
+    """Return the next prefixed ID for a supported event, photo, message, or email table."""
+    identifiers = {
+        "case_events": ("event_id", "CE"),
+        "case_photos": ("photo_id", "CP"),
+        "buyer_messages": ("message_id", "BM"),
+        "outbox": ("email_id", "OB"),
+    }
+    if table not in identifiers:
+        raise ValueError(f"Unsupported record ID table: {table}")
+    id_column, prefix = identifiers[table]
+    last_id = conn.execute(
+        f"""
+        SELECT {id_column} FROM {table}
+        WHERE {id_column} GLOB ?
+        ORDER BY CAST(substr({id_column}, ?) AS INTEGER) DESC
+        LIMIT 1
+        """,
+        (f"{prefix}-[0-9]*", len(prefix) + 2),
+    ).fetchone()
+    next_number = int(last_id[id_column][len(prefix) + 1:]) + 1 if last_id else 1
+    return f"{prefix}-{next_number:04d}"
 
 
 def ensure_db() -> None:
     """Restore from seed.db if the live DB is missing; otherwise create an empty schema."""
-    if DB_PATH.exists():
-        return
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if SEED_DB_PATH.exists():
-        shutil.copyfile(SEED_DB_PATH, DB_PATH)
-    else:
-        init_schema()
+    if not DB_PATH.exists():
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if SEED_DB_PATH.exists():
+            shutil.copyfile(SEED_DB_PATH, DB_PATH)
+    init_schema(DB_PATH)
 
 
 def reset_db() -> None:

@@ -129,3 +129,41 @@ Runs when the case reaches `REPAIRED`. Its guide is shown on the buyer's sign-of
 - Reopen only a `CLOSED` case, within the grace period, with a mandatory new photo; `reopen_count` goes up.
 - On the 3rd occurrence or a stack cluster → `request_extra_inspection` → pause at `ESCALATION_PENDING`.
 - Approved → trigger InitialInspectionAgent. Rejected → normal repair booking.
+
+## AI Intake JSON Contract
+The IntakeAgent outputs this exact JSON. P3 must map these fields to the `cases` table. P4 must display these fields on the frontend.
+
+{
+  "category": "string (must match rules.yaml categories)",
+  "sub_category": "string",
+  "location_in_unit": "string",
+  "summary": "string",
+  "urgency": "high" | "normal" | "low",
+  "mentions_previous_issue": boolean,
+  "mentioned_recurrence_count": integer | null,
+  "missing_info": ["string"],
+  "follow_up_question": "string (Polite question to buyer if missing_info is not empty. Empty string if none)",
+  "preliminary_outcome": "VALID_DEFECT" | "NOT_A_DEFECT" | "INSUFFICIENT_INFORMATION",
+  "mismatch_detected": boolean
+}
+
+### Database Mapping (For P3 - Backend)
+| AI JSON Key | Database Column (`cases` table) | Notes |
+| :--- | :--- | :--- |
+| `category` | `category` | Direct match. Must match `rules.yaml`. |
+| `sub_category` | `sub_category` | Direct match. |
+| `location_in_unit` | `location_in_unit` | Direct match. |
+| `summary` | `summary` | Direct match. (Raw text goes to `description`). |
+| `urgency` | `urgency` | Must be lowercase: `high`, `normal`, or `low`. |
+| `missing_info` | `missing_info` | Stored as JSON text array. |
+| `follow_up_question` | `follow_up_question` | Direct match. Drives `INFO_NEEDED` status. |
+| `preliminary_outcome` | `inspection_outcome` | Maps to DB enum (`VALID_DEFECT`, etc.). |
+| `mentioned_recurrence_count`| `occurrence_count` | P3 saves this to track recurrences. |
+
+### UI/Event Mapping (For P4 - Frontend)
+| AI JSON Key | Frontend Action |
+| :--- | :--- |
+| `urgency` | Color-code the case card (Red=high, Yellow=normal, Green=low). |
+| `follow_up_question` | If not empty, show a popup/modal asking the buyer this question. |
+| `mismatch_detected` | If `true`, show a warning banner: "Photo and description don't match. Please verify." |
+| `preliminary_outcome` | If `INSUFFICIENT_INFORMATION`, prompt user to retake photo. |

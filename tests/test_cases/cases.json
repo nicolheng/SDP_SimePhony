@@ -1,0 +1,68 @@
+[
+    {
+        "id": 1,
+        "description": "Water leaking from ceiling in master bedroom.",
+        "image_path": "tests/test_cases/images/ceiling-water-leak.jpg",
+        "expected_category": "water_leak"
+    },
+    {
+        "id": 2,
+        "description": "Dinding retak sikit kat bilik air.",
+        "image_path": "tests/test_cases/images/cracked_wall.jpg",
+        "expected_category": "wall_crack"
+    },
+    {
+        "id": 3,
+        "description": "This is the 3rd time this happens! Water is leaking again. Please fix it properly.",
+        "image_path": "tests/test_cases/images/water_leak_again.jpg",
+        "expected_category": "water_leak"
+    },
+    {
+        "id": 4,
+        "description": "Bocor.",
+        "image_path": "tests/test_cases/images/bocor.jpg",
+        "expected_category": "water_leak"
+    },
+    {
+        "id": 5,
+        "description": "There is a crack on my bathroom wall.",
+        "image_path": "tests/test_cases/images/blur.jpg",
+        "expected_category": "wall_crack"
+    },
+    {
+        "id": 6,
+        "description": "The floor tile in my living room sounds hollow when I tap it and feels slightly uneven.",
+        "image_path": "tests/test_cases/images/hollow_tile.jpg",
+        "expected_category": "flooring"
+    },
+    {
+        "id": 7,
+        "description": "There is a sparking sound coming from the electrical socket in my kitchen.",
+        "image_path": "tests/test_cases/images/sparks.jpg",
+        "expected_category": "electrical"
+    },
+    {
+        "id": 8,
+        "description": "Small scratch on wall.",
+        "image_path": "tests/test_cases/images/scratch.jpg",
+        "expected_category": "wall_finish"
+    },
+    {
+        "id": 9,
+        "description": "Bedroom door doesn't close properly and gets stuck halfway.",
+        "image_path": "tests/test_cases/images/door_misaligned.jpg",
+        "expected_category": "door_window"
+    },
+    {
+        "id": 10,
+        "description": "Aircond not cold.",
+        "image_path": "tests/test_cases/images/cracked_wall.jpg",
+        "expected_category": "air_conditioning"
+    },
+    {
+        "id": 11,
+        "description": "Water is pooling around the floor drain.",
+        "image_path": "data/test_cases/images/bathroom_pooling.jpg",
+        "expected_category": "bathroom"
+    }
+]

@@ -23,7 +23,7 @@ frontend/           Next.js buyer / technician / SDP apps (P3, P4)
 data/               seed.db (committed) and simephony.db (live, gitignored)
 uploads/            photo uploads (gitignored)
 rules.yaml          shared business rules
-CONTRACTS.md        shared contracts 
+CONTRACTS.md        shared contracts
 ```
 
 ## Setup

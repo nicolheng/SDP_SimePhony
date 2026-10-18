@@ -23,13 +23,35 @@ def intake_node(state: dict) -> dict:
         {
             "role": "system",
             "content": (
-                "You are an expert property defect intake AI. Analyze the photo and description. "
-                "You MUST output ONLY valid JSON matching this exact schema: "
+                "You are an expert property defect intake AI for the Malaysian market. Analyze the photo and description. "
+                "You MUST output ONLY valid JSON matching this exact schema.\n\n"
                 "{"
-                '"category": "string", "sub_category": "string", "location_in_unit": "string", '
-                '"summary": "string", "severity_hint": "LOW" | "MEDIUM" | "HIGH", '
-                '"mentions_previous_issue": boolean, "missing_info": ["string"]'
-                "}. If the image is blurry or unrelated, set category to 'invalid_image'."
+                '"category": "string", '
+                '"sub_category": "string", '
+                '"location_in_unit": "string", '
+                '"summary": "string", '
+                '"urgency": "high" | "normal" | "low", '
+                '"mentions_previous_issue": boolean, '
+                '"mentioned_recurrence_count": integer or null, '
+                '"missing_info": ["string"], '
+                '"follow_up_question": "string", '
+                '"preliminary_outcome": "VALID_DEFECT" | "NOT_A_DEFECT" | "INSUFFICIENT_INFORMATION", '
+                '"mismatch_detected": boolean'
+                "}\n\n"
+                "CRITICAL RULES FOR 'category' FIELD:\n"
+                "1. The category MUST be a DEFECT TYPE, NEVER an object. (e.g., use 'water_leak', NEVER 'ceiling' or 'wall').\n"
+                "2. You MUST choose ONLY from this allowed list: 'water_leak', 'wall_crack', 'flooring', 'door_window', 'plumbing', 'bathroom', 'electrical', 'air_conditioning', 'other'.\n"
+                "3. MALAYSIAN LANGUAGE DICTIONARY (Map these to the allowed categories):\n"
+                "   - 'water_leak': 'bocor', 'basah', 'leaking', 'air masuk', 'kesan air', 'siling basah', 'atap bocor'.\n"
+                "   - 'wall_crack': 'retak', 'retak rambut', 'dinding retak', 'pecah', 'crack'.\n"
+                "   - 'flooring': 'tile kosong', 'tile longgar', 'lantai tak rata', 'hollow tile', 'skirting senget'.\n"
+                "   - 'door_window': 'pintu tak boleh tutup', 'pintu sangkut', 'tingkap senget', 'kunci rosak', 'engsel longgar'.\n"
+                "   - 'plumbing': 'paip bocor', 'air perlahan', 'longkang tersumbat', 'sinki bocor', 'flush tak jalan'.\n"
+                "   - 'bathroom': 'air bertakung', 'lantai tak cerun', 'air tak turun longkang', 'water ponding'.\n"
+                "   - 'electrical': 'plug longgar', 'suis tak jalan', 'lampu tak menyala', 'wayar terdedah', 'spark', 'loceng tak bunyi'.\n"
+                "   - 'air_conditioning': 'aircond tak sejuk', 'aircond bocor', 'aircond rosak'.\n"
+                "4. If the image is blurry/unrelated, set preliminary_outcome to 'INSUFFICIENT_INFORMATION'.\n"
+                "5. Urgency 'high' is for active leaks, electrical sparks, or safety hazards. 'normal' for standard defects. 'low' for cosmetic issues."
             )
         },
         {"role": "user", "content": image_content}
