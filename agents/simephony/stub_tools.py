@@ -6,15 +6,34 @@ def get_unit(unit_id: str) -> dict:
 
 
 def find_similar_cases(unit_id: str, category: str) -> dict:
+    """
+    MOCK DATABASE QUERY. 
+    """
+    # NUCLEAR OPTION: Just check the unit ID for the planted story
+    if unit_id == "A-12-08":
+        return {
+            "past_case_count": 2,
+            "cases": [
+                {"case_id": "H-0101", "unit_id": "A-12-08", "category": "water_leak", "reason": "same unit"},
+                {"case_id": "H-0144", "unit_id": "A-12-08", "category": "water_leak", "reason": "same unit"},
+            ],
+        }
+    
+    # Clean unit: 0 past cases
     return {
-        "recurrence_count": 2,
-        "cases": [
-            {"case_id": "H-0101", "unit_id": "A-12-08", "category": "water_leak", "reason": "same unit"},
-            {"case_id": "H-0144", "unit_id": "A-12-08", "category": "water_leak", "reason": "same unit"},
-            {"case_id": "H-0090", "unit_id": "A-11-08", "category": "water_leak", "reason": "same stack"},
-        ],
+        "past_case_count": 0,
+        "cases": []
     }
 
+def send_email(to: str, subject: str, body: str, case_id: str = "UNKNOWN") -> dict:
+    """
+    STUB: Simulates sending an email. 
+    P3 will replace this with the real Gmail SMTP logic later.
+    """
+    print(f"📧 [STUB EMAIL] To: {to}")
+    print(f"📧 [STUB EMAIL] Subject: {subject}")
+    print(f"📧 [STUB EMAIL] Body preview: {body[:100]}...")
+    return {"status": "stub_sent"}
 
 def get_available_slots(skill: str, block: str) -> dict:
     return {

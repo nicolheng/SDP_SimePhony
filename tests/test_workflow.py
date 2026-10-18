@@ -4,7 +4,7 @@ os.environ["USE_LOCAL_OLLAMA"] = "true"
 
 from agents.simephony.workflow import agent_app
 
-image_path = "tests/test_wall_break.jpeg"
+image_path = "tests/test_cases/images/test_wall_break.jpeg"
 
 if not os.path.exists(image_path):
     print(f" Error: Please check if '{image_path}' exists!")
