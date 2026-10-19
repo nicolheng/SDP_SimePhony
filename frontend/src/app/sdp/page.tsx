@@ -18,6 +18,7 @@ export default function SdpOverview() {
   const records = useDemo((s) => s.systemicIssues);
   const text = useMemo(() => insight(cases, records), [cases, records]);
   const pending = approvals.filter((a) => a.status === "pending");
+  const overdue = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && c.signoffOverdueAt), [cases]);
   const awaitingDev = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && !c.signoff?.developer), [cases]);
   const recent = useMemo(() => events.filter((e) => e.type !== "agent.step").slice(-8), [events]);
 
@@ -37,6 +38,21 @@ export default function SdpOverview() {
           </div>
           <ArrowRight className="size-5" />
         </Link>
+      )}
+
+      {overdue.length > 0 && (
+        <Panel title={`${overdue.length} high-urgency case(s) with overdue buyer sign-off`} className="mb-6 ring-2 ring-red-200">
+          <p className="mb-3 text-base text-zinc-600">Not auto-closed because they are high urgency. Contact the buyer to confirm the repair.</p>
+          <ul className="flex flex-wrap gap-2">
+            {overdue.map((c) => (
+              <li key={c.id}>
+                <Link href={`/sdp/defects/${c.id}`} className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-base ring-1 ring-red-200 hover:ring-brand">
+                  <span className="font-mono text-sm">{c.id}</span> {c.summary}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Panel>
       )}
 
       {awaitingDev.length > 0 && (

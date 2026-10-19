@@ -1,7 +1,7 @@
 "use client";
 // Which technician is "signed in" on this device (demo only; no real login).
 import { useSyncExternalStore } from "react";
-import { TECHNICIANS } from "./constants";
+import { TECHNICIANS, WORKERS } from "./constants";
 
 const KEY = "simephony-technician";
 const DEFAULT = TECHNICIANS[0].id;
@@ -10,7 +10,7 @@ const listeners = new Set<() => void>();
 function read() {
   try {
     const v = localStorage.getItem(KEY);
-    if (v && TECHNICIANS.some((t) => t.id === v)) return v;
+    if (v && WORKERS.some((t) => t.id === v)) return v;
   } catch {}
   return DEFAULT;
 }

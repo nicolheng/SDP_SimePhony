@@ -45,7 +45,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
           <ul className="flex flex-wrap gap-1.5">
             {b.neighbouringUnits.map((u) => (
               <li key={u.unitId} className="rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-900 ring-1 ring-amber-200">
-                <span className="font-mono font-semibold">{u.unitId}</span> · {u.cases} case(s), last {fmtDate(u.last)}
+                <span className="font-mono font-semibold">{u.unitId}</span> · last {fmtDate(u.last)}
               </li>
             ))}
           </ul>

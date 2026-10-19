@@ -1,5 +1,5 @@
 "use client";
-import { CalendarClock, ChevronRight, ClipboardCheck, Hammer, History, ScrollText } from "lucide-react";
+import { CalendarClock, ChevronRight, ClipboardCheck, Hammer, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { PhotoThumb } from "@/components/photo";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
@@ -10,7 +10,7 @@ import { jobKind, jobSlot } from "./use-my-jobs";
 
 export function JobCard({ c }: { c: Case }) {
   const kind = jobKind(c);
-  const repair = kind === "Repair";
+  const repair = c.status === "REPAIR_BOOKED";
   return (
     <Link href={`/technician/jobs/${c.id}`} className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200">
       <div className="relative shrink-0">
@@ -33,11 +33,6 @@ export function JobCard({ c }: { c: Case }) {
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <StatusBadge status={c.status} />
-          {c.occurrence > 1 && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-amber-200">
-              <History className="size-3" /> {c.occurrence}× in unit
-            </span>
-          )}
           {c.inspectionBrief && (
             <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-violet-200">
               <ScrollText className="size-3" /> AI brief

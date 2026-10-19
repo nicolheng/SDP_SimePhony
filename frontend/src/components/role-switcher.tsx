@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const ROLES = [
   { href: "/sdp", label: "Sime Darby Property staff" },
   { href: "/buyer", label: "Buyer" },
-  { href: "/technician", label: "Technician" },
+  { href: "/technician", label: "Technician / Subcontractor" },
 ];
 
 /** Demo role picker shown on every view. */

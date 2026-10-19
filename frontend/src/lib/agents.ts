@@ -1,6 +1,6 @@
 // Rule-based stand-ins for the ADK agents, so the UI flow works before the real agents exist.
 // Each function mirrors one agent's contract in CONTRACTS.md §7.
-import { CATEGORY_LABEL, getUnit, RULES, SLOT_TIMES, TECHNICIANS } from "./constants";
+import { CATEGORY_LABEL, getTechnician, getUnit, REPAIR_PLAN, RULES, SLOT_HOURS, SLOT_TIMES, SUBCONTRACTORS, TECHNICIANS, WORKERS, workerLabel } from "./constants";
 import { addDays, dayKey, fmtDate, fmtDateTime, slotIso } from "./dates";
 import type { Case, Category, DemoState, InspectionBrief, SimilarRef, Urgency, VerificationGuide } from "./types";
 
@@ -128,6 +128,54 @@ export function freeSlotsFor(s: DemoState, category: Category, block: string) {
   return upcomingSlots(s.now).filter((slot) => techs.some((t) => !busy(s, t.id, slot)));
 }
 
+// ---------- Repair allocation ----------
+
+/** Workers who can do this repair: the planned trade (subcontractor for specialised work), else anyone with the skill. */
+export function repairersFor(c: Pick<Case, "category" | "unitId">) {
+  const plan = REPAIR_PLAN[c.category];
+  const block = getUnit(c.unitId).block;
+  const fits = (w: (typeof WORKERS)[number]) => w.blocks.includes(block) && w.skills.some((sk) => plan.skills.includes(sk));
+  const planned = WORKERS.filter((w) => w.kind === plan.by && fits(w));
+  return planned.length ? planned : WORKERS.filter(fits);
+}
+
+/** Number of consecutive 2-hour blocks a repair needs (max one full day). */
+export const repairBlocks = (hours: number) => Math.min(SLOT_TIMES.length, Math.max(1, Math.ceil(hours / SLOT_HOURS)));
+
+export const fmtHours = (h: number) => (h >= 8 ? "about 1 day" : `about ${h % 1 ? h.toFixed(1) : h} hour${h === 1 ? "" : "s"}`);
+
+export interface RepairOption {
+  start: string;
+  slots: string[];
+  workerIds: string[];
+}
+
+/** Start times where at least one suitable worker is free for the whole estimated job. */
+export function repairOptions(s: DemoState, c: Case): RepairOption[] {
+  const n = repairBlocks(REPAIR_PLAN[c.category].hours);
+  const pool = repairersFor(c);
+  // Jobs stay within one session: 1 block any time, 2 blocks morning or afternoon, longer = from 9am.
+  const startIdx = n === 1 ? SLOT_TIMES.map((_, i) => i) : n === 2 ? [0, 2] : [0];
+  const days = [...new Set(upcomingSlots(s.now).map(dayKey))];
+  const out: RepairOption[] = [];
+  for (const day of days) {
+    for (const i of startIdx) {
+      const slots = SLOT_TIMES.slice(i, i + n).map((t) => slotIso(day, t));
+      if (slots.length < n) continue;
+      const workerIds = pool.filter((w) => slots.every((sl) => !busy(s, w.id, sl))).map((w) => w.id);
+      if (workerIds.length) out.push({ start: slots[0], slots, workerIds });
+    }
+  }
+  return out;
+}
+
+/** Subcontractor of the defect's trade who joins an approved extra inspection. */
+export function subcontractorFor(c: Pick<Case, "category" | "unitId">) {
+  const plan = REPAIR_PLAN[c.category];
+  const block = getUnit(c.unitId).block;
+  return SUBCONTRACTORS.find((w) => w.blocks.includes(block) && w.skills.some((sk) => plan.skills.includes(sk)));
+}
+
 export function triageAgent(s: DemoState, c: Case, preferredSlot: string) {
   const unit = getUnit(c.unitId);
   const techs = techniciansFor(c.category, unit.block);
@@ -155,11 +203,11 @@ export function triageAgent(s: DemoState, c: Case, preferredSlot: string) {
 // ---------- CommsAgent ----------
 
 export function commsAgent(kind: string, c: Case, extra: Record<string, string> = {}) {
-  const tech = TECHNICIANS.find((t) => t.id === c.technicianId);
+  const tech = getTechnician(c.technicianId);
   const ref = `Case ${c.id} (${c.summary})`;
   switch (kind) {
     case "received":
-      return { title: "We've received your report", body: `${ref}. ${tech?.name ?? "A technician"} will inspect it on ${extra.slot}.${c.occurrence > 1 ? ` We've linked it to ${c.occurrence - 1} earlier report(s) for your unit.` : ""}` };
+      return { title: "We've received your report", body: `${ref}. Inspection visit: ${tech?.name ?? "a technician"} on ${extra.slot}.` };
     case "info_needed":
       return { title: "We need a little more information", body: `${ref}. ${c.followUpQuestion}` };
     case "valid":
@@ -167,7 +215,7 @@ export function commsAgent(kind: string, c: Case, extra: Record<string, string> 
     case "invalid":
       return { title: "Inspection result", body: `${ref}. After inspection, the technician assessed this as not a defect: "${extra.note}". This case is now closed. If the problem gets worse or changes, please submit a new report.` };
     case "repair_booked":
-      return { title: "Repair booked", body: `${ref}. Repair is booked for ${extra.slot}.` };
+      return { title: "Repair booked", body: `${ref}. Repair on ${extra.slot} by ${workerLabel(c.technicianId)}, estimated ${extra.duration}.` };
     case "verify":
       return { title: "Please check the repair and sign off", body: `${ref}. The repair is done. Follow the short checklist in the app, then sign off if it is fixed.` };
     case "closed":

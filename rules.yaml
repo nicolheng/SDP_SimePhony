@@ -17,7 +17,6 @@ category_to_skill:
   roof: [roofing]
   door_window: [carpentry, glazing]
   paint: [painting]
-  cabinetry: [carpentry]
   external_works: [civil]
   other: [general]
 

@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { MobileHeader, Section } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
-import { submitVerification } from "@/lib/api";
+import { signoffDeadline, submitVerification } from "@/lib/api";
+import { fmtDateTime } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 export function VerifyRepair() {
@@ -52,6 +53,9 @@ export function VerifyRepair() {
             <Bot className="size-3.5" /> Verification guide for {c.id}
           </p>
           <p className="mt-1 text-sm text-zinc-700">{g.intro}</p>
+          <p className="mt-2 text-xs font-medium text-amber-800">
+            Sign off by {fmtDateTime(signoffDeadline(c))}. {c.urgency === "high" ? "After that our team will follow up." : "After that the case closes automatically."}
+          </p>
         </Section>
 
         <Section title="Before and after">

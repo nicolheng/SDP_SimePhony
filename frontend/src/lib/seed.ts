@@ -1,5 +1,5 @@
 // Deterministic demo data: 18 months of noisy history plus the planted A-12-08 / stack 08 leak story.
-import { BLOCKS, DEMO_START, FLOORS, STACKS, TECHNICIANS, RULES, unitId } from "./constants";
+import { BLOCKS, DEMO_BUYER, DEMO_START, REPAIR_PLAN, FLOORS, STACKS, TECHNICIANS, RULES, unitId } from "./constants";
 import { addDays } from "./dates";
 import { verificationAgent } from "./agents";
 import type { Case, Category, DemoState, SystemicIssue } from "./types";
@@ -24,6 +24,7 @@ const HISTORY_TEMPLATES: Record<Category, { sub: string; loc: string[]; text: st
   sanitary_fittings: [{ sub: "Loose basin", loc: ["Bathroom"], text: "Basin wobbly, sealant cracked." }],
   electrical: [{ sub: "Faulty socket", loc: ["Living room", "Kitchen"], text: "Power socket not working." }],
   wall_crack: [{ sub: "Hairline crack", loc: ["Living room", "Bedroom 2"], text: "Hairline crack on wall above door." }],
+  structural_crack: [{ sub: "Beam crack", loc: ["Living room"], text: "Diagonal crack along the beam." }],
   tiles: [{ sub: "Hollow tiles", loc: ["Living room", "Kitchen"], text: "Floor tiles sound hollow, one tile cracked." }],
   ceiling: [{ sub: "Ceiling board crack", loc: ["Living room"], text: "Crack line on plaster ceiling." }],
   door_window: [{ sub: "Door misaligned", loc: ["Master bedroom", "Main entrance"], text: "Door scrapes floor, hard to lock." }],
@@ -62,7 +63,7 @@ function historyCase(
   return {
     id,
     unitId: unit,
-    buyerId: `B-${unit}`,
+    buyerId: unit === DEMO_BUYER.unitId ? DEMO_BUYER.id : `B-${unit}`,
     status: opts.invalid ? "INVALID" : "CLOSED",
     category,
     subCategory: pick.sub,
@@ -71,6 +72,7 @@ function historyCase(
     description: pick.text,
     urgency: category === "water_leak" || category === "electrical" ? "high" : "normal",
     technicianId: techFor(category, block),
+    inspectorId: techFor(category, block),
     photos: [{ url: null, kind: "original", at: created }],
     reopenCount: opts.reopens ?? 0,
     occurrence: 1,
@@ -184,6 +186,7 @@ export function buildSeed(): DemoState {
       c.visitSlot = addDays(DEMO_START, slotDays);
     } else if (status === "REPAIR_BOOKED") {
       c.repairSlot = addDays(DEMO_START, slotDays);
+      c.repairHours = REPAIR_PLAN[category].hours;
     } else if (status === "PENDING_SIGNOFF") {
       c.repairNote = category === "paint" ? "Scraped and repainted affected area." : "Cleared and resealed the floor trap.";
       c.repairedAt = addDays(DEMO_START, -1);
@@ -206,7 +209,8 @@ export function buildSeed(): DemoState {
   cases.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   return {
-    version: 3,
+    version: 4,
+    source: "built-in",
     now: DEMO_START,
     cases,
     events: [],

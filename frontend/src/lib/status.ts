@@ -6,7 +6,7 @@ export const STATUS_META: Record<CaseStatus, { label: string; buyer: string; ton
   SUBMITTED: { label: "Submitted", buyer: "Received", tone: "gray" },
   INFO_NEEDED: { label: "Info needed", buyer: "Action needed", tone: "amber" },
   ASSIGNED: { label: "Assigned", buyer: "Technician assigned", tone: "blue" },
-  VISIT_SCHEDULED: { label: "Visit scheduled", buyer: "Inspection booked", tone: "blue" },
+  VISIT_SCHEDULED: { label: "Inspection visit", buyer: "Inspection visit booked", tone: "blue" },
   VALID: { label: "Valid", buyer: "Book your repair", tone: "amber" },
   INVALID: { label: "Invalid", buyer: "Not a defect", tone: "gray" },
   REPAIR_BOOKED: { label: "Repair booked", buyer: "Repair booked", tone: "blue" },
@@ -35,7 +35,7 @@ export const OPEN_STATUSES: CaseStatus[] = [
 export const isOpen = (s: CaseStatus) => OPEN_STATUSES.includes(s);
 
 /** Buyer-facing progress steps (like the "Construction Progress" list in the SDP app). */
-export const BUYER_STEPS = ["Reported", "Inspection", "Repair booked", "Repaired", "Signed off"] as const;
+export const BUYER_STEPS = ["Reported", "Inspection visit", "Repair booked", "Repaired", "Signed off"] as const;
 
 export function buyerStepIndex(s: CaseStatus): number {
   switch (s) {
@@ -71,7 +71,7 @@ export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
   INVALID: "The technician assessed this as not a defect. This case is closed; submit a new report if the problem changes.",
   REPAIR_BOOKED: "Your repair is booked. The technician will fix the defect at the booked time.",
   REPAIRED: "The technician has marked the repair as done. Your sign-off checklist is being prepared.",
-  PENDING_SIGNOFF: "Please check the repair using the checklist and sign off. The developer also signs off; the case closes when both have signed.",
+  PENDING_SIGNOFF: "Please check the repair using the checklist and sign off within 14 days. The developer also signs off; the case closes when both have signed, or automatically after 14 days.",
   CLOSED: "You and the developer have both signed off. You can reopen within the grace period if the problem returns.",
   REOPENED: "You reopened this case with a new photo. We're deciding the next step.",
   ESCALATION_PENDING: "This problem has come back, so our team is reviewing whether a more detailed inspection is needed.",
@@ -104,7 +104,7 @@ export const TECH_EXPLAIN: Record<CaseStatus, string> = {
   INVALID: "You marked this as not a defect. The case is closed.",
   REPAIR_BOOKED: "Repair booked. Fix the defect, then Mark Repaired with a note and photo.",
   REPAIRED: "Repair recorded. The VerificationAgent is preparing the buyer's checklist.",
-  PENDING_SIGNOFF: "Waiting for the buyer and the developer to sign off your repair.",
+  PENDING_SIGNOFF: "Waiting for the buyer and the developer to sign off your repair (the buyer has 14 days, then the case closes automatically).",
   CLOSED: "Both parties signed off. The case is closed.",
   REOPENED: "The buyer reported the problem again. The RecurrenceAgent is checking the history.",
   ESCALATION_PENDING: "The problem keeps coming back. SDP staff are deciding on an extra inspection.",
@@ -114,7 +114,7 @@ export const TECH_EXPLAIN: Record<CaseStatus, string> = {
 /** Technician "My Jobs" tabs. */
 export const TECH_TABS = [
   { id: "todo", label: "To do", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "REPAIR_BOOKED"] },
-  { id: "inspection", label: "Inspection", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION"] },
+  { id: "inspection", label: "Inspection visits", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION"] },
   { id: "repair", label: "Repair", statuses: ["REPAIR_BOOKED"] },
   { id: "waiting", label: "Waiting", statuses: ["ASSIGNED", "VALID", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING"] },
   { id: "completed", label: "Completed", statuses: ["CLOSED", "INVALID"] },

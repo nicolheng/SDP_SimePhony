@@ -19,7 +19,9 @@ It opens on the SDP dashboard. Switch roles with the **role dropdown** (SDP side
 
 ## Data: mock for now
 
-There is no backend yet, so everything runs on a **mock layer** in the browser:
+**Starting data comes from `data/seed.db`** (built by `backend/seed/seed_core.py` + `seed_history.py`). The route `src/app/api/seed/route.ts` reads it read-only with Node's built-in SQLite (`src/lib/seed-db.ts` maps it to the frontend types). If `seed.db` is missing, the app falls back to the built-in `src/lib/seed.ts`; the SDP sidebar shows which one is in use. After regenerating `seed.db`, press **Reset demo**.
+
+Clicks during the demo still run in a **mock layer** in the browser (not written back to the database):
 
 - `src/lib/seed.ts`: 18 months of noisy history + the planted A-12-08 / stack A-08 leak story.
 - `src/lib/agents.ts`: rule-based stand-ins for the ADK agents (Intake, SimilarDefect, Triage, Comms, Verification, Recurrence, InitialInspection).

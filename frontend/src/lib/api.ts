@@ -2,9 +2,9 @@
 // Mock API. Each export maps to a backend action/tool in CONTRACTS.md; replace the bodies with
 // fetch() calls to FastAPI once P3/P4 ship the endpoints. Agent work is simulated with short delays.
 import {
-  commsAgent, freeSlotsFor, initialInspectionAgent, intakeAgent, recurrenceAgent, similarDefectAgent, triageAgent, verificationAgent,
+  commsAgent, fmtHours, freeSlotsFor, initialInspectionAgent, intakeAgent, recurrenceAgent, repairOptions, similarDefectAgent, subcontractorFor, triageAgent, verificationAgent,
 } from "./agents";
-import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, getUnit, RULES, SDP_STAFF_EMAIL } from "./constants";
+import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, getUnit, REPAIR_PLAN, RULES, SDP_STAFF, SDP_STAFF_EMAIL, workerLabel } from "./constants";
 import { addDays, daysBetween, fmtDateTime } from "./dates";
 import { getState, resetState, update } from "./store";
 import type { AgentName, Case, DemoState, EventType, Photo } from "./types";
@@ -149,21 +149,38 @@ async function continueNewCaseFlow(caseId: string) {
     book(d, c, t.slot, t.technicianId, "visit");
     c.status = "VISIT_SCHEDULED";
     notifyBuyer(d, c, "received", { slot: fmtDateTime(t.slot) });
-    notifyTech(d, c, "New inspection job", `${c.unitId}: ${c.summary}. Visit ${fmtDateTime(t.slot)}. ${t.reason}`);
+    notifyTech(d, c, "New inspection visit", `${c.unitId}: ${c.summary}. Inspection visit ${fmtDateTime(t.slot)}.`);
   });
 }
 
-export async function bookRepair(caseId: string, slot: string) {
+/** Allocate a repair at `start` to the first free qualified worker (prefers the extra-inspection subcontractor). */
+function allocateRepair(d: DemoState, c: Case, start: string) {
+  const option = repairOptions(d, c).find((o) => o.start === start);
+  if (!option) throw new Error("That repair time is no longer available. Please choose another.");
+  const workerId = c.supportId && option.workerIds.includes(c.supportId) ? c.supportId : option.workerIds[0];
+  const plan = REPAIR_PLAN[c.category];
+  d.bookings = d.bookings.filter((b) => !(b.caseId === c.id && b.kind === "repair"));
+  for (const slot of option.slots) d.bookings.push({ slot, technicianId: workerId, caseId: c.id, kind: "repair" });
+  c.inspectorId ??= c.technicianId;
+  c.technicianId = workerId;
+  c.repairSlot = start;
+  c.repairHours = plan.hours;
+  c.status = "REPAIR_BOOKED";
+  const w = getTechnician(workerId)!;
+  step(d, c.id, "TriageAgent", `${plan.trade} repair (${fmtHours(plan.hours)}) allocated to ${workerLabel(workerId)}, ${w.kind === "subcontractor" ? "specialist subcontractor" : "in-house technician"}, first available at ${fmtDateTime(start)}`);
+  return { worker: w, duration: fmtHours(plan.hours) };
+}
+
+export async function bookRepair(caseId: string, start: string) {
   update((d) => {
     const c = find(d, caseId);
-    c.repairSlot = slot;
-    c.status = "REPAIR_BOOKED";
-    book(d, c, slot, c.technicianId!, "repair");
-    log(d, caseId, "repair.booked", `Repair booked for ${fmtDateTime(slot)}`);
-    notifyTech(d, c, "Repair booked", `${c.unitId}: ${c.summary}. Repair ${fmtDateTime(slot)}.`);
-    notifyBuyer(d, c, "repair_booked", { slot: fmtDateTime(slot) });
+    const { duration } = allocateRepair(d, c, start);
+    log(d, caseId, "repair.booked", `Repair booked for ${fmtDateTime(start)} (${duration}) with ${workerLabel(c.technicianId)}`);
+    notifyTech(d, c, "Repair booked", `${c.unitId}: ${c.summary}. Repair ${fmtDateTime(start)}, estimated ${duration}.`);
+    notifyBuyer(d, c, "repair_booked", { slot: fmtDateTime(start), duration });
   });
 }
+
 
 export async function submitVerification(caseId: string, result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY", note: string, photoUrl: string | null) {
   update((d) => {
@@ -191,7 +208,7 @@ function closeIfBothSigned(d: DemoState, c: Case) {
 }
 
 /** SDP staff sign-off on behalf of the developer. */
-export async function developerSignOff(caseId: string, by = "SDP Defect Team") {
+export async function developerSignOff(caseId: string, by = `${SDP_STAFF.name}, ${SDP_STAFF.title}`) {
   update((d) => {
     const c = find(d, caseId);
     if (c.status !== "PENDING_SIGNOFF") return;
@@ -277,6 +294,7 @@ export async function recordVerdict(caseId: string, outcome: "VALID" | "INVALID"
   update((d) => {
     const c = find(d, caseId);
     c.verdict = { outcome, note, at: d.now };
+    c.inspectorId = c.technicianId;
     if (photoUrl) c.photos.push(photo(photoUrl, "verdict", d.now));
     d.bookings = d.bookings.filter((b) => !(b.caseId === c.id && b.kind === "visit"));
     log(d, caseId, "verdict.recorded", `Technician marked ${outcome}: "${note}"`);
@@ -298,6 +316,7 @@ export async function markRepaired(caseId: string, note: string, photoUrl: strin
     c.repairNote = note;
     c.repairedAt = d.now;
     c.signoff = undefined;
+    c.signoffReminderAt = c.autoClosedAt = c.signoffOverdueAt = undefined;
     if (photoUrl) c.photos.push(photo(photoUrl, "repair", d.now));
     d.bookings = d.bookings.filter((b) => !(b.caseId === c.id && b.kind === "repair"));
     log(d, caseId, "repair.done", `Technician marked repaired: "${note}"`);
@@ -347,9 +366,18 @@ export async function decideApproval(approvalId: string, approve: boolean) {
     c.status = "EXTRA_INSPECTION";
     book(d, c, t.slot, t.technicianId, "visit");
     step(d, c.id, "InitialInspectionAgent",
-      `Brief ready: ${c.inspectionBrief.timeline.length} timeline entries, ${c.inspectionBrief.neighbouringUnits.length} neighbouring units, ${c.inspectionBrief.checklist.length}-point checklist`);
+      `Inspection brief ready: timeline, photo comparison, likely components and a ${c.inspectionBrief.checklist.length}-point checklist`);
     const tech = getTechnician(t.technicianId)!;
-    email(d, c.id, tech.email, `[${c.id}] Inspection brief`, c.inspectionBrief.checklist.map((x, i) => `${i + 1}. ${x}`).join("\n"));
+    const brief = c.inspectionBrief.checklist.map((x, i) => `${i + 1}. ${x}`).join("\n");
+    email(d, c.id, tech.email, `[${c.id}] Extra inspection brief (you lead)`, brief);
+    // The trade subcontractor attends: recurring defects usually trace to their workmanship or system, and they repair under contract.
+    const sub = subcontractorFor(c);
+    c.supportId = sub?.id;
+    if (sub) {
+      book(d, c, t.slot, sub.id, "visit");
+      step(d, c.id, "TriageAgent", `Joint inspection: ${tech.name} (in-house, lead) with ${workerLabel(sub.id)} (${REPAIR_PLAN[c.category].trade} subcontractor)`);
+      email(d, c.id, sub.email, `[${c.id}] Joint extra inspection with ${tech.name}`, `${fmtDateTime(t.slot)} at ${c.unitId}.\n\n${brief}`);
+    }
     notifyBuyer(d, c, "extra_inspection", { slot: fmtDateTime(t.slot) });
   });
 }
@@ -360,7 +388,77 @@ export function skipDays(days: number) {
   update((d) => {
     d.now = addDays(d.now, days);
     log(d, null, "agent.step", `Demo clock moved forward ${days} days`);
+    sweepSignoffs(d);
   });
+}
+
+// ---------- sign-off period ----------
+
+/** When the buyer must sign off by: the repair date + the sign-off period. */
+export function signoffDeadline(c: Case) {
+  const start = c.repairedAt ?? c.verdict?.at ?? c.createdAt;
+  return addDays(start, RULES.signoffPeriodDays);
+}
+
+/** Cases waiting on the buyer's sign-off (the developer may or may not have signed). */
+const awaitingBuyer = (c: Case) => c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer;
+
+/**
+ * Apply the sign-off period: an in-app reminder 3 days before the deadline, then auto-close.
+ * High-urgency cases are never auto-closed (rules.yaml allow_auto_close: false): they're flagged to SDP.
+ */
+function sweepSignoffs(d: DemoState) {
+  for (const c of d.cases) {
+    if (!awaitingBuyer(c)) continue;
+    const deadline = signoffDeadline(c);
+    const daysLeft = daysBetween(d.now, deadline);
+    if (daysLeft <= 0) {
+      if (c.urgency === "high") {
+        if (c.signoffOverdueAt) continue;
+        c.signoffOverdueAt = d.now;
+        log(d, c.id, "signoff.overdue", `Buyer sign-off overdue (${RULES.signoffPeriodDays} days). High urgency, so not auto-closed: flagged to SDP`);
+        pushBuyerMessage(d, c, "Sign-off overdue", `${c.id} (${c.summary}). The ${RULES.signoffPeriodDays}-day sign-off period has passed. Our team will contact you to confirm the repair.`);
+      } else {
+        c.status = "CLOSED";
+        c.closedAt = deadline;
+        c.autoClosedAt = deadline;
+        log(d, c.id, "case.closed", `Closed automatically: no buyer sign-off within ${RULES.signoffPeriodDays} days`);
+        pushBuyerMessage(
+          d,
+          c,
+          "Case closed automatically",
+          `${c.id} (${c.summary}). We didn't receive your sign-off within ${RULES.signoffPeriodDays} days, so the case was closed. If the problem comes back, you can reopen it within ${RULES.gracePeriodDays} days with a new photo.`,
+        );
+      }
+    } else if (daysLeft <= RULES.signoffReminderDaysBefore && !c.signoffReminderAt) {
+      c.signoffReminderAt = d.now;
+      log(d, c.id, "signoff.reminder", `Sign-off reminder sent to buyer (${Math.ceil(daysLeft)} day(s) left)`);
+      pushBuyerMessage(
+        d,
+        c,
+        "Reminder: please sign off your repair",
+        `${c.id} (${c.summary}). Please check the repair and sign off by ${fmtDateTime(deadline)}. ${
+          c.urgency === "high" ? "If we don't hear from you, our team will follow up." : "After that the case will close automatically."
+        }`,
+      );
+    }
+  }
+}
+
+/** In-app only (no email), e.g. sign-off reminders. */
+function pushBuyerMessage(d: DemoState, c: Case, title: string, body: string) {
+  d.messages.push({ id: d.messages.length + 1, caseId: c.id, at: d.now, title, body });
+}
+
+/** Run time-based rules after data loads or resets. No write when nothing is due. */
+export function applyTimeRules() {
+  const s = getState();
+  const due = s.cases.some((c) => {
+    if (!awaitingBuyer(c)) return false;
+    const left = daysBetween(s.now, signoffDeadline(c));
+    return (left <= 0 && !(c.urgency === "high" && c.signoffOverdueAt)) || (left > 0 && left <= RULES.signoffReminderDaysBefore && !c.signoffReminderAt);
+  });
+  if (due) update(sweepSignoffs);
 }
 
 export function simulateRain() {
@@ -391,6 +489,8 @@ export function simulateRain() {
   });
 }
 
-export function resetDemo() {
-  resetState();
+export async function resetDemo() {
+  const r = await resetState();
+  applyTimeRules();
+  return r;
 }

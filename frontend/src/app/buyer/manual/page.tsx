@@ -1,5 +1,6 @@
 "use client";
 import { Camera, Lightbulb, MapPin, Sun } from "lucide-react";
+import Link from "next/link";
 import { MobileHeader, Section } from "@/components/mobile";
 import { StatusBadge } from "@/components/status-badge";
 import { RULES } from "@/lib/constants";
@@ -12,7 +13,7 @@ const FLOW = [
   { title: "Inspection visit", text: "The technician inspects and marks the defect as confirmed or not a defect. You get an update in the app and by email." },
   { title: "Book the repair", text: "If confirmed, choose a repair slot in the app." },
   { title: "Repair", text: "The technician fixes the defect and marks it done." },
-  { title: "Check & sign off", text: "Follow the short checklist for your defect, then sign off. The developer also signs off." },
+  { title: "Check & sign off", text: `Follow the short checklist for your defect and sign off within ${RULES.signoffPeriodDays} days. The developer also signs off. We remind you ${RULES.signoffReminderDaysBefore} days before the deadline; if you don't sign off, the case closes automatically.` },
   { title: "Case closed", text: "The case closes once both you and the developer have signed off." },
   { title: "Came back?", text: `Within ${RULES.gracePeriodDays} days of closing, reopen the same case with a new photo. No need to report again.` },
 ];
@@ -41,6 +42,11 @@ export default function Manual() {
             ))}
           </ol>
         </Section>
+
+        <Link href="/buyer/inspection-sheet" className="block rounded-2xl bg-red-50 p-4 text-sm ring-1 ring-red-100">
+          <span className="font-semibold text-brand">Inspection sheet</span>
+          <span className="block text-zinc-700">What to check in each room, by defect type, with FAQs.</span>
+        </Link>
 
         <Section title="Taking a good photo">
           <ul className="space-y-2.5">

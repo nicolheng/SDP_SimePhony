@@ -1,5 +1,5 @@
 "use client";
-import { Bell, Bot, ClipboardList, History, Inbox, ScrollText, UserRound, Wrench } from "lucide-react";
+import { Bell, Bot, ClipboardList, Inbox, ScrollText, UserRound, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { BrandMark } from "@/components/brand";
@@ -20,7 +20,7 @@ export default function TechnicianHome() {
   const waiting = live.filter((c) => c.status === "PENDING_SIGNOFF" || c.status === "VALID").length;
   const completed = live.filter((c) => c.status === "CLOSED" || c.status === "INVALID").length;
   const inbox = useMemo(() => outbox.filter((e) => e.to === tech.email).length, [outbox, tech.email]);
-  const insights = live.filter((c) => c.inspectionBrief || c.occurrence > 1 || c.reopenCount > 0).slice(0, 4);
+  const insights = live.filter((c) => c.inspectionBrief).slice(0, 4);
   const upcoming = today.length ? today : todo.slice(0, 3);
 
   return (
@@ -42,6 +42,7 @@ export default function TechnicianHome() {
         <div className="rounded-2xl p-4 ring-1 ring-zinc-200">
           <p className="text-sm text-zinc-500">{fmtDay(now)}</p>
           <p className="text-lg font-semibold">Hi, {tech.name.split(" ")[0]}</p>
+          <p className="text-sm text-zinc-500">{tech.company ?? "In-house technician"}</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {tech.skills.map((s) => (
               <span key={s} className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium capitalize text-brand">
@@ -85,25 +86,21 @@ export default function TechnicianHome() {
         <section id="ai">
           <SectionHead title="AI Briefs For You" />
           {insights.length === 0 ? (
-            <p className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-500">No agent alerts on your jobs.</p>
+            <p className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-500">No inspection briefs for your jobs.</p>
           ) : (
             <ul className="space-y-2">
               {insights.map((c) => (
                 <li key={c.id}>
                   <Link href={`/technician/jobs/${c.id}`} className="flex gap-3 rounded-2xl bg-violet-50/60 p-3 ring-1 ring-violet-100">
                     <span className="grid size-9 shrink-0 place-items-center rounded-full bg-violet-100 text-violet-700">
-                      {c.inspectionBrief ? <ScrollText className="size-4" /> : <History className="size-4" />}
+                      <ScrollText className="size-4" />
                     </span>
                     <div className="min-w-0 text-sm">
                       <p className="font-medium">
                         {c.unitId} · {c.summary}
                       </p>
                       <p className="text-xs text-violet-900/80">
-                        {c.inspectionBrief
-                          ? "InitialInspectionAgent: inspection brief and checklist ready."
-                          : c.reopenCount > 0
-                            ? `RecurrenceAgent: reopened ${c.reopenCount}× by the buyer.`
-                            : `SimilarDefectAgent: reported ${c.occurrence}× in this unit, check the earlier repairs.`}
+                        InitialInspectionAgent: inspection brief and checklist ready.
                       </p>
                     </div>
                   </Link>

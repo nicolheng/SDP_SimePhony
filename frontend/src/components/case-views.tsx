@@ -1,12 +1,14 @@
 "use client";
-import { Bot, Check, Mail } from "lucide-react";
+import { Bot, Check, CircleCheck, Mail } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { fmtDate, fmtDateTime, fmtShort } from "@/lib/dates";
 import { BUYER_STEPS, buyerStepIndex } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import type { Case, CaseEvent } from "@/lib/types";
+import { CATEGORY_LABEL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { Section } from "./mobile";
 
 export function useCaseId() {
   return useParams<{ id: string }>().id;
@@ -25,7 +27,7 @@ export function useCaseEvents(id: string | null): CaseEvent[] {
 /** Vertical progress list, styled after the SDP app's Construction Progress screen. */
 export function CaseProgress({ c }: { c: Case }) {
   const idx = buyerStepIndex(c.status);
-  const steps = c.status === "INVALID" ? ["Reported", "Inspection", "Not a defect — closed"] : BUYER_STEPS;
+  const steps = c.status === "INVALID" ? ["Reported", "Inspection visit", "Not a defect — closed"] : BUYER_STEPS;
   const done = c.status === "INVALID" ? 3 : idx;
   return (
     <ol className="space-y-2">
@@ -67,6 +69,11 @@ const EVENT_LABEL: Partial<Record<CaseEvent["type"], string>> = {
   "verification.requested": "Sign-off requested",
   "verification.completed": "Buyer check",
   "signoff.completed": "Signed off",
+  "signoff.reminder": "Sign-off reminder",
+  "signoff.overdue": "Sign-off overdue",
+  "booking.requested": "Booking requested",
+  "booking.confirmed": "Booking confirmed",
+  "booking.rejected": "Booking declined",
   "case.closed": "Closed",
   "case.reopened": "Reopened",
   "recurrence.detected": "Recurrence detected",
@@ -124,5 +131,30 @@ export function SimilarList({ c }: { c: Case }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Earlier reports of the same issue in the same unit: title and date only, in the approval-history style. Renders nothing if none. */
+export function PreviousReports({ c }: { c: Case }) {
+  const cases = useDemo((s) => s.cases);
+  const list = useMemo(
+    () => cases.filter((x) => x.id !== c.id && x.unitId === c.unitId && x.category === c.category && x.createdAt < c.createdAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [cases, c.id, c.unitId, c.category, c.createdAt],
+  );
+  if (!list.length) return null;
+  return (
+    <Section title={`Previous ${CATEGORY_LABEL[c.category].toLowerCase()} reports in unit ${c.unitId}`}>
+      <ol className="space-y-3">
+      {list.map((x) => (
+        <li key={x.id} className="flex items-start gap-2.5">
+          <CircleCheck className="mt-0.5 size-5 shrink-0 text-zinc-400" />
+          <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+            <p className="text-sm font-medium">{x.summary}</p>
+            <span className="shrink-0 text-xs text-zinc-500">{fmtDate(x.createdAt)}</span>
+          </div>
+        </li>
+      ))}
+      </ol>
+    </Section>
   );
 }

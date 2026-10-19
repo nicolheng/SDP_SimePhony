@@ -1,14 +1,17 @@
 "use client";
-import { Bot, CalendarClock, Check, CircleDashed, History, Loader2, MessageSquare, ShieldAlert, Wrench } from "lucide-react";
+import { Bot, CalendarClock, Clock, Loader2, MessageSquare, ShieldAlert, Wrench } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { CaseProgress, SimilarList, useCase, useCaseId } from "@/components/case-views";
+import { CaseProgress, PreviousReports, useCase, useCaseId } from "@/components/case-views";
+import { DefectRecordCard } from "@/components/defect-record";
+import { recordAvailable } from "@/lib/defect-record";
 import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
 import { PhotoThumb } from "@/components/photo";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
-import { answerFollowUp, canReopen } from "@/lib/api";
-import { CATEGORY_LABEL, getTechnician, RULES } from "@/lib/constants";
+import { fmtHours } from "@/lib/agents";
+import { answerFollowUp, canReopen, signoffDeadline } from "@/lib/api";
+import { CATEGORY_LABEL, DEMO_BUYER, REPAIR_PLAN, RULES, workerLabel } from "@/lib/constants";
 import { addDays, daysBetween, fmtDate, fmtDateTime } from "@/lib/dates";
 import { BUYER_EXPLAIN } from "@/lib/status";
 import { useDemo } from "@/lib/store";
@@ -22,20 +25,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function SignRow({ who, signed, detail }: { who: string; signed: boolean; detail: string }) {
-  return (
-    <li className="flex items-center gap-3 py-2">
-      <span className={signed ? "grid size-7 place-items-center rounded-full bg-emerald-500 text-white" : "grid size-7 place-items-center rounded-full bg-zinc-100 text-zinc-400"}>
-        {signed ? <Check className="size-4" strokeWidth={3} /> : <CircleDashed className="size-4" />}
-      </span>
-      <div className="flex-1 text-sm">
-        <p className="font-medium">{who}</p>
-        <p className="text-xs text-zinc-500">{detail}</p>
-      </div>
-    </li>
-  );
-}
-
 export function CaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
@@ -46,14 +35,13 @@ export function CaseDetail() {
   const [sending, setSending] = useState(false);
 
   if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
-  const tech = getTechnician(c.technicianId);
   const reopenable = canReopen(c, now);
   const graceEnd = c.closedAt ? addDays(c.closedAt, RULES.gracePeriodDays) : null;
   const daysLeft = c.closedAt ? Math.max(0, Math.ceil(RULES.gracePeriodDays - daysBetween(c.closedAt, now))) : 0;
   const reported = c.photos.filter((p) => p.kind === "original" || p.kind === "reopen");
   const evidence = c.photos.filter((p) => p.kind !== "original" && p.kind !== "reopen");
-  const linked = c.similar.filter((s) => s.unitId === c.unitId);
-  const showSignoff = c.signoff || c.status === "PENDING_SIGNOFF" || c.status === "REPAIRED";
+  const deadline = signoffDeadline(c);
+  const signoffDaysLeft = Math.max(0, Math.ceil(daysBetween(now, deadline)));
 
   return (
     <div>
@@ -107,9 +95,25 @@ export function CaseDetail() {
           </Link>
         )}
         {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && (
-          <Link href={`/buyer/cases/${c.id}/verify`} className={primaryButtonClass}>
-            Check Repair &amp; Sign Off
-          </Link>
+          <div className="space-y-2">
+            <p
+              className={
+                c.signoffOverdueAt
+                  ? "flex gap-2 rounded-2xl bg-red-50 p-3 text-sm text-red-900 ring-1 ring-red-200"
+                  : "flex gap-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200"
+              }
+            >
+              <Clock className="size-4 shrink-0" />
+              {c.signoffOverdueAt
+                ? "The sign-off period has passed. Our team will contact you; you can still sign off below."
+                : `Please sign off by ${fmtDateTime(deadline)} (${signoffDaysLeft} day(s) left). ${
+                    c.urgency === "high" ? "After that our team will follow up." : "After that the case closes automatically."
+                  }`}
+            </p>
+            <Link href={`/buyer/cases/${c.id}/verify`} className={primaryButtonClass}>
+              Check Repair &amp; Sign Off
+            </Link>
+          </div>
         )}
         {c.status === "ESCALATION_PENDING" && (
           <p className="flex gap-2 rounded-2xl bg-violet-50 p-3 text-sm text-violet-900 ring-1 ring-violet-200">
@@ -157,26 +161,23 @@ export function CaseDetail() {
             </Row>
             <Row label="Summary">{c.summary}</Row>
           </dl>
-          {linked.length > 0 && (
-            <div className="mt-3 rounded-xl bg-amber-50 p-3">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-amber-800">
-                <History className="size-3.5" /> Linked to {linked.length} earlier report(s) in your unit
-              </p>
-              <SimilarList c={{ ...c, similar: linked }} />
-            </div>
-          )}
         </Section>
+
+        <PreviousReports c={c} />
 
         {/* Bookings */}
         <Section title="Bookings">
           <dl>
-            <Row label="Technician">{tech?.name ?? "Being assigned"}</Row>
-            <Row label={c.status === "EXTRA_INSPECTION" ? "Detailed inspection" : "Inspection visit"}>
+            <Row label={c.status === "EXTRA_INSPECTION" ? "Joint extra inspection" : "Inspection visit"}>
               {c.visitSlot ? fmtDateTime(c.visitSlot) : "—"}
             </Row>
-            <Row label="Repair">{c.repairSlot ? fmtDateTime(c.repairSlot) : c.status === "VALID" ? "Not booked yet" : "—"}</Row>
+            <Row label="Inspected by">{workerLabel(c.inspectorId ?? (c.repairSlot ? undefined : c.technicianId))}</Row>
+            {c.supportId && <Row label="With subcontractor">{workerLabel(c.supportId)}</Row>}
+            <Row label="Repair">
+              {c.repairSlot ? `${fmtDateTime(c.repairSlot)} · ${fmtHours(c.repairHours ?? REPAIR_PLAN[c.category].hours)}` : c.status === "VALID" ? "Not booked yet" : "—"}
+            </Row>
+            {c.repairSlot && <Row label="Repair by">{workerLabel(c.technicianId)}</Row>}
           </dl>
-          {c.triageReason && <p className="mt-2 text-xs text-zinc-500">{c.triageReason}</p>}
         </Section>
 
         {/* Inspection + repair */}
@@ -207,27 +208,12 @@ export function CaseDetail() {
           </Section>
         )}
 
-        {/* Sign-off */}
-        {showSignoff && (
-          <Section title="Sign-off">
-            <ul className="divide-y divide-zinc-100">
-              <SignRow
-                who="You (buyer)"
-                signed={!!c.signoff?.buyer}
-                detail={c.signoff?.buyer ? `Signed ${fmtDateTime(c.signoff.buyer.at)}` : c.verification?.result === "CANNOT_VERIFY" ? "Not yet: you chose 'cannot verify yet'" : "Waiting for your check & sign-off"}
-              />
-              <SignRow
-                who="Developer (Sime Darby Property)"
-                signed={!!c.signoff?.developer}
-                detail={c.signoff?.developer ? `Signed ${fmtDateTime(c.signoff.developer.at)} · ${c.signoff.developer.by}` : "Waiting for developer sign-off"}
-              />
-            </ul>
-            {c.closedAt && c.status === "CLOSED" && (
-              <p className="mt-2 text-xs text-zinc-500">
-                Closed {fmtDate(c.closedAt)} · reopen allowed until {graceEnd && fmtDate(graceEnd)}
-              </p>
-            )}
-          </Section>
+        {/* Digital defect record: role-based sign-off with names and times */}
+        {recordAvailable(c) && <DefectRecordCard c={c} viewer={`Buyer (${DEMO_BUYER.name})`} />}
+        {c.closedAt && c.status === "CLOSED" && (
+          <p className="-mt-2 px-1 text-xs text-zinc-500">
+            Closed {fmtDate(c.closedAt)} · reopen allowed until {graceEnd && fmtDate(graceEnd)}
+          </p>
         )}
 
         <Section title="Progress">

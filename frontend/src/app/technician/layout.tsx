@@ -3,7 +3,7 @@ import { TechNav } from "./tech-nav";
 
 export default function TechnicianLayout({ children }: LayoutProps<"/technician">) {
   return (
-    <MobileFrame role="Technician" nav={<TechNav />}>
+    <MobileFrame role="Technician / Subcontractor" nav={<TechNav />}>
       {children}
     </MobileFrame>
   );

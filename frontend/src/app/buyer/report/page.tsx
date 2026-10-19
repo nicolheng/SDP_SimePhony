@@ -1,5 +1,5 @@
 "use client";
-import { Bot, CheckCircle2, History, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, CircleAlert, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -102,7 +102,8 @@ export default function ReportDefect() {
           </div>
         </Section>
 
-        <Section title="3. Inspection visit *">
+        <Section title="3. Book your inspection visit *">
+          <p className="-mt-1 mb-3 text-xs text-zinc-500">Your first appointment is an inspection visit: a technician checks the defect. If it&apos;s confirmed, you book the repair afterwards.</p>
           <SlotPicker available={slots} value={slot} onChange={setSlot} />
         </Section>
 
@@ -120,8 +121,18 @@ export default function ReportDefect() {
 function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; onReset: () => void }) {
   const c = useCase(caseId);
   const events = useCaseEvents(caseId);
-  const steps = events.filter((e) => e.type === "agent.step");
   if (!c) return null;
+  // Buyer-facing progress only: no agent names, no related-case details.
+  const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent);
+  const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
+  const stages: { label: string; state: "done" | "active" | "attention" | "todo" }[] = [
+    { label: "Report received", state: "done" },
+    { label: "Understanding your report", state: did("IntakeAgent") ? "done" : "active" },
+    c.status === "INFO_NEEDED"
+      ? { label: "Waiting for one more detail from you", state: "attention" }
+      : { label: "Finding a technician", state: did("TriageAgent") ? "done" : did("IntakeAgent") ? "active" : "todo" },
+    ...(c.status === "INFO_NEEDED" ? [] : [{ label: "Inspection visit booked", state: booked ? ("done" as const) : ("todo" as const) }]),
+  ];
   const tech = getTechnician(c.technicianId);
 
   return (
@@ -129,20 +140,26 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
       <MobileHeader title="Report submitted" back="/buyer" />
       <div className="space-y-4 p-4">
         <Section>
-          <div className="flex items-center gap-2 text-sm font-semibold">
+          <p className="flex items-center gap-2 text-sm font-semibold">
             {done ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-brand" />}
-            {done ? "All set" : "Our assistant is reviewing your report…"}
-          </div>
-          <ul className="mt-3 space-y-2">
-            {steps.map((s) => (
-              <li key={s.id} className="flex gap-2 text-xs text-zinc-600">
-                <Bot className="mt-0.5 size-3.5 shrink-0 text-violet-600" />
-                <span>
-                  <span className="font-medium text-violet-700">{s.agent}</span> · {s.message}
-                </span>
+            {done ? (c.status === "INFO_NEEDED" ? "We need one more detail" : "All set") : "Processing your report…"}
+          </p>
+          <ol className="mt-3 space-y-2.5">
+            {stages.map((st) => (
+              <li key={st.label} className="flex items-center gap-2.5 text-sm">
+                {st.state === "done" ? (
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                ) : st.state === "active" ? (
+                  <Loader2 className="size-4 shrink-0 animate-spin text-brand" />
+                ) : st.state === "attention" ? (
+                  <CircleAlert className="size-4 shrink-0 text-amber-600" />
+                ) : (
+                  <span className="size-4 shrink-0 rounded-full border-2 border-zinc-200" />
+                )}
+                <span className={st.state === "todo" ? "text-zinc-400" : "text-zinc-800"}>{st.label}</span>
               </li>
             ))}
-          </ul>
+          </ol>
         </Section>
 
         <Section title="What we understood">
@@ -156,17 +173,6 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
           </p>
         </Section>
 
-        {c.similar.length > 0 && (
-          <Section>
-            <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
-              <History className="size-4" /> This has happened before
-            </p>
-            <p className="mt-1 text-xs text-zinc-600">
-              We linked your report to {c.similar.filter((s) => s.unitId === c.unitId).length} earlier report(s) in your unit
-              {c.similar.some((s) => s.unitId !== c.unitId) && " and similar reports in units above and below you"}, so the technician has the full history.
-            </p>
-          </Section>
-        )}
 
         {c.status === "INFO_NEEDED" && (
           <Section>
@@ -176,11 +182,10 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
         )}
 
         {c.status === "VISIT_SCHEDULED" && tech && c.visitSlot && (
-          <Section title="Inspection booked">
+          <Section title="Inspection visit booked">
             <p className="text-sm">
               <span className="font-medium">{tech.name}</span> will visit on <span className="font-medium">{fmtDateTime(c.visitSlot)}</span>.
             </p>
-            {c.triageReason && <p className="mt-1 text-xs text-zinc-500">{c.triageReason}</p>}
           </Section>
         )}
 

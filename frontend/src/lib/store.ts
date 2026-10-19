@@ -1,36 +1,74 @@
 "use client";
-// Mock data store: localStorage-backed, synced across tabs so the buyer phone view and the
-// SDP dashboard can run side by side. Swap lib/api.ts for FastAPI calls when the backend lands.
+// Demo data store: starts from data/seed.db (via /api/seed), falls back to the built-in seed if the
+// database can't be read. Changes during the demo stay in the browser (localStorage), synced across
+// tabs so the buyer phone view and the SDP dashboard can run side by side.
 import { useSyncExternalStore } from "react";
 import { buildSeed } from "./seed";
 import type { DemoState } from "./types";
 
 const KEY = "simephony-demo-v1";
+const VERSION = 4;
 
-let seed: DemoState | null = null;
-const getSeed = () => (seed ??= buildSeed());
+let fallback: DemoState | null = null;
+const getFallback = () => (fallback ??= buildSeed());
 
 let state: DemoState | null = null;
 const listeners = new Set<() => void>();
 
-function load(): DemoState {
-  if (typeof window === "undefined") return getSeed();
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as DemoState;
-      if (parsed.version === getSeed().version) return parsed;
-    }
-  } catch {}
-  return getSeed();
-}
-
-export function getState(): DemoState {
-  return (state ??= load());
-}
+export type LoadStatus = "loading" | "ready";
+let status: LoadStatus = "loading";
+let seedError: string | null = null;
+let loadStarted = false;
 
 function emit() {
   listeners.forEach((l) => l());
+}
+
+/** Fetch the starting data from seed.db; on failure use the built-in seed and remember why. */
+async function fetchSeed(): Promise<DemoState> {
+  try {
+    const res = await fetch("/api/seed", { cache: "no-store" });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    seedError = null;
+    return body as DemoState;
+  } catch (err) {
+    seedError = err instanceof Error ? err.message : String(err);
+    console.warn("[SimePhony] Using built-in demo data:", seedError);
+    return structuredClone(getFallback());
+  }
+}
+
+function readSaved(): DemoState | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as DemoState;
+    return parsed.version === VERSION ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Client only: use saved progress if any, otherwise load seed.db once. */
+function ensureLoaded() {
+  if (loadStarted || typeof window === "undefined") return;
+  loadStarted = true;
+  const saved = readSaved();
+  if (saved) {
+    state = saved;
+    status = "ready";
+    emit();
+    return;
+  }
+  void fetchSeed().then((s) => {
+    status = "ready";
+    setState(s);
+  });
+}
+
+export function getState(): DemoState {
+  return state ?? getFallback();
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -59,16 +97,19 @@ export function update(fn: (draft: DemoState) => void) {
   setState(draft);
 }
 
-export function resetState() {
-  seed = null;
-  setState(structuredClone(getSeed()));
+/** Reset demo: reload seed.db (or the built-in seed if it can't be read). */
+export async function resetState() {
+  fallback = null;
+  setState(await fetchSeed());
+  return { source: getState().source, error: seedError };
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
+  ensureLoaded();
   const onStorage = (e: StorageEvent) => {
     if (e.key !== KEY) return;
-    state = null;
+    state = readSaved();
     emit();
   };
   window.addEventListener("storage", onStorage);
@@ -83,6 +124,24 @@ export function useDemo<T>(select: (s: DemoState) => T): T {
   return useSyncExternalStore(
     subscribe,
     () => select(getState()),
-    () => select(getSeed()),
+    () => select(getFallback()),
+  );
+}
+
+/** "loading" until the first seed.db fetch (or saved progress) is in. */
+export function useLoadStatus(): LoadStatus {
+  return useSyncExternalStore(
+    subscribe,
+    () => status,
+    () => "loading",
+  );
+}
+
+/** Why seed.db couldn't be used (null when it loaded fine). */
+export function useSeedError(): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => seedError,
+    () => null,
   );
 }

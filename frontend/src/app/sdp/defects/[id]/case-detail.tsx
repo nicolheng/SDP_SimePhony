@@ -2,19 +2,23 @@
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useState } from "react";
 import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
+import { DefectRecordCard } from "@/components/defect-record";
+import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { PhotoThumb } from "@/components/photo";
 import { Panel } from "@/components/sdp-ui";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
-import { developerSignOff } from "@/lib/api";
-import { CATEGORY_LABEL, getTechnician, getUnit } from "@/lib/constants";
+import { developerSignOff, signoffDeadline } from "@/lib/api";
+import { CATEGORY_LABEL, getTechnician, getUnit, SDP_STAFF, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 
 export function SdpCaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
   const events = useCaseEvents(id);
+  const [busy, setBusy] = useState(false);
   if (!c) return <p className="text-base text-zinc-500">Case {id} not found.</p>;
   const unit = getUnit(c.unitId);
   const tech = getTechnician(c.technicianId);
@@ -108,32 +112,35 @@ export function SdpCaseDetail() {
         </div>
 
         <div className="space-y-6">
-          {(c.status === "PENDING_SIGNOFF" || c.signoff) && (
-            <Panel title="Sign-off">
-              <ul className="space-y-2 text-base">
-                <li>
-                  <span className="font-medium">Buyer:</span>{" "}
-                  {c.signoff?.buyer ? `signed ${fmtDateTime(c.signoff.buyer.at)}` : "waiting"}
-                </li>
-                <li>
-                  <span className="font-medium">Developer:</span>{" "}
-                  {c.signoff?.developer ? `signed ${fmtDateTime(c.signoff.developer.at)} (${c.signoff.developer.by})` : "waiting"}
-                </li>
-              </ul>
-              {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await developerSignOff(c.id);
-                    toast.success(c.signoff?.buyer ? "Signed off: case closed" : "Developer signed off; waiting for buyer");
-                  }}
-                  className="mt-4 h-10 w-full rounded-xl bg-brand text-base font-semibold text-white hover:bg-brand-dark"
-                >
-                  Developer Sign-off
-                </button>
+          {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && (
+            <Panel title="Developer verification">
+              <p className="text-base text-zinc-700">
+                Check the repair by {workerLabel(c.technicianId)}, then approve it.
+              </p>
+              <p className="mt-2 text-sm text-zinc-500">
+                Buyer: {c.signoff?.buyer ? `signed ${fmtDateTime(c.signoff.buyer.at)}` : `waiting · due ${fmtDateTime(signoffDeadline(c))}${c.signoffReminderAt ? " · reminder sent" : ""}`}
+              </p>
+              {c.signoffOverdueAt && (
+                <p className="mt-3 rounded-lg bg-red-50 p-2.5 text-base text-red-800">
+                  Buyer sign-off overdue since {fmtDateTime(c.signoffOverdueAt)}. High urgency, so not auto-closed: please contact the buyer.
+                </p>
               )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  await developerSignOff(c.id);
+                  setBusy(false);
+                  toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved; waiting for the buyer");
+                }}
+                className="mt-4 h-11 w-full rounded-xl bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                Approve repair (developer sign-off)
+              </button>
             </Panel>
           )}
+          {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${SDP_STAFF.name} (${SDP_STAFF.title})`} large />}
           {c.similar.length > 0 && (
             <Panel title="Related cases (SimilarDefectAgent)">
               <SimilarList c={c} />

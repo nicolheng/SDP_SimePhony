@@ -1,5 +1,5 @@
 "use client";
-import { Bell, BookOpen, ChevronRight, ClipboardList, Clock, Headphones, Inbox, Mail, Phone, PlusCircle, UserRound } from "lucide-react";
+import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList, Clock, Headphones, Mail, Phone, PlusCircle, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { BrandMark } from "@/components/brand";
@@ -65,7 +65,7 @@ export default function BuyerHome() {
           <div className="grid grid-cols-4 gap-2">
             <QuickAction href="/buyer/report" icon={<PlusCircle className="size-6" />} label="Report Defect" />
             <QuickAction href="/buyer/cases" icon={<ClipboardList className="size-6" />} label="My Defects" badge={action.length} />
-            <QuickAction href="/buyer/inbox" icon={<Inbox className="size-6" />} label="Inbox" />
+            <QuickAction href="/buyer/inspection-sheet" icon={<ClipboardCheck className="size-6" />} label="Inspection Sheet" />
             <QuickAction href="/buyer/manual" icon={<BookOpen className="size-6" />} label="User Manual" />
           </div>
         </section>

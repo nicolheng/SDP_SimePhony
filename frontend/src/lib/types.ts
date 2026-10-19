@@ -22,6 +22,7 @@ export type Category =
   | "sanitary_fittings"
   | "electrical"
   | "wall_crack"
+  | "structural_crack"
   | "tiles"
   | "ceiling"
   | "door_window"
@@ -43,6 +44,9 @@ export type EventType =
   | "case.created"
   | "case.info_needed"
   | "case.assigned"
+  | "booking.requested"
+  | "booking.confirmed"
+  | "booking.rejected"
   | "verdict.recorded"
   | "repair.booked"
   | "repair.done"
@@ -54,6 +58,8 @@ export type EventType =
   | "inspection.approved"
   | "inspection.rejected"
   | "signoff.completed"
+  | "signoff.reminder"
+  | "signoff.overdue"
   | "case.closed"
   | "email.sent"
   | "agent.step";
@@ -72,6 +78,9 @@ export interface Technician {
   email: string;
   skills: string[];
   blocks: string[];
+  /** In-house technician (inspects + minor repairs) or subcontractor (specialised repairs under contract). */
+  kind: "technician" | "subcontractor";
+  company?: string;
 }
 
 export interface Photo {
@@ -113,7 +122,14 @@ export interface Case {
   summary: string;
   description: string;
   urgency: Urgency;
+  /** Who the job is with now: the inspecting technician, then whoever was allocated the repair. */
   technicianId?: string;
+  /** Technician who did the inspection visit (kept after the repair is reassigned). */
+  inspectorId?: string;
+  /** Subcontractor joining an approved extra inspection. */
+  supportId?: string;
+  /** Estimated repair duration, set when the repair is booked. */
+  repairHours?: number;
   visitSlot?: string; // ISO start
   repairSlot?: string;
   photos: Photo[];
@@ -127,6 +143,12 @@ export interface Case {
   verificationGuide?: VerificationGuide;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
+  /** In-app sign-off reminder sent (3 days before the deadline). */
+  signoffReminderAt?: string;
+  /** Closed automatically because the buyer didn't sign off in time. */
+  autoClosedAt?: string;
+  /** High-urgency case past the sign-off deadline: flagged to SDP instead of auto-closing. */
+  signoffOverdueAt?: string;
   repairedAt?: string;
   inspectionBrief?: InspectionBrief;
   triageReason?: string;
@@ -197,6 +219,8 @@ export interface Booking {
 
 export interface DemoState {
   version: number;
+  /** Where the starting data came from. */
+  source: "seed.db" | "built-in";
   now: string; // demo clock
   cases: Case[];
   events: CaseEvent[];

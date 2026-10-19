@@ -1,8 +1,9 @@
 "use client";
-import { Camera, ImageIcon, X } from "lucide-react";
+import { Camera, ImageIcon, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import type { Photo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { CameraCapture, canUseCamera } from "./camera-capture";
 
 const KIND_LABEL: Record<Photo["kind"], string> = {
   original: "Original",
@@ -84,28 +85,50 @@ export function PhotoInput({
   label?: string;
   required?: boolean;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
+
+  async function fromFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (!f.type.startsWith("image/")) return setError("Please choose an image (JPG or PNG).");
+    if (f.size > 15 * 1024 * 1024) return setError("That photo is too large (max 15 MB).");
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await toDataUrl(f));
+    } catch {
+      setError("Couldn't read that photo. Please try another.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Live camera where the browser allows it; otherwise the phone's own camera app via capture.
+  const takePhoto = () => (canUseCamera() ? setCamera(true) : cameraRef.current?.click());
+
   return (
     <div>
-      <input
-        ref={ref}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          setBusy(true);
-          try {
-            onChange(await toDataUrl(f));
-          } finally {
-            setBusy(false);
-            e.target.value = "";
-          }
-        }}
-      />
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={fromFile} />
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={fromFile} />
+      {camera && (
+        <CameraCapture
+          onCapture={(url) => {
+            setCamera(false);
+            setError(null);
+            onChange(url);
+          }}
+          onClose={() => setCamera(false)}
+          onUnavailable={() => {
+            setCamera(false);
+            fileRef.current?.click();
+          }}
+        />
+      )}
       {value ? (
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -118,18 +141,32 @@ export function PhotoInput({
           >
             <X className="size-4" />
           </button>
+          <button type="button" onClick={takePhoto} className="absolute bottom-2 right-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
+            Retake
+          </button>
+        </div>
+      ) : busy ? (
+        <div className="flex h-32 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-300 text-sm text-zinc-500">
+          <Loader2 className="size-4 animate-spin" /> Processing photo…
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => ref.current?.click()}
-          className="flex h-32 w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-zinc-300 bg-white text-sm text-zinc-500 transition hover:border-brand hover:text-brand"
-        >
-          <Camera className="size-6" />
-          {busy ? "Processing photo…" : label}
-          {required && <span className="text-[11px] text-zinc-400">Required</span>}
-        </button>
+        <div className="rounded-xl border-2 border-dashed border-zinc-300 bg-white p-3">
+          <p className="mb-2 text-center text-sm text-zinc-500">
+            {label}
+            {required && <span className="ml-1 text-[11px] text-zinc-400">(required)</span>}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={takePhoto} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-brand text-sm font-semibold text-white">
+              <Camera className="size-4" /> Take photo
+            </button>
+            <button type="button" onClick={() => fileRef.current?.click()} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-zinc-100 text-sm font-semibold text-zinc-800">
+              <ImageIcon className="size-4" /> Choose photo
+            </button>
+          </div>
+          <p className="mt-2 text-center text-[11px] text-zinc-400">JPG or PNG</p>
+        </div>
       )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
     </div>
   );
 }

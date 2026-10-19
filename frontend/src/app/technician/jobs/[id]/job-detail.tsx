@@ -1,20 +1,21 @@
 "use client";
-import { Bot, CalendarClock, Check, CircleDashed, History, Lock, MapPin, ShieldAlert, Sparkles, UserRound } from "lucide-react";
+import { Bot, CalendarClock, History, Lock, MapPin, ShieldAlert, Sparkles, UserRound } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
+import { EventTimeline, PreviousReports, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
+import { DefectRecordCard } from "@/components/defect-record";
+import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
-import { CATEGORY_LABEL, DEMO_BUYER, getUnit } from "@/lib/constants";
+import { CATEGORY_LABEL, DEMO_BUYER, getUnit, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { TECH_EXPLAIN } from "@/lib/status";
 import { useTechnicianId } from "@/lib/session";
-import { useDemo } from "@/lib/store";
 import { jobKind, jobSlot } from "../../use-my-jobs";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -37,20 +38,40 @@ function AgentCard({ agent, children }: { agent: string; children: ReactNode }) 
   );
 }
 
+const TECH_ACTIVITY = new Set<string>([
+  "case.assigned",
+  "verdict.recorded",
+  "repair.booked",
+  "repair.done",
+  "verification.completed",
+  "signoff.completed",
+  "signoff.overdue",
+  "case.reopened",
+  "inspection.approved",
+  "case.closed",
+]);
+
 export function JobDetail() {
   const id = useCaseId();
   const c = useCase(id);
   const me = useTechnicianId();
   const events = useCaseEvents(id);
-  const approvals = useDemo((s) => s.approvals);
-  const approval = useMemo(() => approvals.filter((a) => a.caseId === id).at(-1), [approvals, id]);
-  const agentEvents = useMemo(() => events.filter((e) => e.type === "agent.step" || e.type.startsWith("inspection") || e.type === "recurrence.detected"), [events]);
+  // Only what matters for the job: assignments, bookings, results, sign-offs, and the briefs/checklists agents produced for it.
+  const agentEvents = useMemo(
+    () =>
+      events.filter(
+        (e) =>
+          TECH_ACTIVITY.has(e.type) ||
+          (e.type === "agent.step" && (e.agent === "InitialInspectionAgent" || e.agent === "VerificationAgent")),
+      ),
+    [events],
+  );
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!c) return <MobileHeader title="Job not found" back="/technician/jobs" />;
-  if (c.technicianId !== me)
+  if (c.technicianId !== me && c.supportId !== me)
     return (
       <div>
         <MobileHeader title={c.id} back="/technician/jobs" />
@@ -65,7 +86,9 @@ export function JobDetail() {
     );
 
   const unit = getUnit(c.unitId);
-  const inspecting = c.status === "VISIT_SCHEDULED" || c.status === "EXTRA_INSPECTION";
+  // On a joint extra inspection the in-house technician leads and records the result; the subcontractor attends.
+  const attending = c.supportId === me && c.technicianId !== me;
+  const inspecting = (c.status === "VISIT_SCHEDULED" || c.status === "EXTRA_INSPECTION") && !attending;
   const repairing = c.status === "REPAIR_BOOKED";
   const reported = c.photos.filter((p) => p.kind === "original" || p.kind === "reopen");
   const evidence = c.photos.filter((p) => p.kind !== "original" && p.kind !== "reopen");
@@ -109,6 +132,12 @@ export function JobDetail() {
         </Section>
 
         {/* Actions */}
+        {attending && c.status === "EXTRA_INSPECTION" && (
+          <p className="rounded-2xl bg-violet-50 p-3 text-sm text-violet-900 ring-1 ring-violet-200">
+            Joint extra inspection led by <span className="font-semibold">{workerLabel(c.technicianId)}</span>, who records the result. Review the brief below; if the repair
+            needs your trade, it will be allocated to you when the buyer books it.
+          </p>
+        )}
         {inspecting && (
           <Section title={c.status === "EXTRA_INSPECTION" ? "Detailed inspection result *" : "Inspection result *"}>
             <textarea
@@ -198,21 +227,6 @@ export function JobDetail() {
                 </Row>
               </dl>
             </AgentCard>
-            {c.triageReason && <AgentCard agent="TriageAgent: why you">{c.triageReason}</AgentCard>}
-            {c.similar.length > 0 && (
-              <AgentCard agent={`SimilarDefectAgent: ${c.occurrence}× in this unit`}>
-                <SimilarList c={c} />
-              </AgentCard>
-            )}
-            {approval && (
-              <AgentCard agent={`RecurrenceAgent: extra inspection ${approval.status}`}>
-                <ul className="list-disc space-y-1 pl-4 text-xs">
-                  {approval.reasons.map((r) => (
-                    <li key={r}>{r}</li>
-                  ))}
-                </ul>
-              </AgentCard>
-            )}
             {c.inspectionBrief && (
               <AgentCard agent="InitialInspectionAgent: inspection brief">
                 <InspectionBriefView c={c} interactive={inspecting} />
@@ -229,6 +243,8 @@ export function JobDetail() {
             )}
           </div>
         </Section>
+
+        <PreviousReports c={c} />
 
         {/* Inspection, repair and sign-off record */}
         {(c.verdict || c.repairNote) && (
@@ -250,21 +266,7 @@ export function JobDetail() {
           </Section>
         )}
 
-        {(c.status === "PENDING_SIGNOFF" || c.signoff) && (
-          <Section title="Sign-off">
-            <ul className="space-y-2 text-sm">
-              {[
-                ["Buyer", c.signoff?.buyer?.at],
-                ["Developer", c.signoff?.developer?.at],
-              ].map(([who, at]) => (
-                <li key={who} className="flex items-center gap-2">
-                  {at ? <Check className="size-4 text-emerald-600" /> : <CircleDashed className="size-4 text-zinc-400" />}
-                  {who}: {at ? `signed ${fmtDateTime(at)}` : "waiting"}
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
+        {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${me.startsWith("SC-") ? "Subcontractor" : "Technician"} (${workerLabel(me)})`} />}
 
         {c.status === "ESCALATION_PENDING" && (
           <p className="flex gap-2 rounded-2xl bg-violet-50 p-3 text-sm text-violet-900 ring-1 ring-violet-200">
@@ -275,7 +277,7 @@ export function JobDetail() {
         {agentEvents.length > 0 && (
           <Section>
             <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-              <History className="size-4 text-zinc-500" /> Agent activity
+              <History className="size-4 text-zinc-500" /> Job activity
             </h2>
             <EventTimeline events={agentEvents} compact />
           </Section>
