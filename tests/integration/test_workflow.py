@@ -35,7 +35,7 @@ def _repair_state(photo):
         "user_description": "Ceiling leak", "image_path": IMAGE,
         "intake_result": {"category": "water_leak", "location_in_unit": "bedroom ceiling"},
         "repair_note": "Resealed the joint", "repair_photo_path": photo,
-        "current_status": "REPAIR_DONE", "comms_result": {},
+        "current_status": "REPAIRED", "comms_result": {},
     }
 
 

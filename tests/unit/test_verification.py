@@ -239,3 +239,88 @@ def test_live_assess_repair_photo():
         "repair_note": "Patched ceiling.",
     })
     assert result["assessment"] in {"looks_resolved", "unclear", "not_resolved"}
+
+
+# --- Final review fix wave ---
+from agents.simephony.verification import _safe_lines
+
+
+@pytest.mark.parametrize("category", ["electrical", "roof", "door_window"])
+def test_high_risk_categories_use_safe_checks_verbatim(state, fake_llm, category):
+    state["intake_result"]["category"] = category
+    fake_llm.responses = [_vision(), "Remove the socket cover and look inside."]
+    r = verification_node(state)["verification_result"]
+    lines = r["protocol"].splitlines()
+    assert "master bedroom ceiling" in lines[0]
+    assert lines[1:-1] == SAFE_CHECKS[category]
+    assert "cover" not in r["protocol"]
+    assert len(fake_llm.calls) == 1  # vision only, no text LLM
+
+
+def test_guide_drops_signoff_and_placeholder_lines(state, fake_llm):
+    fake_llm.responses = [_vision(), "Look at the ceiling patch.\nBest regards,\n[Your Name]\nSimeProperty Team"]
+    p = verification_node(state)["verification_result"]["protocol"]
+    assert "Best regards" not in p and "[Your Name]" not in p and "SimeProperty Team" not in p
+    assert "Look at the ceiling patch." in p
+
+
+def test_safe_lines_strips_signoff():
+    assert _safe_lines("Look at the ceiling patch.\nBest regards,\n[Your Name]\nSimeProperty Team") == [
+        "Look at the ceiling patch."
+    ]
+
+
+@pytest.mark.parametrize("status", ["INVALID", "CLOSED", "PENDING_SIGNOFF", "VALID"])
+def test_repair_done_requires_repaired_status(state, fake_llm, status):
+    state["current_status"] = status
+    out = verification_node(state)
+    r = out["verification_result"]
+    assert out["current_status"] == status
+    assert r["rejected_reason"]
+    assert r["needs_technician_input"] is True
+    assert r.get("protocol") is None
+    assert fake_llm.calls == []
+
+
+def test_vision_outage_is_logged_and_labelled(state, fake_llm, capsys):
+    def boom(**kw):
+        raise RuntimeError("ollama down")
+    fake_llm.client.chat.completions.create.side_effect = boom
+    out = verification_node(state)
+    r = out["verification_result"]
+    assert r["assessment"] == "unclear"
+    assert r["observations"] == "Photo check unavailable"
+    assert "Photo check unavailable" in r["technician_message"]
+    assert "[VERIFICATION] vision check failed" in capsys.readouterr().out
+    assert out["current_status"] == "REPAIRED"
+
+
+def test_outcome_not_fixed_on_closed_case_leaves_closed():
+    out = verification_result_node({"verification_outcome": "NOT_FIXED", "current_status": "CLOSED"})
+    assert out["current_status"] == "CLOSED"
+    assert out["verification_result"]["rejected_reason"]
+    assert out["verification_result"].get("next_event") is None
+    assert "verification_status" not in out
+
+
+def test_outcome_fixed_on_invalid_case_leaves_invalid():
+    out = verification_result_node({"verification_outcome": "FIXED", "current_status": "INVALID"})
+    assert out["current_status"] == "INVALID"
+    assert out["verification_result"]["rejected_reason"]
+
+
+@pytest.mark.parametrize("outcome", [None, "", "MAYBE"])
+def test_unknown_outcome_leaves_status_and_is_rejected(outcome):
+    s = {"current_status": "PENDING_SIGNOFF"}
+    if outcome is not None:
+        s["verification_outcome"] = outcome
+    out = verification_result_node(s)
+    assert out["current_status"] == "PENDING_SIGNOFF"
+    assert out["verification_result"]["rejected_reason"]
+    assert "verification_status" not in out
+
+
+def test_valid_outcome_clears_stale_rejected_reason():
+    out = verification_result_node({"verification_outcome": "FIXED", "current_status": "PENDING_SIGNOFF",
+                                    "verification_result": {"rejected_reason": "old"}})
+    assert "rejected_reason" not in out["verification_result"]

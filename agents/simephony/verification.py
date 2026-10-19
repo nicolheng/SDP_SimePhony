@@ -2,12 +2,17 @@ import json
 import os
 
 from .llm_client import get_client, get_models
-from .guardrails import scan_for_liability, scan_for_unsafe_steps
+from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 from .intake import encode_image
 from .rules import load_rules
 
 _ALLOWED = {"looks_resolved", "unclear", "not_resolved"}
 _UNCLEAR = {"assessment": "unclear", "observations": "", "matches_location": False}
+_UNAVAILABLE = "Photo check unavailable"
+_VALID_OUTCOMES = {"FIXED", "NOT_FIXED", "CANNOT_VERIFY"}
+
+# Higher-risk categories: the buyer guide is SAFE_CHECKS verbatim, never LLM phrasing.
+_VERBATIM_CATEGORIES = {"electrical", "roof", "door_window"}
 
 _WATER = [
     "Look at the repaired area for damp patches, staining or bubbling paint.",
@@ -131,6 +136,10 @@ def assess_repair_photo(state: dict) -> dict:
     ]
     try:
         response = client.chat.completions.create(model=vision_model, messages=messages, temperature=0.1)
+    except Exception as e:
+        print(f"⚠️ [VERIFICATION] vision check failed: {e}")
+        return {**_UNCLEAR, "observations": _UNAVAILABLE}
+    try:
         raw = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
         data = json.loads(raw)
         assessment = data.get("assessment")
@@ -160,7 +169,7 @@ def _hold(state: dict, category: str, assessment: str, observations: str, messag
 
 def _safe_lines(text: str) -> list[str]:
     kept = []
-    for line in text.splitlines():
+    for line in strip_placeholders_and_signoff(text).splitlines():
         line = line.strip()
         if not line:
             continue
@@ -172,10 +181,47 @@ def _safe_lines(text: str) -> list[str]:
     return kept
 
 
+def _phrase_checks(state: dict, category: str, location: str, checks: list[str]) -> list[str]:
+    """Text LLM phrases the allow-listed checks for the location; unsafe/liability lines dropped."""
+    client = get_client()
+    _, text_model = get_models()
+    try:
+        response = client.chat.completions.create(
+            model=text_model,
+            messages=[
+                {"role": "system", "content": (
+                    "You write short verification checks for a home buyer to confirm a repair. "
+                    "Use ONLY the checks provided, phrased for the given location. One check per line, no numbering "
+                    "headings or sign-off. Never ask the buyer to open panels, touch wiring, climb or use tools. "
+                    "Do not promise the defect will not return and do not admit fault."
+                )},
+                {"role": "user", "content": (
+                    f"Location: {location}\nCategory: {category}\n"
+                    f"Technician repair note: {state['repair_note']}\nChecks:\n" + "\n".join(f"- {c}" for c in checks)
+                )},
+            ],
+            temperature=0.1,
+        )
+        lines = _safe_lines(response.choices[0].message.content)
+    except Exception:
+        lines = []
+    return lines
+
+
 def verification_node(state: dict) -> dict:
     """Photo-checks the technician's repair, then builds a safe, case-specific buyer guide."""
     category = state.get("intake_result", {}).get("category", "other")
     location = _location(state)
+
+    status = state.get("current_status")
+    if status != "REPAIRED":
+        # Not a repair to verify: leave the status alone and never message the buyer.
+        reason = f"Repair verification needs status REPAIRED (status is {status})"
+        result = dict(state.get("verification_result") or {})
+        result.update({"rejected_reason": reason, "needs_technician_input": True, "technician_message": reason})
+        result.setdefault("protocol", None)
+        state["verification_result"] = result
+        return state
 
     missing = []
     if not state.get("repair_note"):
@@ -199,28 +245,10 @@ def verification_node(state: dict) -> dict:
         )
 
     checks = SAFE_CHECKS.get(category, SAFE_CHECKS["other"])
-    client = get_client()
-    _, text_model = get_models()
-    try:
-        response = client.chat.completions.create(
-            model=text_model,
-            messages=[
-                {"role": "system", "content": (
-                    "You write short verification checks for a home buyer to confirm a repair. "
-                    "Use ONLY the checks provided, phrased for the given location. One check per line, no numbering "
-                    "headings or sign-off. Never ask the buyer to open panels, touch wiring, climb or use tools. "
-                    "Do not promise the defect will not return and do not admit fault."
-                )},
-                {"role": "user", "content": (
-                    f"Location: {location}\nCategory: {category}\n"
-                    f"Technician repair note: {state['repair_note']}\nChecks:\n" + "\n".join(f"- {c}" for c in checks)
-                )},
-            ],
-            temperature=0.1,
-        )
-        lines = _safe_lines(response.choices[0].message.content)
-    except Exception:
-        lines = []
+    if category in _VERBATIM_CATEGORIES:
+        lines = list(checks)
+    else:
+        lines = _phrase_checks(state, category, location, checks)
     if not lines:
         lines = list(checks)
 
@@ -246,6 +274,14 @@ def verification_result_node(state: dict) -> dict:
     """Applies the buyer's verification outcome (D2)."""
     outcome = state.get("verification_outcome")
     result = state.setdefault("verification_result", {})
+    result.pop("rejected_reason", None)
+    status = state.get("current_status")
+    if status != "PENDING_SIGNOFF":
+        result["rejected_reason"] = f"Verification outcome needs status PENDING_SIGNOFF (status is {status})"
+        return state
+    if outcome not in _VALID_OUTCOMES:
+        result["rejected_reason"] = f"Unknown verification outcome: {outcome!r}"
+        return state
     result["next_event"] = None
     if outcome == "FIXED":
         state["current_status"] = "PENDING_SIGNOFF"
