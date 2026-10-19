@@ -149,10 +149,47 @@ def test_guide_strips_liability_lines(state, fake_llm):
     assert scan_for_liability(p)[0] is False
 
 
+def test_all_lines_filtered_falls_back_to_safe_checks(state, fake_llm):
+    fake_llm.responses = [_vision(), "Open the breaker panel.\nClimb a ladder and check the wiring."]
+    p = verification_node(state)["verification_result"]["protocol"]
+    for item in SAFE_CHECKS["water_leak"]:
+        assert item in p.splitlines()
+    assert "ladder" not in p
+
+
+def test_preamble_line_dropped(state, fake_llm):
+    fake_llm.responses = [_vision(), "Here are the checks:\nLook at the ceiling patch for damp."]
+    p = verification_node(state)["verification_result"]["protocol"]
+    assert "Here are the checks" not in p
+    assert "Look at the ceiling patch" in p
+
+
+def test_text_llm_error_falls_back_to_safe_checks(state, fake_llm):
+    fake_llm.responses = [_vision()]
+    orig = fake_llm.client.chat.completions.create.side_effect
+
+    def boom(**kw):
+        if len(fake_llm.calls) >= 1:
+            raise RuntimeError("down")
+        return orig(**kw)
+
+    fake_llm.client.chat.completions.create.side_effect = boom
+    r = verification_node(state)
+    p = r["verification_result"]["protocol"]
+    for item in SAFE_CHECKS["water_leak"]:
+        assert item in p.splitlines()
+    assert r["current_status"] == "PENDING_SIGNOFF"
+
+
 def test_scan_for_unsafe_steps():
     assert scan_for_unsafe_steps("Open the breaker box") != []
     assert scan_for_unsafe_steps("Climb a ladder") != []
     assert scan_for_unsafe_steps("Look at the wall") == []
+    assert scan_for_unsafe_steps("Check the wireless doorbell and toolbar") == []
+    assert scan_for_unsafe_steps("Check the door panel is aligned") == []
+    assert scan_for_unsafe_steps("Stand on a chair to look") != []
+    assert scan_for_unsafe_steps("Open the breaker panel") != []
+    assert scan_for_unsafe_steps("Use a step stool or tools near the wires") != []
 
 
 def test_electrical_safe_checks_include_stop_rule():
@@ -168,7 +205,7 @@ def test_safe_checks_are_themselves_safe():
 
 
 def test_outcome_fixed():
-    out = verification_result_node({"verification_outcome": "FIXED", "current_status": "REPAIRED"})
+    out = verification_result_node({"verification_outcome": "FIXED", "current_status": "PENDING_SIGNOFF"})
     assert out["current_status"] == "PENDING_SIGNOFF"
     assert out["verification_status"] == "verified"
     assert out["verification_result"]["next_event"] is None
@@ -185,8 +222,8 @@ def test_outcome_not_fixed():
 
 
 def test_outcome_cannot_verify():
-    out = verification_result_node({"verification_outcome": "CANNOT_VERIFY", "current_status": "REPAIRED"})
-    assert out["current_status"] == "REPAIRED"
+    out = verification_result_node({"verification_outcome": "CANNOT_VERIFY", "current_status": "PENDING_SIGNOFF"})
+    assert out["current_status"] == "PENDING_SIGNOFF"
     assert out["verification_status"] == "pending"
     assert out["verification_result"]["next_event"] is None
 

@@ -1,3 +1,4 @@
+import re
 # agents/simephony/guardrails.py
 
 # Terms that are strictly forbidden in resident-facing communications.
@@ -34,12 +35,21 @@ def scan_for_liability(text: str) -> tuple[bool, list[str]]:
 
 
 UNSAFE_STEP_TERMS = [
-    "panel", "wiring", "wire", "ladder", "climb", "screwdriver", "tool",
-    "breaker box", "db box", "remove the cover", "dismantle", "unscrew",
+    "electrical panel", "breaker panel", "db panel", "access panel", "switch panel",
+    "distribution board", "wiring", "wire", "ladder", "climb", "screwdriver", "tool",
+    "breaker box", "db box", "remove the cover", "open the cover", "dismantle", "unscrew",
+    "chair", "stool", "step stool", "stand on", "hammer", "drill", "hatch",
 ]
+
+
+def _term_pattern(term: str) -> re.Pattern:
+    # word-boundary match; allow simple plural / -ing / -ed endings on the last word
+    return re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?:s|es|ing|ed)?(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+_UNSAFE_PATTERNS = [(t, _term_pattern(t)) for t in UNSAFE_STEP_TERMS]
 
 
 def scan_for_unsafe_steps(text: str) -> list[str]:
     """Returns unsafe-action terms (opening panels, wiring, climbing, tools) found in text."""
-    text_lower = text.lower()
-    return [t for t in UNSAFE_STEP_TERMS if t in text_lower]
+    return [t for t, pat in _UNSAFE_PATTERNS if pat.search(text)]

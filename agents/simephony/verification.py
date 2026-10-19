@@ -164,6 +164,8 @@ def _safe_lines(text: str) -> list[str]:
         line = line.strip()
         if not line:
             continue
+        if line.endswith(":") or line.lower().startswith(("here are", "here is", "sure", "certainly")):
+            continue  # preamble / heading, not a check
         if scan_for_unsafe_steps(line) or scan_for_liability(line)[0]:
             continue
         kept.append(line)
@@ -199,23 +201,28 @@ def verification_node(state: dict) -> dict:
     checks = SAFE_CHECKS.get(category, SAFE_CHECKS["other"])
     client = get_client()
     _, text_model = get_models()
-    response = client.chat.completions.create(
-        model=text_model,
-        messages=[
-            {"role": "system", "content": (
-                "You write short verification checks for a home buyer to confirm a repair. "
-                "Use ONLY the checks provided, phrased for the given location. One check per line, no numbering "
-                "headings or sign-off. Never ask the buyer to open panels, touch wiring, climb or use tools. "
-                "Do not promise the defect will not return and do not admit fault."
-            )},
-            {"role": "user", "content": (
-                f"Location: {location}\nCategory: {category}\n"
-                f"Technician repair note: {state['repair_note']}\nChecks:\n" + "\n".join(f"- {c}" for c in checks)
-            )},
-        ],
-        temperature=0.1,
-    )
-    lines = _safe_lines(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model=text_model,
+            messages=[
+                {"role": "system", "content": (
+                    "You write short verification checks for a home buyer to confirm a repair. "
+                    "Use ONLY the checks provided, phrased for the given location. One check per line, no numbering "
+                    "headings or sign-off. Never ask the buyer to open panels, touch wiring, climb or use tools. "
+                    "Do not promise the defect will not return and do not admit fault."
+                )},
+                {"role": "user", "content": (
+                    f"Location: {location}\nCategory: {category}\n"
+                    f"Technician repair note: {state['repair_note']}\nChecks:\n" + "\n".join(f"- {c}" for c in checks)
+                )},
+            ],
+            temperature=0.1,
+        )
+        lines = _safe_lines(response.choices[0].message.content)
+    except Exception:
+        lines = []
+    if not lines:
+        lines = list(checks)
 
     grace = load_rules().get("grace_period_days")
     protocol = "\n".join(
