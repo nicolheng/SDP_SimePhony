@@ -17,18 +17,25 @@ It opens on the SDP dashboard. Switch roles with the **role dropdown** (SDP side
 | Technician | `/technician` | Mobile — shows only the signed-in technician's jobs (default Hafiz Osman; change in Profile) |
 | SDP staff | `/sdp` | Desktop dashboard |
 
-## Data: mock for now
+## Data: FastAPI + SQLite
 
-**Starting data comes from `data/seed.db`** (built by `backend/seed/seed_core.py` + `seed_history.py`). The route `src/app/api/seed/route.ts` reads it read-only with Node's built-in SQLite (`src/lib/seed-db.ts` maps it to the frontend types). If `seed.db` is missing, the app falls back to the built-in `src/lib/seed.ts`; the SDP sidebar shows which one is in use. After regenerating `seed.db`, press **Reset demo**.
+The app needs the backend running. Start it first:
 
-Clicks during the demo still run in a **mock layer** in the browser (not written back to the database):
+```powershell
+# from the repo root, with the venv active
+cd backend
+uvicorn main:app --port 8001
+```
 
-- `src/lib/seed.ts`: 18 months of noisy history + the planted A-12-08 / stack A-08 leak story.
-- `src/lib/agents.ts`: rule-based stand-ins for the ADK agents (Intake, SimilarDefect, Triage, Comms, Verification, Recurrence, InitialInspection).
-- `src/lib/api.ts`: one function per action (`submitReport`, `recordVerdict`, `bookRepair`, `markRepaired`, `submitVerification`, `reopenCase`, `decideApproval`, demo controls). **Swap these bodies for `fetch()` calls to FastAPI** when P3/P4 ship endpoints; the pages don't need to change.
-- `src/lib/store.ts`: state in `localStorage`, synced across tabs. Open the buyer view and the SDP console in two tabs to watch them update live.
-
-Reset any time with **Reset demo** in the SDP sidebar.
+- All screens read `GET /api/state` from FastAPI, which reads `data/simephony.db` (refreshed every 3 s and on tab focus).
+- Every action (report, verdict, repair booking, mark repaired, sign-off, reopen, approvals, demo controls) is a POST to
+  `backend/demo_api/routes.py`; the backend runs the rules + agent stand-ins (`backend/demo_api/agents.py`, `workflow.py`),
+  writes the database, and returns the fresh state.
+- Photos are saved to `uploads/` and served at `http://localhost:8001/uploads/...`.
+- **Reset demo** copies `data/seed.db` over `data/simephony.db`.
+- Backend URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:8001`).
+- If the backend is down, the screens show the built-in demo data (`src/lib/seed.ts`) read-only and the SDP sidebar says
+  "Backend offline".
 
 ## Demo script (≈3 min)
 

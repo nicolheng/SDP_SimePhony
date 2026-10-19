@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402  (after load_dotenv so env paths apply)
+from demo_api.migrate import migrate  # noqa: E402
+from demo_api.routes import router as app_router  # noqa: E402
 
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
 
@@ -17,6 +19,13 @@ UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.ensure_db()
+    # An existing but empty live DB (schema only) is refilled from seed.db.
+    with db.get_conn() as conn:
+        empty = conn.execute("SELECT COUNT(*) FROM units").fetchone()[0] == 0
+    if empty:
+        db.reset_db()
+    with db.get_conn() as conn:
+        migrate(conn)
     UPLOADS_DIR.mkdir(exist_ok=True)
     yield
 
@@ -24,11 +33,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SimePhony API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+UPLOADS_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+app.include_router(app_router)
 
 
 @app.get("/health")

@@ -1,7 +1,7 @@
 "use client";
 import { CheckCircle2, CircleAlert, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useCase, useCaseEvents } from "@/components/case-views";
 import { BuildingBanner } from "@/components/illustrations";
@@ -9,8 +9,7 @@ import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/comp
 import { PhotoInput, samplePhoto } from "@/components/photo";
 import { SlotPicker } from "@/components/slot-picker";
 import { UrgencyBadge } from "@/components/status-badge";
-import { upcomingSlots } from "@/lib/agents";
-import { submitReport } from "@/lib/api";
+import { fetchVisitSlots, submitReport } from "@/lib/api";
 import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, PROJECT_NAME } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
@@ -24,7 +23,16 @@ const EXAMPLES = [
 
 export default function ReportDefect() {
   const now = useDemo((s) => s.now);
-  const slots = useMemo(() => upcomingSlots(now), [now]);
+  const [slots, setSlots] = useState<string[] | null>(null);
+  const [slotError, setSlotError] = useState<string | null>(null);
+  useEffect(() => {
+    fetchVisitSlots()
+      .then((s) => {
+        setSlots(s);
+        setSlotError(null);
+      })
+      .catch((e: Error) => setSlotError(e.message));
+  }, [now]);
   const [photo, setPhoto] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [slot, setSlot] = useState<string | null>(null);
@@ -37,10 +45,10 @@ export default function ReportDefect() {
     setBusy(true);
     setNonDefect(null);
     try {
-      const r = await submitReport({ description: text.trim(), photoUrl: photo, slot }, setCaseId);
+      const r = await submitReport({ description: text.trim(), photoUrl: photo, slot, unitId: DEMO_BUYER.unitId, buyerId: DEMO_BUYER.id }, setCaseId);
       if (r.nonDefect) setNonDefect(r.nonDefect);
-    } catch {
-      toast.error("Could not submit. Please try again.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not submit. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -104,7 +112,13 @@ export default function ReportDefect() {
 
         <Section title="3. Book your inspection visit *">
           <p className="-mt-1 mb-3 text-xs text-zinc-500">Your first appointment is an inspection visit: a technician checks the defect. If it&apos;s confirmed, you book the repair afterwards.</p>
-          <SlotPicker available={slots} value={slot} onChange={setSlot} />
+          {slotError ? (
+            <p className="text-sm text-red-600">{slotError}</p>
+          ) : slots ? (
+            <SlotPicker available={slots} value={slot} onChange={setSlot} />
+          ) : (
+            <p className="text-sm text-zinc-500">Loading available times…</p>
+          )}
         </Section>
 
         {nonDefect && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{nonDefect}</p>}

@@ -3,6 +3,7 @@ import { Bot, CalendarClock, Clock, Loader2, MessageSquare, ShieldAlert, Wrench 
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { CaseProgress, PreviousReports, useCase, useCaseId } from "@/components/case-views";
 import { DefectRecordCard } from "@/components/defect-record";
 import { recordAvailable } from "@/lib/defect-record";
@@ -80,9 +81,14 @@ export function CaseDetail() {
               disabled={!answer.trim() || sending}
               onClick={async () => {
                 setSending(true);
-                await answerFollowUp(c.id, answer.trim());
-                setAnswer("");
-                setSending(false);
+                try {
+                  await answerFollowUp(c.id, answer.trim());
+                  setAnswer("");
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+                } finally {
+                  setSending(false);
+                }
               }}
             >
               {sending ? <Loader2 className="size-4 animate-spin" /> : "Send"}

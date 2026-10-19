@@ -130,9 +130,14 @@ export function SdpCaseDetail() {
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true);
-                  await developerSignOff(c.id);
-                  setBusy(false);
-                  toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved; waiting for the buyer");
+                  try {
+                    await developerSignOff(c.id);
+                    toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved; waiting for the buyer");
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+                  } finally {
+                    setBusy(false);
+                  }
                 }}
                 className="mt-4 h-11 w-full rounded-xl bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
               >

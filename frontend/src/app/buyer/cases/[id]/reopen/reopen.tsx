@@ -62,9 +62,14 @@ export function ReopenCase() {
           disabled={!photo || busy}
           onClick={async () => {
             setBusy(true);
-            await reopenCase(c.id, text.trim() || "Problem came back", photo!);
-            toast.success("Case reopened");
-            router.push(`/buyer/cases/${c.id}`);
+            try {
+              await reopenCase(c.id, text.trim() || "Problem came back", photo!);
+              toast.success("Case reopened");
+              router.push(`/buyer/cases/${c.id}`);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+              setBusy(false);
+            }
           }}
         >
           {busy ? "Reopening…" : "Reopen Case"}

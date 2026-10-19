@@ -77,8 +77,13 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
 
   async function decide(approve: boolean) {
     setBusy(true);
-    await decideApproval(a.id, approve);
-    toast.success(approve ? "Approved — inspection brief is being prepared" : "Rejected — normal repair booking");
+    try {
+      await decideApproval(a.id, approve);
+      toast.success(approve ? "Approved — inspection brief is ready" : "Rejected — normal repair booking");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setBusy(false);
+    }
   }
 
   return (

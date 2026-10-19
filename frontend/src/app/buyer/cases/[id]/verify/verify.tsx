@@ -31,9 +31,14 @@ export function VerifyRepair() {
       return;
     }
     setBusy(true);
-    await submitVerification(c!.id, result, note.trim(), photo);
-    toast.success(result === "FIXED" ? "Signed off. Waiting for developer sign-off if not done yet." : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
-    router.push(`/buyer/cases/${c!.id}`);
+    try {
+      await submitVerification(c!.id, result, note.trim(), photo);
+      toast.success(result === "FIXED" ? "Signed off. Waiting for developer sign-off if not done yet." : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
+      router.push(`/buyer/cases/${c!.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setBusy(false);
+    }
   }
 
   if (c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer)

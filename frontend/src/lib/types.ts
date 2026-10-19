@@ -220,7 +220,9 @@ export interface Booking {
 export interface DemoState {
   version: number;
   /** Where the starting data came from. */
-  source: "seed.db" | "built-in";
+  source: "database" | "built-in";
+  /** Technicians and subcontractors from the technicians table (database only). */
+  workers?: (Technician & { company?: string | null })[];
   now: string; // demo clock
   cases: Case[];
   events: CaseEvent[];

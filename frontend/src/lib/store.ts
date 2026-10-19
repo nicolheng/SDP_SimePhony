@@ -1,13 +1,13 @@
 "use client";
-// Demo data store: starts from data/seed.db (via /api/seed), falls back to the built-in seed if the
-// database can't be read. Changes during the demo stay in the browser (localStorage), synced across
-// tabs so the buyer phone view and the SDP dashboard can run side by side.
+// App state comes from the FastAPI backend (data/simephony.db). Every action returns the fresh state; the store also
+// refreshes every few seconds so other open roles/tabs see changes. If the API can't be reached, the built-in demo
+// data is shown read-only so the screens still render.
 import { useSyncExternalStore } from "react";
 import { buildSeed } from "./seed";
 import type { DemoState } from "./types";
 
-const KEY = "simephony-demo-v1";
-const VERSION = 4;
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
+const POLL_MS = 3000;
 
 let fallback: DemoState | null = null;
 const getFallback = () => (fallback ??= buildSeed());
@@ -17,105 +17,77 @@ const listeners = new Set<() => void>();
 
 export type LoadStatus = "loading" | "ready";
 let status: LoadStatus = "loading";
-let seedError: string | null = null;
-let loadStarted = false;
+let apiError: string | null = null;
+let started = false;
 
 function emit() {
   listeners.forEach((l) => l());
-}
-
-/** Fetch the starting data from seed.db; on failure use the built-in seed and remember why. */
-async function fetchSeed(): Promise<DemoState> {
-  try {
-    const res = await fetch("/api/seed", { cache: "no-store" });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-    seedError = null;
-    return body as DemoState;
-  } catch (err) {
-    seedError = err instanceof Error ? err.message : String(err);
-    console.warn("[SimePhony] Using built-in demo data:", seedError);
-    return structuredClone(getFallback());
-  }
-}
-
-function readSaved(): DemoState | null {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as DemoState;
-    return parsed.version === VERSION ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Client only: use saved progress if any, otherwise load seed.db once. */
-function ensureLoaded() {
-  if (loadStarted || typeof window === "undefined") return;
-  loadStarted = true;
-  const saved = readSaved();
-  if (saved) {
-    state = saved;
-    status = "ready";
-    emit();
-    return;
-  }
-  void fetchSeed().then((s) => {
-    status = "ready";
-    setState(s);
-  });
 }
 
 export function getState(): DemoState {
   return state ?? getFallback();
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** Persist after the UI has updated; several quick updates (agent steps) share one write. */
-function persist() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch {
-      // Quota exceeded (large photos): keep going in memory.
-    }
-  }, 150);
-}
-
 export function setState(next: DemoState) {
   state = next;
+  apiError = null;
+  status = "ready";
   emit();
-  persist();
 }
 
-export function update(fn: (draft: DemoState) => void) {
-  const draft = structuredClone(getState());
-  fn(draft);
-  setState(draft);
+/** Call the API; JSON errors come back as Error(detail). */
+export async function apiFetch<T = { state: DemoState }>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
+  } catch {
+    throw new Error(`Can't reach the backend at ${API_URL}. Start it with: cd backend; uvicorn main:app --port 8001`);
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `Request failed (${res.status})`);
+  return body as T;
 }
 
-/** Reset demo: reload seed.db (or the built-in seed if it can't be read). */
-export async function resetState() {
-  fallback = null;
-  setState(await fetchSeed());
-  return { source: getState().source, error: seedError };
+/** POST an action and adopt the state the backend returns. */
+export async function apiAction<T extends object = object>(path: string, payload?: unknown): Promise<T & { state: DemoState }> {
+  const r = await apiFetch<T & { state: DemoState }>(path, { method: "POST", body: payload === undefined ? undefined : JSON.stringify(payload) });
+  setState(r.state);
+  return r;
+}
+
+let inFlight = false;
+export async function refresh() {
+  if (inFlight) return;
+  inFlight = true;
+  try {
+    setState((await apiFetch("/api/state")).state);
+  } catch (err) {
+    apiError = err instanceof Error ? err.message : String(err);
+    if (status === "loading") {
+      console.warn("[SimePhony] Showing built-in demo data:", apiError);
+      status = "ready";
+    }
+    emit();
+  } finally {
+    inFlight = false;
+  }
+}
+
+function start() {
+  if (started || typeof window === "undefined") return;
+  started = true;
+  void refresh();
+  setInterval(() => {
+    if (document.visibilityState === "visible") void refresh();
+  }, POLL_MS);
+  window.addEventListener("focus", () => void refresh());
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
-  ensureLoaded();
-  const onStorage = (e: StorageEvent) => {
-    if (e.key !== KEY) return;
-    state = readSaved();
-    emit();
-  };
-  window.addEventListener("storage", onStorage);
+  start();
   return () => {
     listeners.delete(l);
-    window.removeEventListener("storage", onStorage);
   };
 }
 
@@ -128,20 +100,12 @@ export function useDemo<T>(select: (s: DemoState) => T): T {
   );
 }
 
-/** "loading" until the first seed.db fetch (or saved progress) is in. */
+/** "loading" until the first response from the API (or the fallback after it fails). */
 export function useLoadStatus(): LoadStatus {
-  return useSyncExternalStore(
-    subscribe,
-    () => status,
-    () => "loading",
-  );
+  return useSyncExternalStore(subscribe, () => status, () => "loading");
 }
 
-/** Why seed.db couldn't be used (null when it loaded fine). */
-export function useSeedError(): string | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => seedError,
-    () => null,
-  );
+/** Why the API couldn't be used (null while connected). */
+export function useApiError(): string | null {
+  return useSyncExternalStore(subscribe, () => apiError, () => null);
 }

@@ -95,11 +95,16 @@ export function JobDetail() {
 
   async function run(fn: () => Promise<void>, msg: string) {
     setBusy(true);
-    await fn();
-    setNote("");
-    setPhoto(null);
-    setBusy(false);
-    toast.success(msg);
+    try {
+      await fn();
+      setNote("");
+      setPhoto(null);
+      toast.success(msg);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
