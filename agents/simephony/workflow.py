@@ -10,7 +10,7 @@ from .similar_defect import similar_defect_node
 from .triage import triage_node
 from .booking import booking_node
 from .comms import comms_node
-from .verification import verification_node
+from .verification import verification_node, verification_result_node
 from .recurrence import recurrence_node
 from .initial_inspection import initial_inspection_node
 
@@ -37,6 +37,19 @@ class AgentState(TypedDict):
     current_status: str # Case status (e.g., SUBMITTED, ASSIGNED, etc.)
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
+    # Event-driven fields
+    event: str # case.created | repair.done | verification.submitted | case.reopened
+    case_id: str
+    verdict_note: str
+    repair_note: str
+    repair_photo_path: Optional[str]
+    closed_at: str # ISO timestamp, timezone-aware
+    reopen_photo_path: Optional[str]
+    reopen_count: int
+    verification_outcome: str # FIXED | NOT_FIXED | CANNOT_VERIFY
+    verification_status: str
+    verification_result: dict
+    recurrence_result: dict
 
 # 3. Build the LangGraph
 workflow = StateGraph(AgentState)
@@ -48,6 +61,7 @@ workflow.add_node("triage", triage_node)
 workflow.add_node("booking", booking_node)
 workflow.add_node("comms", comms_node)
 workflow.add_node("verification", verification_node)
+workflow.add_node("verification_result", verification_result_node)
 workflow.add_node("recurrence", recurrence_node)
 workflow.add_node("initial_inspection", initial_inspection_node)
 
@@ -58,16 +72,32 @@ def should_reassign(state: AgentState):
         return "booking"
     return "comms"
 
-workflow.set_entry_point("intake")
+def route_event(state: AgentState) -> str:
+    return {
+        "repair.done": "verification",
+        "verification.submitted": "verification_result",
+        "case.reopened": "recurrence",
+    }.get(state.get("event"), "intake")
+
+def after_verification(state: AgentState):
+    if state.get("verification_result", {}).get("needs_technician_input"):
+        return END  # technician message stays in state for the technician app
+    return "comms"
+
+def after_recurrence(state: AgentState):
+    if state.get("recurrence_result", {}).get("action") == "NEW_CASE":
+        return "intake"
+    return "comms"
+
+workflow.set_conditional_entry_point(route_event)
 workflow.add_edge("intake", "similar_defect")
 workflow.add_edge("similar_defect", "triage")
 workflow.add_edge("triage", "booking")
 workflow.add_conditional_edges("booking", should_reassign)
+workflow.add_conditional_edges("verification", after_verification)
+workflow.add_edge("verification_result", "comms")
+workflow.add_conditional_edges("recurrence", after_recurrence)
 workflow.add_edge("comms", END)
-
-# Event-driven edges (Placeholders for later implementation)
-# Note: In a real app, these would be triggered by external events (e.g., repair.done)
-# and would route to verification, recurrence, etc.
 
 # 5. Compile the graph
 agent_app = workflow.compile()
