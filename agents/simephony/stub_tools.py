@@ -16,6 +16,16 @@ def get_unit(unit_id: str) -> dict:
     }
 
 
+def get_stack_cases(block: str, stack: str) -> list[dict]:
+    """STUB: cases in the same block+stack. Each dict has case_id, category, status."""
+    return []
+
+
+def request_extra_inspection(case_id: str, reasons: list[str]) -> dict:
+    """STUB: raises an extra-inspection request to SDP staff."""
+    return {"approval_id": "APR-STUB"}
+
+
 def find_similar_cases(unit_id: str, category: str) -> dict:
     """
     MOCK DATABASE QUERY. 
