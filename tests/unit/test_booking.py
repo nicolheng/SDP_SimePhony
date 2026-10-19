@@ -23,7 +23,7 @@ def test_booking_reassignment_loop():
     with patch("agents.simephony.booking.get_available_slots", return_value=mock_slots):
         state = {
             "unit_id": "A-12-08",
-            "user_description": "Leaking pipe",
+            "user_description": "Water is leaking into the electrical sockets",
             "intake_result": {"category": "plumbing", "severity_hint": "HIGH"},
             "similar_cases_result": {}, 
             "triage_result": {"assigned_skill": "plumbing", "urgency": "HIGH"}, 

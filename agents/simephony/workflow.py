@@ -55,19 +55,6 @@ workflow.add_node("initial_inspection", initial_inspection_node)
 def should_reassign(state: AgentState):
     booking_res = state.get("booking_result", {})
     if booking_res.get("assignment_ok") is False:
-        # Increment reassignment count and add to tried techs
-        reassign_count = state.get("reassignment_count", 0) + 1
-        tried_techs = state.get("tried_technicians", [])
-        
-        # Add the failed tech to the tried list
-        failed_tech = booking_res.get("assigned_technician")
-        if failed_tech and failed_tech not in tried_techs:
-            tried_techs.append(failed_tech)
-        
-        # Update state (note: LangGraph nodes update state, but edges just route)
-        # Since edges can't modify state directly, we must handle this logic in the booking_node 
-        # or a separate 'rejection_node'.
-        # For now, we will just route back to booking.
         return "booking"
     return "comms"
 
