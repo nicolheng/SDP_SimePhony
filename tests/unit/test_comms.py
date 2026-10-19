@@ -105,3 +105,89 @@ def test_assigned_message_names_booked_technician(fake_llm):
              "booking_result": {"assigned_technician": "T-PLUMB-1"}}
     comms_node(state)
     assert "T-PLUMB-1" in fake_llm.calls[0][-1]["content"]
+
+
+# --- Final review fix wave ---
+from agents.simephony.comms import NEUTRAL_TEMPLATES
+from agents.simephony.guardrails import scan_for_liability
+
+PROTOCOL = (
+    "The technician's photo appears to show the repair completed at bedroom ceiling.\n"
+    "Look at the repaired area for damp patches, staining or bubbling paint.\n"
+    "If any check fails, do not sign off. Reopen the case within 30 days with a new photo."
+)
+
+
+def _send(state):
+    with patch("agents.simephony.comms.get_unit", return_value={"buyer": {"email": "b@x.com"}}), \
+         patch("agents.simephony.comms.send_email") as mail:
+        out = comms_node(state)
+    return out, mail.call_args.kwargs["body"]
+
+
+def test_mid_body_thanks_not_truncated(fake_llm):
+    fake_llm.responses = ["Hello,\nThanks\nYour repair is booked.\nThe technician will visit on Tuesday.\nPlease keep the area clear."]
+    _, body = _send({"current_status": "ASSIGNED", "case_id": "C-1", "booking_result": {"assigned_technician": "T-1"}})
+    assert "Please keep the area clear." in body
+    assert "Your repair is booked." in body
+
+
+def test_rewrite_still_dangerous_uses_neutral_template(fake_llm):
+    fake_llm.responses = ["We admit fault and will refund you.", "This repair is permanent and will not come back."]
+    out, body = _send({"current_status": "VALID", "case_id": "C-1", "intake_result": {"category": "plumbing"}})
+    assert len(fake_llm.calls) == 2
+    assert body == NEUTRAL_TEMPLATES["VALID"]
+    assert scan_for_liability(body) == (False, [])
+    assert out["comms_result"]["message"] == body
+
+
+def test_neutral_template_invalid_keeps_closing(fake_llm):
+    fake_llm.responses = ["Our mistake.", "Our mistake again."]
+    _, body = _send({"current_status": "INVALID", "case_id": "C-1"})
+    assert body.endswith("If the problem gets worse or changes, please submit a new report.")
+    assert scan_for_liability(body) == (False, [])
+
+
+def test_neutral_templates_are_safe():
+    for status, text in NEUTRAL_TEMPLATES.items():
+        assert scan_for_liability(text) == (False, []), status
+        assert "[" not in text
+
+
+def test_pending_signoff_appends_protocol_verbatim(fake_llm):
+    fake_llm.responses = ["Your repair has been completed. Please check it using the steps below."]
+    out, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1",
+                       "verification_result": {"protocol": PROTOCOL}})
+    assert body.endswith(PROTOCOL)
+    assert "Your repair has been completed." in body
+    assert all(PROTOCOL not in m["content"] for call in fake_llm.calls for m in call
+               if isinstance(m["content"], str))  # guide never passes through the LLM
+    assert out["comms_result"]["message"] == body
+
+
+def test_pending_signoff_protocol_survives_neutral_fallback(fake_llm):
+    fake_llm.responses = ["We guarantee it.", "We promise it is permanent."]
+    _, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1",
+                     "verification_result": {"protocol": PROTOCOL}})
+    assert body == f"{NEUTRAL_TEMPLATES['PENDING_SIGNOFF']}\n\n{PROTOCOL}"
+
+
+def test_buyer_confirmed_fixed_does_not_resend_guide(fake_llm):
+    fake_llm.responses = ["Thank you for confirming the repair."]
+    _, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1", "verification_status": "verified",
+                     "verification_result": {"protocol": PROTOCOL}})
+    assert PROTOCOL not in body
+
+
+def test_unsafe_llm_intro_replaced_by_template(fake_llm):
+    fake_llm.responses = ["Your repair is done. Please open the breaker panel to check it."]
+    _, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1",
+                     "verification_result": {"protocol": PROTOCOL}})
+    assert "breaker" not in body
+    assert body == f"{NEUTRAL_TEMPLATES['PENDING_SIGNOFF']}\n\n{PROTOCOL}"
+
+
+def test_neutral_templates_have_no_unsafe_steps():
+    from agents.simephony.guardrails import scan_for_unsafe_steps
+    for status, text in NEUTRAL_TEMPLATES.items():
+        assert scan_for_unsafe_steps(text) == [], status

@@ -1,26 +1,32 @@
 from .llm_client import get_client, get_models
 from .stub_tools import send_email, get_unit
-from .guardrails import scan_for_liability
-import re
+from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 
 INVALID_CLOSING = "If the problem gets worse or changes, please submit a new report."
 
-
-_SIGN_OFF = re.compile(
-    r"^\s*(best regards|kind regards|warm regards|regards|sincerely|yours sincerely|thanks|thank you|cheers)\s*[,.!]?\s*$",
-    re.IGNORECASE,
-)
 _FALLBACK = "Thank you for your report."
+
+# Fixed, pre-scanned messages used when the guardrail rewrite is still flagged. No LLM text.
+NEUTRAL_TEMPLATES = {
+    "VALID": "Our technician has confirmed the reported defect. We will contact you shortly to arrange the repair.",
+    "INVALID": "Our technician has reviewed your report and found that it is not covered as a developer defect.",
+    "ASSIGNED": "A technician has been assigned to your case. We will notify you of the visit slot soon.",
+    "PENDING_SIGNOFF": (
+        "The technician has reported that the repair is complete. "
+        "Please check the repaired area using the steps below before signing off."
+    ),
+    "REOPENED": "Your case has been reopened. We will contact you shortly about the next steps.",
+    "ESCALATION_PENDING": (
+        "Your case has been referred to our team for further review. "
+        "We will contact you shortly about the next steps."
+    ),
+}
+_NEUTRAL_DEFAULT = "There is an update on your case. We will contact you shortly about the next steps."
 
 
 def _clean(text: str) -> str:
     """Remove [..] placeholder lines and any trailing sign-off block."""
-    lines = [ln for ln in text.splitlines() if not re.search(r"\[[^\]]*\]", ln)]
-    for i, ln in enumerate(lines):
-        if _SIGN_OFF.match(ln):
-            lines = lines[:i]  # drop sign-off and anything after it (team name etc.)
-            break
-    return "\n".join(lines).strip() or _FALLBACK
+    return strip_placeholders_and_signoff(text) or _FALLBACK
 
 
 def comms_node(state: dict) -> dict:
@@ -51,6 +57,13 @@ def comms_node(state: dict) -> dict:
         prompt = f"The technician inspected the {category} report and determined it is not a developer defect. Tech note: {technical_context}."
     elif status == "ASSIGNED":
         prompt = f"Your {category} case is now ASSIGNED to {tech}. We will notify you of the visit slot soon."
+    elif status == "PENDING_SIGNOFF" and state.get("verification_status") == "verified":
+        prompt = (f"The resident confirmed the {category} repair looks fixed. "
+                  "The case now waits for final sign-off. Thank them briefly.")
+    elif status == "PENDING_SIGNOFF":
+        prompt = (f"The technician reported the {category} repair is complete. Write a short intro asking the "
+                  "resident to check the repair using the steps that follow before signing off. "
+                  "Do not list any steps yourself.")
     else:
         prompt = f"Your case status is now {status}. Context: {technical_context}."
 
@@ -77,9 +90,19 @@ def comms_node(state: dict) -> dict:
             temperature=0.0
         )
         message = _clean(rewrite_response.choices[0].message.content)
+        if scan_for_liability(message)[0]:
+            # Rewrite still unsafe: send a fixed neutral template, no LLM text.
+            message = NEUTRAL_TEMPLATES.get(status, _NEUTRAL_DEFAULT)
+    if scan_for_unsafe_steps(message):
+        # LLM text must never tell the buyer to open panels, touch wiring, climb or use tools.
+        message = NEUTRAL_TEMPLATES.get(status, _NEUTRAL_DEFAULT)
 
+    # Fixed text appended verbatim AFTER the guardrail step (never passed through the LLM).
     if status == "INVALID":
         message = f"{message}\n\n{INVALID_CLOSING}"
+    protocol = (state.get("verification_result") or {}).get("protocol")
+    if status == "PENDING_SIGNOFF" and protocol and state.get("verification_status") != "verified":
+        message = f"{message}\n\n{protocol}"
 
     # 5. Dynamic Sending
     send_email(
