@@ -5,6 +5,15 @@ from .rules import load_rules
 from .stub_tools import request_extra_inspection
 
 
+MYT = timezone(timedelta(hours=8))  # grace period counts calendar days in Malaysia time
+
+
+def _myt_date(dt: datetime):
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)  # naive timestamps are UTC
+    return dt.astimezone(MYT).date()
+
+
 def _result(accepted: bool, reason: str, action: str, occurrence: int,
             cluster_size: int = 0, reasons: list | None = None, approval_id: str | None = None) -> dict:
     return {
@@ -32,9 +41,11 @@ def recurrence_node(state: dict, now: datetime | None = None) -> dict:
     if not state.get("reopen_photo_path"):
         return reject("A new photo is required to reopen a case")
 
-    grace = timedelta(days=load_rules()["grace_period_days"])
+    if not state.get("closed_at"):
+        raise ValueError("closed_at required to reopen a CLOSED case")
+    grace_days = load_rules()["grace_period_days"]
     closed_at = datetime.fromisoformat(state["closed_at"])
-    if now - closed_at > grace:
+    if (_myt_date(now) - _myt_date(closed_at)).days > grace_days:
         return reject("Grace period has passed; submit a new case", "NEW_CASE")
 
     state["reopen_count"] = count + 1
