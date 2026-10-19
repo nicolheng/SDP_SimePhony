@@ -1,4 +1,4 @@
-import yaml
+from .rules import load_rules
 from .llm_client import get_client, get_models
 
 def triage_node(state: dict) -> dict:
@@ -8,8 +8,7 @@ def triage_node(state: dict) -> dict:
 
     # 1. Read rules.yaml
     try:
-        with open("rules.yaml", "r") as f:
-            rules = yaml.safe_load(f)
+        rules = load_rules()
     except Exception as e:
         state["triage_result"] = {"error": f"Failed to read rules.yaml: {str(e)}"}
         return state

@@ -1,12 +1,11 @@
-import yaml
+from .rules import load_rules
 from .stub_tools import find_similar_cases
 
 def recurrence_node(state: dict) -> dict:
     """Analyzes previous cases, counts recurrences, raises extra inspection request."""
     # 1. Get recurrence thresholds from rules.yaml
     try:
-        with open("rules.yaml", "r") as f:
-            rules = yaml.safe_load(f)
+        rules = load_rules()
     except Exception:
         # Fallback to default
         rules = {"escalation": {"occurrence_threshold": 3}}

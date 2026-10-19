@@ -1,6 +1,16 @@
 from .llm_client import get_client, get_models
 from .stub_tools import send_email, get_unit
 from .guardrails import scan_for_liability
+import re
+
+INVALID_CLOSING = "If the problem gets worse or changes, please submit a new report."
+
+
+def _clean(text: str) -> str:
+    """Remove any lines containing [..] template placeholders (e.g. '[Your Name]')."""
+    lines = [ln for ln in text.splitlines() if not re.search(r"\[[^\]]*\]", ln)]
+    return "\n".join(lines).strip()
+
 
 def comms_node(state: dict) -> dict:
     """Drafts and sends buyer updates (valid/invalid, bookings, etc.)."""
@@ -12,7 +22,7 @@ def comms_node(state: dict) -> dict:
     case_id = state.get("case_id", "C-NEW")
     status = state.get("current_status", "UNKNOWN")
     category = state.get("intake_result", {}).get("category", "defect")
-    tech = state.get("triage_result", {}).get("assigned_technician", "a technician")
+    tech = state.get("booking_result", {}).get("assigned_technician", "a technician")
     
     # Technical notes to be translated
     verdict_note = state.get("verdict_note", "")
@@ -42,7 +52,7 @@ def comms_node(state: dict) -> dict:
         temperature=0.1
     )
     
-    message = response.choices[0].message.content
+    message = _clean(response.choices[0].message.content)
     
     # 4. Guardrail Layer
     is_dangerous, offending_terms = scan_for_liability(message)
@@ -55,7 +65,10 @@ def comms_node(state: dict) -> dict:
             ],
             temperature=0.0
         )
-        message = rewrite_response.choices[0].message.content
+        message = _clean(rewrite_response.choices[0].message.content)
+
+    if status == "INVALID":
+        message = f"{message}\n\n{INVALID_CLOSING}"
 
     # 5. Dynamic Sending
     send_email(

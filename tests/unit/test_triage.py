@@ -1,6 +1,5 @@
 
 import pytest
-from unittest.mock import patch
 from agents.simephony.triage import triage_node
 
 def test_triage_urgency_escalation(sample_state):
@@ -10,8 +9,15 @@ def test_triage_urgency_escalation(sample_state):
     result = triage_node(state)
     assert "triage_result" in result
 
-def test_triage_no_slots(sample_state):
-    with patch(agents.simephony.triage.get_available_slots, return_value=[]):
-        state = sample_state.copy()
-        result = triage_node(state)
-        assert "triage_result" in result
+def test_triage_uses_llm_urgency(sample_state, fake_llm):
+    fake_llm.responses = ["HIGH"]
+    result = triage_node(sample_state.copy())
+    assert result["triage_result"]["urgency"] == "HIGH"
+
+
+def test_triage_invalid_llm_answer_falls_back(sample_state, fake_llm):
+    fake_llm.responses = ["banana"]
+    state = sample_state.copy()
+    state["intake_result"] = {"category": "water_leak", "severity_hint": "LOW"}
+    result = triage_node(state)
+    assert result["triage_result"]["urgency"] == "LOW"

@@ -1,32 +1,45 @@
-
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
-from agents.simephony import llm_client
 
-# Mock the LLM client to avoid needing Ollama for CI/Tests
+DEFAULT_RESPONSE = "Standard AI response."
+
+_FN_MODULES = ["comms", "triage", "verification", "booking"]
+_CLIENT_MODULES = ["intake", "similar_defect", "initial_inspection", "analytics"]
+
+
+class FakeLLM:
+    """Scripted LLM: `responses` popped FIFO, `calls` records each call's messages."""
+
+    def __init__(self):
+        self.responses: list[str] = []
+        self.calls: list[list[dict]] = []
+        self.client = MagicMock()
+        self.client.chat.completions.create.side_effect = self._create
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs.get("messages", []))
+        content = self.responses.pop(0) if self.responses else DEFAULT_RESPONSE
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
 @pytest.fixture(autouse=True)
-def mock_llm_client(monkeypatch):
-    mock_client = MagicMock()
-    
-    # Default behavior for chat.completions.create
-    def mock_create(**kwargs):
-        # Simple echo/deterministic response based on prompt content
-        prompt = kwargs.get('messages', [{}])[-1].get('content', '').lower()
-        
-        if 'admit fault' in prompt or 'sorry we messed up' in prompt:
-            return MagicMock(choices=[MagicMock(message=MagicMock(content="I apologize for the mistake, we are at fault."))])
-        if 'water leak' in prompt:
-            return MagicMock(choices=[MagicMock(message=MagicMock(content="This is a high urgency plumbing leak."))])
-        if 'verification' in prompt:
-            return MagicMock(choices=[MagicMock(message=MagicMock(content="Please provide a photo of the repair."))])
-        
-        return MagicMock(choices=[MagicMock(message=MagicMock(content="Standard AI response."))])
+def fake_llm(request, monkeypatch):
+    """Deterministic LLM for every unit test. Skipped for @pytest.mark.live_llm."""
+    if request.node.get_closest_marker("live_llm"):
+        yield None
+        return
+    import importlib
+    fake = FakeLLM()
+    for name in _FN_MODULES:
+        mod = importlib.import_module(f"agents.simephony.{name}")
+        monkeypatch.setattr(mod, "get_client", lambda: fake.client)
+        monkeypatch.setattr(mod, "get_models", lambda: ("fake-vl", "fake-text"))
+    for name in _CLIENT_MODULES:
+        mod = importlib.import_module(f"agents.simephony.{name}")
+        monkeypatch.setattr(mod, "client", fake.client)
+    yield fake
 
-    mock_client.chat.completions.create.side_effect = mock_create
-    
-    # Patch the get_client and get_models functions in the simephony package
-    monkeypatch.setattr("agents.simephony.llm_client.get_client", lambda: mock_client)
-    monkeypatch.setattr("agents.simephony.llm_client.get_models", lambda: ("llava-llama3", "qwen2.5:7b"))
 
 @pytest.fixture
 def sample_state():

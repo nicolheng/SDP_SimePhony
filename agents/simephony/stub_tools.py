@@ -2,7 +2,18 @@
 
 
 def get_unit(unit_id: str) -> dict:
-    return {"unit_id": unit_id, "block": "A", "floor": 12, "stack": "08", "contractor": "Contractor X"}
+    parts = unit_id.split("-")
+    block = parts[0] if parts else ""
+    try:
+        floor = int(parts[1])
+    except (IndexError, ValueError):
+        floor = None
+    stack = parts[2] if len(parts) > 2 else ""
+    return {
+        "unit_id": unit_id, "block": block, "floor": floor, "stack": stack,
+        "contractor": "Contractor X",
+        "buyer": {"buyer_id": "B-0001", "email": "buyer@example.com"},
+    }
 
 
 def find_similar_cases(unit_id: str, category: str) -> dict:
@@ -66,16 +77,6 @@ def assign_technician(case_id: str, technician_id: str, slot_id: str, reason: st
     if technician_id == "T-PLUMB-2":
         return {"ok": False, "reason": "Technician rejected the visit."}
     return {"ok": True}
-
-def send_email(to: str, subject: str, body: str, case_id: str) -> dict:
-    print(f"📧 [STUB] Sending email to {to} | Subject: {subject} | Case: {case_id}")
-    return {"status": "sent"}
-
-
-def send_email(to: str, subject: str, body: str, case_id: str) -> dict:
-    print(f"📧 [STUB] Sending email to {to} | Subject: {subject} | Case: {case_id}")
-    return {"status": "sent"}
-
 
 # Create a new function that checks if a case is within the 30-day grace period
 def is_within_grace_period(case_id: str) -> bool:

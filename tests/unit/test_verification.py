@@ -1,7 +1,8 @@
 # tests/test_verification.py
 from agents.simephony.verification import verification_node
 
-def test_verification_provides_correct_protocol():
+def test_verification_provides_correct_protocol(fake_llm):
+    fake_llm.responses = ["1. Run the water for 5 minutes and check for leaks."]
     state = {
         "intake_result": {"category": "water_leak"},
         "triage_result": {"assigned_technician": "T-PLUMB-1"},

@@ -77,3 +77,15 @@ def test_booking_normal_urgency_picks_efficient_block():
     result = booking_node(state)
     assert result["booking_result"]["slot_id"] == "S-2"
 
+
+
+def test_booking_no_slots_escalates():
+    from unittest.mock import patch
+    state = {
+        "unit_id": "A-12-08",
+        "triage_result": {"assigned_skill": "plumbing", "urgency": "NORMAL"},
+        "current_status": "SUBMITTED"
+    }
+    with patch("agents.simephony.booking.get_available_slots", return_value={"slots": []}):
+        result = booking_node(state)
+    assert result["current_status"] == "ESCALATION_PENDING"

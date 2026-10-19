@@ -34,6 +34,7 @@ def test_dynamic_case_id():
         _, kwargs = mock_send_email.call_args
         assert kwargs["case_id"] == "C-999"
 
+@pytest.mark.live_llm
 def test_technical_translation():
     state = {
         "unit_id": "A-12-08",
@@ -52,7 +53,8 @@ def test_technical_translation():
         assert "pressure tested 5 bar" not in message.lower()
         assert any(word in message.lower() for word in ["fixed", "resolved", "repair"])
 
-def test_guardrail_still_active():
+def test_guardrail_still_active(fake_llm):
+    fake_llm.responses = ["We admit fault.", "Our technician has reviewed the report."]
     state = {
         "unit_id": "A-12-08",
         "case_id": "C-123",
@@ -70,6 +72,7 @@ def test_guardrail_still_active():
         assert "poor quality" not in message
         assert "fault" not in message
 
+@pytest.mark.live_llm
 def test_comms_handles_valid_status():
     state = {
         "unit_id": "A-12-08",
@@ -84,18 +87,19 @@ def test_comms_handles_valid_status():
         message = result["comms_result"]["message"].lower()
         assert any(word in message for word in ["booked", "next step", "scheduling", "appointment", "repair"])
 
-def test_comms_handles_invalid_status():
-    state = {
-        "unit_id": "A-12-08",
-        "case_id": "C-2",
-        "current_status": "INVALID",
-        "intake_result": {"category": "plumbing"},
-        "triage_result": {}
-    }
-    with patch("agents.simephony.comms.get_unit"), patch("agents.simephony.comms.send_email"):
-        result = comms_node(state)
-        assert "comms_result" in result
-        message = result["comms_result"]["message"].lower()
-        print(message)
-        assert any(word in message for word in ["rejected", "not a defect", "closed", "unable to confirm"])
+def test_invalid_message_follows_contract(fake_llm):
+    fake_llm.responses = ["Our technician found no developer defect.\n\nBest regards,\n[Your Name]"]
+    state = {"unit_id": "A-12-08", "case_id": "C-2", "current_status": "INVALID",
+             "intake_result": {"category": "plumbing"}, "verdict_note": "Stain is condensation from aircond."}
+    msg = comms_node(state)["comms_result"]["message"]
+    assert "[your name]" not in msg.lower()
+    assert "submit a new report" in msg.lower()
+    assert "condensation" in fake_llm.calls[0][-1]["content"].lower()   # tech reason reaches the prompt
 
+
+def test_assigned_message_names_booked_technician(fake_llm):
+    state = {"unit_id": "A-12-08", "case_id": "C-3", "current_status": "ASSIGNED",
+             "intake_result": {"category": "plumbing"},
+             "booking_result": {"assigned_technician": "T-PLUMB-1"}}
+    comms_node(state)
+    assert "T-PLUMB-1" in fake_llm.calls[0][-1]["content"]
