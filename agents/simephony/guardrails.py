@@ -31,3 +31,15 @@ def scan_for_liability(text: str) -> tuple[bool, list[str]]:
                 offending.append(term)
     
     return (len(offending) > 0, offending)
+
+
+UNSAFE_STEP_TERMS = [
+    "panel", "wiring", "wire", "ladder", "climb", "screwdriver", "tool",
+    "breaker box", "db box", "remove the cover", "dismantle", "unscrew",
+]
+
+
+def scan_for_unsafe_steps(text: str) -> list[str]:
+    """Returns unsafe-action terms (opening panels, wiring, climbing, tools) found in text."""
+    text_lower = text.lower()
+    return [t for t in UNSAFE_STEP_TERMS if t in text_lower]
