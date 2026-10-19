@@ -34,3 +34,8 @@ next-env.d.ts
 Thumbs.db
 .vscode/
 .idea/
+
+# Dumps and Logs
+*.dump
+*.log
+

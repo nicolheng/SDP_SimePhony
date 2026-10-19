@@ -1,31 +1,58 @@
-from .stub_tools import get_available_slots, assign_technician
+import yaml
+from .llm_client import get_client, get_models
 
 def triage_node(state: dict) -> dict:
-    """P2 (Nicol) owns this. Assign technician based on rules.yaml and availability."""
-    # TODO (P2 - Nicol): Replace this mock with real rules.yaml reading and Qwen reasoning.
-    # You have access to get_available_slots and assign_technician from stub_tools.
-    skill = "plumbing" # Mocked for now, P2 will read from rules.yaml later
-    block = state.get("unit_id", "A-12-08").split("-")[0]
-    
-    slots_data = get_available_slots(skill=skill, block=block)
-    slots = slots_data.get("slots", [])
-    
-    if not slots:
-        state["triage_result"] = {"error": "No available slots"}
+    """P2 (Nicol) owns this. Determines urgency and required skill for a defect."""
+    client = get_client()
+    _, text_model = get_models()
+
+    # 1. Read rules.yaml
+    try:
+        with open("rules.yaml", "r") as f:
+            rules = yaml.safe_load(f)
+    except Exception as e:
+        state["triage_result"] = {"error": f"Failed to read rules.yaml: {str(e)}"}
         return state
 
-    best_slot = slots[0]
-    assignment = assign_technician(
-        case_id="C-NEW", 
-        technician_id=best_slot["technician_id"], 
-        slot_id=best_slot["slot_id"], 
-        reason="Best match for skill and earliest availability"
+    # 2. AI Urgency Assessment (Override intake hint if high risk is detected)
+    user_desc = state.get("user_description", "")
+    intake_severity = state.get("intake_result", {}).get("severity_hint", "NORMAL")
+    
+    urgency_prompt = (
+        f"You are a safety triage expert. Analyze this property defect description: '{user_desc}'.\n"
+        f"The initial intake severity was {intake_severity}.\n"
+        f"Refer to these high-urgency rules: {rules.get('urgency', {}).get('high', [])}.\n"
+        "Determine if the urgency should be upgraded to HIGH, remain the same, or be lowered. "
+        "Respond with exactly one word: HIGH, MEDIUM, LOW, or NORMAL."
     )
     
+    try:
+        urgency_resp = client.chat.completions.create(
+            model=text_model,
+            messages=[{"role": "user", "content": urgency_prompt}],
+            temperature=0.0
+        )
+        urgency = urgency_resp.choices[0].message.content.strip().upper()
+        if urgency not in ["HIGH", "MEDIUM", "LOW", "NORMAL"]:
+            urgency = intake_severity
+    except Exception:
+        urgency = intake_severity
+
+    # 3. Map category to skill
+    category = state.get("intake_result", {}).get("category", "other")
+    skills = rules.get("category_to_skill", {}).get(category, ["general"])
+    skill = skills[0] 
+    
+    # 4. Save Verdict to Database (Planned)
+    # TODO: Call a tool like `update_case_triage(case_id, urgency, triage_reason)`
+    # For now, we just log that we would save it.
+    print(f"💾 [DB SAVE] Case {state.get('case_id', 'C-NEW')}: Urgency={urgency}, Skill={skill}")
+
     state["triage_result"] = {
-        "urgency": state["intake_result"].get("severity_hint", "NORMAL"),
-        "assigned_technician": best_slot["technician_id"],
-        "slot_id": best_slot["slot_id"],
-        "assignment_ok": assignment.get("ok", False)
+        "urgency": urgency,
+        "assigned_skill": skill,
+        "category": category,
+        "justification": f"Assigned {skill} based on {category} and {urgency} urgency."
     }
+    
     return state

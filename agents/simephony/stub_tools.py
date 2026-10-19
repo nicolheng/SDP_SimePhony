@@ -36,16 +36,46 @@ def send_email(to: str, subject: str, body: str, case_id: str = "UNKNOWN") -> di
     return {"status": "stub_sent"}
 
 def get_available_slots(skill: str, block: str) -> dict:
+    # Simple mapping for stubs
+    tech_map = {
+        "plumbing": "T-PLUMB",
+        "waterproofing": "T-WATER",
+        "electrical": "T-ELEC",
+        "civil": "T-CIVIL",
+        "tiling": "T-TILE",
+        "flooring": "T-FLOOR",
+        "roofing": "T-ROOF",
+        "carpentry": "T-CARP",
+        "glazing": "T-GLAZE",
+        "painting": "T-PAINT",
+        "general": "T-GEN"
+    }
+    prefix = tech_map.get(skill, "T-GEN")
     return {
         "slots": [
-            {"slot_id": "S-1", "technician_id": "T-PLUMB-1", "start": "2026-10-22T14:00:00+08:00"},
-            {"slot_id": "S-2", "technician_id": "T-PLUMB-2", "start": "2026-10-23T10:00:00+08:00"},
+            {"slot_id": "S-1", "technician_id": f"{prefix}-1", "start": "2026-10-22T14:00:00+08:00", "block": "B"},
+            {"slot_id": "S-2", "technician_id": f"{prefix}-2", "start": "2026-10-23T10:00:00+08:00", "block": "A"},
+            {"slot_id": "S-3", "technician_id": f"{prefix}-3", "start": "2026-10-24T11:00:00+08:00", "block": "A"},
+            {"slot_id": "S-4", "technician_id": f"{prefix}-4", "start": "2026-10-25T09:00:00+08:00", "block": "C"},
         ]
     }
 
 
 def assign_technician(case_id: str, technician_id: str, slot_id: str, reason: str) -> dict:
+    # Simulate a rejection if the technician is "T-PLUMB-2" (just for testing the loop)
+    if technician_id == "T-PLUMB-2":
+        return {"ok": False, "reason": "Technician rejected the visit."}
     return {"ok": True}
+
+def send_email(to: str, subject: str, body: str, case_id: str) -> dict:
+    print(f"📧 [STUB] Sending email to {to} | Subject: {subject} | Case: {case_id}")
+    return {"status": "sent"}
+
+
+def send_email(to: str, subject: str, body: str, case_id: str) -> dict:
+    print(f"📧 [STUB] Sending email to {to} | Subject: {subject} | Case: {case_id}")
+    return {"status": "sent"}
+
 
 # Create a new function that checks if a case is within the 30-day grace period
 def is_within_grace_period(case_id: str) -> bool:
