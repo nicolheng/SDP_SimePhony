@@ -71,6 +71,7 @@ def test_guardrail_still_active(fake_llm):
         assert "admit" not in message
         assert "poor quality" not in message
         assert "fault" not in message
+        assert len(fake_llm.calls) == 2
 
 @pytest.mark.live_llm
 def test_comms_handles_valid_status():
@@ -93,7 +94,8 @@ def test_invalid_message_follows_contract(fake_llm):
              "intake_result": {"category": "plumbing"}, "verdict_note": "Stain is condensation from aircond."}
     msg = comms_node(state)["comms_result"]["message"]
     assert "[your name]" not in msg.lower()
-    assert "submit a new report" in msg.lower()
+    assert "best regards" not in msg.lower()
+    assert msg.endswith("If the problem gets worse or changes, please submit a new report.")
     assert "condensation" in fake_llm.calls[0][-1]["content"].lower()   # tech reason reaches the prompt
 
 

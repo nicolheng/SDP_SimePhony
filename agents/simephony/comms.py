@@ -6,10 +6,21 @@ import re
 INVALID_CLOSING = "If the problem gets worse or changes, please submit a new report."
 
 
+_SIGN_OFF = re.compile(
+    r"^\s*(best regards|kind regards|warm regards|regards|sincerely|yours sincerely|thanks|thank you|cheers)\s*[,.!]?\s*$",
+    re.IGNORECASE,
+)
+_FALLBACK = "Thank you for your report."
+
+
 def _clean(text: str) -> str:
-    """Remove any lines containing [..] template placeholders (e.g. '[Your Name]')."""
+    """Remove [..] placeholder lines and any trailing sign-off block."""
     lines = [ln for ln in text.splitlines() if not re.search(r"\[[^\]]*\]", ln)]
-    return "\n".join(lines).strip()
+    for i, ln in enumerate(lines):
+        if _SIGN_OFF.match(ln):
+            lines = lines[:i]  # drop sign-off and anything after it (team name etc.)
+            break
+    return "\n".join(lines).strip() or _FALLBACK
 
 
 def comms_node(state: dict) -> dict:
