@@ -89,16 +89,24 @@ _SIGN_OFF = re.compile(
 _SIGN_OFF_WINDOW = 3  # a sign-off only counts within the last N non-empty lines
 
 
+def _is_signature_line(line: str) -> bool:
+    """A name / team / title line ("Farah Lee", "SDP Defect Team"): short and not a sentence."""
+    s = line.strip()
+    return len(s.split()) <= 6 and not s.endswith((".", "?", "!"))
+
+
 def strip_placeholders_and_signoff(text: str) -> str:
     """Drop [..] placeholder lines and a trailing sign-off block (sign-off line and everything after it).
 
-    A sign-off line only counts if it is within the last 3 non-empty lines, so a bare
-    "Thanks" in the middle of the body does not truncate the message. May return "".
+    A sign-off line only counts if it is within the last 3 non-empty lines and everything after
+    it looks like a signature (names, team, title). A "Thanks" followed by real sentences
+    ("Thanks\\nYour repair is booked.") is part of the message and kept. May return "".
     """
     lines = [ln for ln in text.splitlines() if not _PLACEHOLDER.search(ln)]
     non_empty = [i for i, ln in enumerate(lines) if ln.strip()]
     for i in non_empty[-_SIGN_OFF_WINDOW:]:
-        if _SIGN_OFF.match(lines[i]):
+        after = [ln for ln in lines[i + 1:] if ln.strip()]
+        if _SIGN_OFF.match(lines[i]) and all(_is_signature_line(ln) for ln in after):
             lines = lines[:i]
             break
     return "\n".join(lines).strip()

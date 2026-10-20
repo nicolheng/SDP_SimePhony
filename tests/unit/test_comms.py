@@ -366,3 +366,62 @@ def test_system_prompt_treats_notes_as_data(fake_llm):
 def test_escalation_template_is_high_demand_notice():
     text = NEUTRAL_TEMPLATES["ESCALATION_PENDING"].lower()
     assert "high demand" in text and "earliest" in text
+
+
+# --- PR B: subjects, sign-off stripper, INVALID fallback reason ---
+from agents.simephony.comms import email_subject
+
+
+@pytest.mark.parametrize("state,subject", [
+    ({"current_status": "ASSIGNED"}, "We've received your report"),
+    ({"current_status": "VALID"}, "Defect confirmed: please book a repair"),
+    ({"current_status": "INVALID"}, "Inspection result"),
+    ({"current_status": "PENDING_SIGNOFF", "verification_result": {"protocol": "Look."}}, "Please check the repair and sign off"),
+    ({"current_status": "PENDING_SIGNOFF", "verification_status": "verified"}, "Thank you for confirming"),
+    ({"current_status": "REOPENED"}, "Case reopened"),
+    ({"current_status": "ESCALATION_PENDING", "event": "case.reopened", "recurrence_result": {"action": "ESCALATED"}},
+     "Your case is being reviewed"),
+    ({"current_status": "ESCALATION_PENDING"}, "We're arranging your visit"),
+    ({"current_status": "CLOSED", "event": "case.reopened", "recurrence_result": {"action": "REJECTED", "code": "no_photo"}},
+     "About your reopen request"),
+    ({"current_status": "SOMETHING_NEW"}, "Update on your case"),
+])
+def test_email_subject_is_plain_english(state, subject):
+    assert email_subject({**state, "case_id": "C-0018"}) == f"[C-0018] {subject}"
+
+
+def test_email_subject_has_no_placeholder_case_id():
+    assert email_subject({"current_status": "ASSIGNED", "case_id": "C-NEW"}) == "We've received your report"
+    assert email_subject({"current_status": "ASSIGNED"}) == "We've received your report"
+
+
+def test_sent_email_uses_plain_subject(fake_llm):
+    fake_llm.responses = ["Your defect is confirmed."]
+    with patch("agents.simephony.comms.get_unit", return_value={"buyer": {"email": "b@x.com"}}), \
+         patch("agents.simephony.comms.send_email") as mail:
+        comms_node({"current_status": "VALID", "case_id": "C-7"})
+    assert mail.call_args.kwargs["subject"] == "[C-7] Defect confirmed: please book a repair"
+    assert "VALID" not in mail.call_args.kwargs["subject"]
+
+
+def test_short_message_with_thanks_keeps_its_content(fake_llm):
+    fake_llm.responses = ["Hello,\nThanks\nYour repair is booked.\nBye now."]
+    _, body = _send({"current_status": "ASSIGNED", "case_id": "C-1"})
+    assert "Your repair is booked." in body
+
+
+def test_invalid_fallback_keeps_safe_technician_reason(fake_llm):
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    _, body = _send({"current_status": "INVALID", "case_id": "C-1",
+                     "verdict_note": "The stain is condensation from the aircon pipe."})
+    assert "The stain is condensation from the aircon pipe." in body
+    assert body.startswith(NEUTRAL_TEMPLATES["INVALID"])
+    assert body.endswith(CLOSING)
+
+
+def test_invalid_fallback_leaves_out_unsafe_technician_note(fake_llm):
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    _, body = _send({"current_status": "INVALID", "case_id": "C-1",
+                     "verdict_note": "We admit the concrete was poor quality."})
+    assert "admit" not in body.lower()
+    assert body == f"{NEUTRAL_TEMPLATES['INVALID']}\n\n{CLOSING}"

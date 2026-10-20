@@ -92,3 +92,22 @@ def test_fixed_closings_pass_liability_scan():
     assert scan_for_liability(INVALID_CLOSING) == (False, [])
     footer = "If any check fails, do not sign off. Reopen the case within 30 days with a new photo."
     assert scan_for_liability(footer) == (False, [])
+
+
+# --- PR B: sign-off stripper keeps real content ---
+@pytest.mark.parametrize("text,kept", [
+    ("Hello,\nThanks\nYour repair is booked.\nBye now.", "Your repair is booked."),
+    ("Your visit is on Tuesday.\nThank you\nPlease keep the area clear.", "Please keep the area clear."),
+])
+def test_strip_keeps_sentences_after_a_thanks_line(text, kept):
+    assert kept in strip_placeholders_and_signoff(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Your repair is booked.\nBest regards,\nSimeProperty Team",
+    "Your repair is booked.\n\nKind regards,\n[Your Name]\nProperty Management Team",
+    "Your repair is booked.\nThanks,\nFarah Lee\nSDP Defect Team",
+    "Your repair is booked.\nRegards,",
+])
+def test_strip_still_removes_real_signature_blocks(text):
+    assert strip_placeholders_and_signoff(text) == "Your repair is booked."

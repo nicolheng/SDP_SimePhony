@@ -66,9 +66,44 @@ def _reopen_action(state: dict) -> str | None:
     return (state.get("recurrence_result") or {}).get("action")
 
 
+# Buyer-facing email subjects, keyed like the neutral templates (never the raw status code).
+SUBJECTS = {
+    "ASSIGNED": "We've received your report",
+    "VALID": "Defect confirmed: please book a repair",
+    "INVALID": "Inspection result",
+    "PENDING_SIGNOFF": "Please check the repair and sign off",
+    "PENDING_SIGNOFF_NO_GUIDE": "Please check the repair and sign off",
+    "PENDING_SIGNOFF_VERIFIED": "Thank you for confirming",
+    "REOPENED": "Case reopened",
+    "ESCALATED": "Your case is being reviewed",
+    "ESCALATION_PENDING": "We're arranging your visit",
+    "REOPEN_REJECTED": "About your reopen request",
+}
+_SUBJECT_DEFAULT = "Update on your case"
+
+
+def email_subject(state: dict) -> str:
+    """Plain subject for this update, prefixed with the case number when there is a real one."""
+    key = "REOPEN_REJECTED" if _reopen_action(state) == "REJECTED" else _template_key(state)
+    subject = SUBJECTS.get(key, _SUBJECT_DEFAULT)
+    case_id = state.get("case_id")
+    return f"[{case_id}] {subject}" if case_id and case_id != "C-NEW" else subject
+
+
+def _fallback(state: dict, key: str) -> str:
+    """Fixed template for when LLM text can't be sent. INVALID keeps the technician's reason
+    (CONTRACTS) when the note itself passes the guardrails."""
+    text = NEUTRAL_TEMPLATES.get(key, _NEUTRAL_DEFAULT)
+    if key == "INVALID":
+        note = " ".join((state.get("verdict_note") or "").split())[:300]
+        if note and not scan_for_liability(note)[0] and not scan_for_unsafe_steps(note):
+            text = f'{text} The technician noted: "{note}"'
+    return text
+
+
 def _send(state: dict, to: str | None, status: str, message: str, case_id: str) -> dict:
     if to:
-        send_email(to=to, subject=f"Case Update: {status}", body=message, case_id=case_id)
+        send_email(to=to, subject=email_subject(state), body=message, case_id=case_id)
         delivery = "sent"
     else:
         print(f"[COMMS] No buyer email for case {case_id}; update not sent")
@@ -143,7 +178,7 @@ def comms_node(state: dict) -> dict:
         message = _clean(response.choices[0].message.content)
     except Exception:
         # LLM unavailable: send the fixed neutral template rather than crash the workflow.
-        message = NEUTRAL_TEMPLATES.get(template_key, _NEUTRAL_DEFAULT)
+        message = _fallback(state, template_key)
 
     # 4. Guardrail Layer
     is_dangerous, offending_terms = scan_for_liability(message)
@@ -155,13 +190,13 @@ def comms_node(state: dict) -> dict:
             ], 0.0)
             message = _clean(rewrite_response.choices[0].message.content)
         except Exception:
-            message = NEUTRAL_TEMPLATES.get(template_key, _NEUTRAL_DEFAULT)
+            message = _fallback(state, template_key)
         if scan_for_liability(message)[0]:
             # Rewrite still unsafe: send a fixed neutral template, no LLM text.
-            message = NEUTRAL_TEMPLATES.get(template_key, _NEUTRAL_DEFAULT)
+            message = _fallback(state, template_key)
     if scan_for_unsafe_steps(message):
         # LLM text must never tell the buyer to open panels, touch wiring, climb or use tools.
-        message = NEUTRAL_TEMPLATES.get(template_key, _NEUTRAL_DEFAULT)
+        message = _fallback(state, template_key)
 
     # Fixed text appended verbatim AFTER the guardrail step (never passed through the LLM).
     if status == "INVALID":

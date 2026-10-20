@@ -199,7 +199,7 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert s["booking_result"]["assignment_ok"] is True
     assert _b64(s["image_path"]) in _image_urls(fake_llm.calls[0])[0]  # intake saw the buyer's photo
     assert len(_emails(world)) == 1
-    assert _emails(world)[0]["subject"] == "Case Update: ASSIGNED"
+    assert _emails(world)[0]["subject"] == "[C-0001] We've received your report"
 
     # 2. technician marks the repair done with an after-photo -> verification -> comms
     after = _photo(tmp_path, "after.jpg")
@@ -215,7 +215,7 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert "Run the shower for a few minutes" in guide
     assert "do not sign off. Reopen the case within 30 days with a new photo." in guide
     mail = _emails(world)[-1]
-    assert mail["subject"] == "Case Update: PENDING_SIGNOFF"
+    assert mail["subject"] == "[C-0001] Please check the repair and sign off"
     assert guide in mail["body"]
 
     # 3. buyer submits FIXED -> still waiting for sign-off, no guide re-sent
@@ -246,8 +246,8 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
 
     mails = _emails(world)
     assert [m["subject"] for m in mails] == [
-        "Case Update: ASSIGNED", "Case Update: PENDING_SIGNOFF", "Case Update: PENDING_SIGNOFF",
-        "Case Update: REOPENED", "Case Update: ESCALATION_PENDING",
+        "[C-0001] We've received your report", "[C-0001] Please check the repair and sign off",
+        "[C-0001] Thank you for confirming", "[C-0001] Case reopened", "[C-0001] Your case is being reviewed",
     ]
     assert {m["to"] for m in mails} == {BUYER}
     assert {m["case_id"] for m in mails} == {CASE}
@@ -265,7 +265,7 @@ def test_unclear_after_photo_holds_buyer_email(fake_llm, world, tmp_path):
     assert result["needs_technician_input"] is True
     assert result["protocol"] is None
     assert "could not be confirmed as resolved at master bathroom ceiling" in result["technician_message"]
-    assert [m["subject"] for m in _emails(world)] == ["Case Update: ASSIGNED"]  # no buyer email
+    assert [m["subject"] for m in _emails(world)] == ["[C-0001] We've received your report"]  # no buyer email
     _assert_emails_safe(world)
 
 
@@ -277,7 +277,7 @@ def test_not_fixed_returns_case_to_valid(fake_llm, world, tmp_path):
     assert s["current_status"] == "VALID"
     assert s["verification_status"] == "not_verified"
     assert s["verification_result"]["next_event"] == "repair.rebook"
-    assert _emails(world)[-1]["subject"] == "Case Update: VALID"
+    assert _emails(world)[-1]["subject"] == "[C-0001] Defect confirmed: please book a repair"
     _assert_emails_safe(world)
 
 
@@ -374,7 +374,7 @@ def test_all_technicians_reject_escalates_without_looping(fake_llm, world, tmp_p
     assert world.assign_technician.call_count == len(SLOTS)
     assert s["current_status"] == "ESCALATION_PENDING"
     assert "No more available technicians" in s["booking_result"]["error"]
-    assert [m["subject"] for m in _emails(world)] == ["Case Update: ESCALATION_PENDING"]
+    assert [m["subject"] for m in _emails(world)] == ["[C-0001] We're arranging your visit"]
     _assert_emails_safe(world)
 
 
