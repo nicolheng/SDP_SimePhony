@@ -7,14 +7,19 @@ import pytest
 import threading
 from backend.db import get_conn
 
-def test_sqlite_concurrent_writes():
+def test_sqlite_concurrent_writes(tmp_path):
     # Attempt to perform multiple concurrent writes to the DB
-    # This tests if WAL mode and busy_timeout are working
-    
+    # This tests if WAL mode and busy_timeout are working.
+    # Uses a throwaway DB file: the live data/simephony.db must never collect test rows.
+    db_path = tmp_path / "concurrency.db"
+    # Set up once, like the real DB (already WAL with its tables): 20 threads switching a brand-new
+    # file to WAL at the same moment hit "database is locked", which is a setup race, not a write race.
+    with get_conn(db_path) as conn:
+        conn.execute("CREATE TABLE concurrency_test (id INTEGER PRIMARY KEY, val TEXT)")
+
     def write_task(i):
         try:
-            with get_conn() as conn:
-                conn.execute("CREATE TABLE IF NOT EXISTS concurrency_test (id INTEGER PRIMARY KEY, val TEXT)")
+            with get_conn(db_path) as conn:
                 conn.execute("INSERT INTO concurrency_test (val) VALUES (?)", (f"val_{i}",))
         except Exception as e:
             print(f"Write {i} failed: {e}")
@@ -30,7 +35,7 @@ def test_sqlite_concurrent_writes():
         t.join()
     
     # If we reach here without an exception, concurrency is handled
-    with get_conn() as conn:
+    with get_conn(db_path) as conn:
         count = conn.execute("SELECT count(*) FROM concurrency_test").fetchone()[0]
         assert count == 20
 
@@ -39,6 +44,7 @@ def test_sqlite_concurrent_writes():
 # test_ollama.py
 from agents.simephony.llm_client import get_client, get_models
 
+@pytest.mark.live_llm  # talks to the real Ollama server
 def test_connection():
     print("🚀 Testing connection to local Ollama...")
     client = get_client()
