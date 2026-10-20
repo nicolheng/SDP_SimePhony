@@ -1236,6 +1236,8 @@ def record_verification(case_id: str, outcome: str, note: str = "", photo: Optio
     with _connect() as conn:
         case = _get_case(conn, case_id)
         _require_status(case, ("PENDING_SIGNOFF",), "record verification")
+        if outcome == "FIXED" and not case["developer_signed_at"]:
+            raise ToolError("The developer has to sign off before the buyer")
         now = _now(conn)
         saved = _save_photo(conn, case_id, photo, "reopen" if outcome == "NOT_FIXED" else "verification")
         v = conn.execute(
@@ -1275,6 +1277,8 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
             _save(conn, case_id, developer_signed=1, developer_signed_at=now, developer_signed_by=by)
             _emit(conn, case_id, "signoff.completed", f"Developer signed off ({by})", party="developer")
         else:
+            if not case["developer_signed_at"]:
+                raise ToolError("The developer has to sign off before the buyer")
             _save(conn, case_id, buyer_signed=1, buyer_signed_at=now, buyer_signoff_note=note)
             _emit(conn, case_id, "signoff.completed", "Buyer signed off the repair", party="buyer")
         closed = _close_if_both_signed(conn, case_id)

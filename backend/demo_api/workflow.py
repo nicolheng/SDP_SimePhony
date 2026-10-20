@@ -302,6 +302,8 @@ def submit_verification(ctx: Ctx, case_id: str, result: str, note: str, photo: s
         raise WorkflowError("Unknown result.")
     if result == "NOT_FIXED" and not photo:
         raise WorkflowError("Please add a new photo showing the problem.")
+    if result == "FIXED" and not c.get("developer_signed_at"):
+        raise WorkflowError("The developer has to approve the repair before you can sign off.")
     v = latest_verification(ctx, case_id)
     add_photo(ctx, case_id, photo, "reopen" if result == "NOT_FIXED" else "verification")
     if v:
@@ -337,7 +339,10 @@ def developer_signoff(ctx: Ctx, case_id: str) -> None:
     c.update(developer_signed=1, developer_signed_at=ctx.now, developer_signed_by=by)
     save_case(ctx, c)
     event(ctx, case_id, "signoff.completed", f"Developer signed off ({by})")
-    _close_if_both_signed(ctx, c)
+    if c.get("buyer_signed_at"):
+        _close_if_both_signed(ctx, c)
+    else:
+        notify_buyer(ctx, c, "ready_signoff", deadline=fmt_datetime(signoff_deadline(c)))
 
 
 def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> None:
@@ -563,12 +568,16 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
 
 
 def signoff_deadline(c: dict) -> str:
-    return add_days(c.get("repaired_at") or c.get("verdict_at") or c["created_at"], config.SIGNOFF_PERIOD_DAYS)
+    """The buyer signs after the developer, so their period starts at the developer's sign-off."""
+    start = c.get("developer_signed_at") or c.get("repaired_at") or c.get("verdict_at") or c["created_at"]
+    return add_days(start, config.SIGNOFF_PERIOD_DAYS)
 
 
 def sweep_signoffs(ctx: Ctx) -> None:
-    """Sign-off period: in-app reminder 3 days before the deadline, then auto-close (high urgency: flag to SDP instead)."""
-    ids = [r["case_id"] for r in ctx.conn.execute("SELECT case_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL")]
+    """Buyer sign-off period (starts once the developer has signed): in-app reminder 3 days before the deadline,
+    then auto-close (high urgency: flag to SDP instead)."""
+    ids = [r["case_id"] for r in ctx.conn.execute(
+        "SELECT case_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL AND developer_signed_at IS NOT NULL")]
     for case_id in ids:
         c = load_case(ctx, case_id)
         deadline = signoff_deadline(c)

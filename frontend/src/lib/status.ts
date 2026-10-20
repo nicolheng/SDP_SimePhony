@@ -71,7 +71,7 @@ export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
   INVALID: "The technician assessed this as not a defect. This case is closed; submit a new report if the problem changes.",
   REPAIR_BOOKED: "Your repair is booked. The technician will fix the defect at the booked time.",
   REPAIRED: "The technician has marked the repair as done. Your sign-off checklist is being prepared.",
-  PENDING_SIGNOFF: "Please check the repair using the checklist and sign off within 14 days. The developer also signs off; the case closes when both have signed, or automatically after 14 days.",
+  PENDING_SIGNOFF: "The developer reviews the repair first. Once they approve, please check it using the checklist and sign off within 14 days; the case closes when you sign, or automatically after 14 days.",
   CLOSED: "You and the developer have both signed off. You can reopen within the grace period if the problem returns.",
   REOPENED: "You reopened this case with a new photo. We're deciding the next step.",
   ESCALATION_PENDING: "This problem has come back, so our team is reviewing whether a more detailed inspection is needed.",
@@ -91,8 +91,9 @@ export const BUYER_TABS = [
 export const BUYER_ACTION: CaseStatus[] = ["INFO_NEEDED", "VALID", "PENDING_SIGNOFF"];
 
 /** True when the buyer has a step to take (answer, book, or sign off). */
-export const buyerNeedsAction = (c: { status: CaseStatus; signoff?: { buyer?: unknown } }) =>
-  BUYER_ACTION.includes(c.status) && !(c.status === "PENDING_SIGNOFF" && c.signoff?.buyer);
+/** Sign-off is only the buyer's turn once the developer has signed. */
+export const buyerNeedsAction = (c: { status: CaseStatus; signoff?: { buyer?: unknown; developer?: unknown } }) =>
+  BUYER_ACTION.includes(c.status) && !(c.status === "PENDING_SIGNOFF" && (c.signoff?.buyer || !c.signoff?.developer));
 
 /** What each status means for the assigned technician. */
 export const TECH_EXPLAIN: Record<CaseStatus, string> = {
@@ -104,7 +105,7 @@ export const TECH_EXPLAIN: Record<CaseStatus, string> = {
   INVALID: "You marked this as not a defect. The case is closed.",
   REPAIR_BOOKED: "Repair booked. Fix the defect, then Mark Repaired with a note and photo.",
   REPAIRED: "Repair recorded. The VerificationAgent is preparing the buyer's checklist.",
-  PENDING_SIGNOFF: "Waiting for the buyer and the developer to sign off your repair (the buyer has 14 days, then the case closes automatically).",
+  PENDING_SIGNOFF: "Waiting for the developer, then the buyer, to sign off your repair (the buyer has 14 days after the developer, then the case closes automatically).",
   CLOSED: "Both parties signed off. The case is closed.",
   REOPENED: "The buyer reported the problem again. The RecurrenceAgent is checking the history.",
   ESCALATION_PENDING: "The problem keeps coming back. SDP staff are deciding on an extra inspection.",
