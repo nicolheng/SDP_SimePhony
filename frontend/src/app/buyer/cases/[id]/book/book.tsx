@@ -8,7 +8,7 @@ import { MobileHeader, PrimaryButton, Section } from "@/components/mobile";
 import { SlotPicker } from "@/components/slot-picker";
 import { fmtHours, repairBlocks } from "@/lib/agents";
 import { bookRepair, fetchRepairOptions, type RepairOption } from "@/lib/api";
-import { REPAIR_PLAN, SLOT_HOURS, workerLabel } from "@/lib/constants";
+import { REPAIR_PLAN, SLOT_HOURS, workerName } from "@/lib/constants";
 import { fmtTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
 
@@ -81,7 +81,7 @@ export function BookRepair() {
         {chosen && (
           <p className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-700">
             {fmtTime(chosen.start)} – {endTime} · will be allocated to{" "}
-            <span className="font-medium">{workerLabel(c.supportId && chosen.workerIds.includes(c.supportId) ? c.supportId : chosen.workerIds[0])}</span>
+            <span className="font-medium">{workerName(c.supportId && chosen.workerIds.includes(c.supportId) ? c.supportId : chosen.workerIds[0])}</span>
             {chosen.workerIds.length > 1 && <span className="text-zinc-500"> ({chosen.workerIds.length} available)</span>}
           </p>
         )}

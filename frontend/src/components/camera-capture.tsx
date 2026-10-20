@@ -9,7 +9,9 @@ export const canUseCamera = () => typeof navigator !== "undefined" && !!navigato
 export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture: (url: string) => void; onClose: () => void; onUnavailable: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const [facing, setFacing] = useState<"environment" | "user">("environment");
+  // Which camera to show: start on the back camera; once cameras are listed, switching cycles through them by device.
+  const [cameras, setCameras] = useState<string[]>([]);
+  const [index, setIndex] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,12 +22,26 @@ export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture
 
   useEffect(() => {
     let cancelled = false;
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 } }, audio: false })
-      .then((s) => {
+    const open = (video: MediaTrackConstraints) => navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, ...video }, audio: false });
+    const deviceId = index === null ? undefined : cameras[index];
+    (deviceId
+      ? open({ deviceId: { exact: deviceId } })
+      : // "exact" forces the back camera on phones; laptops with only a front camera fall back to any camera.
+        open({ facingMode: { exact: "environment" } }).catch(() => open({ facingMode: { ideal: "environment" } }))
+    )
+      .then(async (s) => {
         if (cancelled) return s.getTracks().forEach((t) => t.stop());
         stream.current = s;
         if (video.current) video.current.srcObject = s;
+        // Device labels and ids are only available after permission is granted.
+        if (!cameras.length) {
+          const ids = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput").map((d) => d.deviceId);
+          const current = s.getVideoTracks()[0]?.getSettings().deviceId;
+          if (!cancelled && ids.length > 1) {
+            setCameras(ids);
+            setIndex(Math.max(0, ids.indexOf(current ?? "")));
+          }
+        }
       })
       .catch((err: Error) => {
         if (cancelled) return;
@@ -36,7 +52,7 @@ export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture
       stop();
       setReady(false);
     };
-  }, [facing, stop]);
+  }, [index, cameras, stop]);
 
   function shoot() {
     const v = video.current;
@@ -58,14 +74,18 @@ export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture
           <X className="size-5" />
         </button>
         <p className="text-sm">Take photo</p>
-        <button
-          type="button"
-          onClick={() => setFacing(facing === "environment" ? "user" : "environment")}
-          className="grid size-10 place-items-center rounded-full bg-white/10"
-          aria-label="Switch camera"
-        >
-          <RefreshCw className="size-5" />
-        </button>
+        {cameras.length > 1 ? (
+          <button
+            type="button"
+            onClick={() => setIndex(((index ?? 0) + 1) % cameras.length)}
+            className="grid size-10 place-items-center rounded-full bg-white/10"
+            aria-label="Switch between front and back camera"
+          >
+            <RefreshCw className="size-5" />
+          </button>
+        ) : (
+          <span className="size-10" />
+        )}
       </div>
       <div className="relative min-h-0 flex-1">
         {error ? (

@@ -106,10 +106,7 @@ export default function BuyerHome() {
           </ul>
           {ongoing.length === 0 && (
             <div className="mt-3 rounded-2xl border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500">
-              No ongoing defects.{" "}
-              <Link href="/buyer/report" className="font-semibold text-brand">
-                Report one
-              </Link>
+              No ongoing defects.
             </div>
           )}
         </section>

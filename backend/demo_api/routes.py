@@ -144,6 +144,25 @@ def repaired(case_id: str, body: Repaired, request: Request):
     return _run(request, workflow.mark_repaired, case_id, body.note, body.photo)
 
 
+class Worker(BaseModel):
+    technician_id: str
+
+
+@router.post("/cases/{case_id}/accept")
+def accept(case_id: str, body: Worker, request: Request):
+    return _run(request, workflow.accept_job, case_id, body.technician_id)
+
+
+class HandOver(BaseModel):
+    technician_id: str
+    reason: str = Field(min_length=1, max_length=300)
+
+
+@router.post("/cases/{case_id}/handover")
+def handover(case_id: str, body: HandOver, request: Request):
+    return _run(request, workflow.hand_over, case_id, body.technician_id, body.reason)
+
+
 # ---------- SDP ----------
 
 

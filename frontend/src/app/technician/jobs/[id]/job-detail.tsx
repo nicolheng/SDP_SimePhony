@@ -14,9 +14,10 @@ import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
 import { CATEGORY_LABEL, DEMO_BUYER, getUnit, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
-import { TECH_EXPLAIN } from "@/lib/status";
+import { TECH_EXPLAIN, TECH_TODO } from "@/lib/status";
 import { useTechnicianId } from "@/lib/session";
 import { jobKind, jobSlot } from "../../use-my-jobs";
+import { JobAssignment } from "./assignment";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -40,6 +41,8 @@ function AgentCard({ agent, children }: { agent: string; children: ReactNode }) 
 
 const TECH_ACTIVITY = new Set<string>([
   "case.assigned",
+  "booking.confirmed",
+  "booking.rejected",
   "verdict.recorded",
   "repair.booked",
   "repair.done",
@@ -88,8 +91,11 @@ export function JobDetail() {
   const unit = getUnit(c.unitId);
   // On a joint extra inspection the in-house technician leads and records the result; the subcontractor attends.
   const attending = c.supportId === me && c.technicianId !== me;
-  const inspecting = (c.status === "VISIT_SCHEDULED" || c.status === "EXTRA_INSPECTION") && !attending;
-  const repairing = c.status === "REPAIR_BOOKED";
+  // The assigned worker accepts (or hands over) the job before working on it.
+  const myJob = c.technicianId === me && TECH_TODO.includes(c.status);
+  const accepted = c.bookingStatus !== "pending";
+  const inspecting = (c.status === "VISIT_SCHEDULED" || c.status === "EXTRA_INSPECTION") && !attending && accepted;
+  const repairing = c.status === "REPAIR_BOOKED" && accepted;
   const reported = c.photos.filter((p) => p.kind === "original" || p.kind === "reopen");
   const evidence = c.photos.filter((p) => p.kind !== "original" && p.kind !== "reopen");
 
@@ -137,6 +143,7 @@ export function JobDetail() {
         </Section>
 
         {/* Actions */}
+        {myJob && <JobAssignment c={c} me={me} />}
         {attending && c.status === "EXTRA_INSPECTION" && (
           <p className="rounded-2xl bg-violet-50 p-3 text-sm text-violet-900 ring-1 ring-violet-200">
             Joint extra inspection led by <span className="font-semibold">{workerLabel(c.technicianId)}</span>, who records the result. Review the brief below; if the repair
@@ -144,18 +151,21 @@ export function JobDetail() {
           </p>
         )}
         {inspecting && (
-          <Section title={c.status === "EXTRA_INSPECTION" ? "Detailed inspection result *" : "Inspection result *"}>
+          <Section title={c.status === "EXTRA_INSPECTION" ? "Detailed inspection result" : "Inspection result"}>
+            <p className="mb-1.5 text-xs font-medium text-zinc-500">1. Photo</p>
+            <PhotoInput value={photo} onChange={setPhoto} label="Add inspection photo (optional)" />
+            <p className="mb-1.5 mt-4 text-xs font-medium text-zinc-500">2. What did you find? *</p>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
               maxLength={500}
-              placeholder="What did you find? (shown to the buyer)"
+              placeholder="Describe what you found (shown to the buyer)"
               className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
             />
             <p className="-mt-1 text-right text-xs text-zinc-400">{note.length} / 500</p>
-            <PhotoInput value={photo} onChange={setPhoto} label="Add inspection photo (optional)" />
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">3. Is it a valid defect? *</p>
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 disabled={!note.trim() || busy}
@@ -180,23 +190,26 @@ export function JobDetail() {
         )}
 
         {repairing && (
-          <Section title="Repair *">
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={3}
-              maxLength={500}
-              placeholder="What did you repair? The VerificationAgent uses this to build the buyer's sign-off checklist."
-              className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
-            />
-            <p className="-mt-1 text-right text-xs text-zinc-400">{note.length} / 500</p>
+          <Section title="Repair">
+            <p className="mb-1.5 text-xs font-medium text-zinc-500">1. Photo</p>
             <PhotoInput value={photo} onChange={setPhoto} label="Add repair evidence photo" />
             {!photo && (
               <button type="button" onClick={() => setPhoto(samplePhoto("repaired"))} className="mt-2 block text-xs font-medium text-brand">
                 Use a sample photo (demo)
               </button>
             )}
-            <PrimaryButton className="mt-3" disabled={!note.trim() || busy} onClick={() => run(() => markRepaired(c.id, note.trim(), photo), "Marked repaired: buyer asked to sign off")}>
+            <p className="mb-1.5 mt-4 text-xs font-medium text-zinc-500">2. What did you repair? *</p>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="The VerificationAgent uses this to build the buyer's sign-off checklist."
+              className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
+            />
+            <p className="-mt-1 text-right text-xs text-zinc-400">{note.length} / 500</p>
+            <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">3. Confirm</p>
+            <PrimaryButton disabled={!note.trim() || busy} onClick={() => run(() => markRepaired(c.id, note.trim(), photo), "Marked repaired: buyer asked to sign off")}>
               Mark Repaired
             </PrimaryButton>
             <button type="button" onClick={() => setNote("Resealed ceiling pipe joint and replaced stained ceiling board.")} className="mt-2 text-xs font-medium text-brand">

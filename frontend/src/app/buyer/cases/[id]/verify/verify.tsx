@@ -74,7 +74,7 @@ export function VerifyRepair() {
           </div>
         </Section>
 
-        <Section title="Check these points">
+        <Section title="1. Check these points">
           <ol className="space-y-2">
             {g.steps.map((s, i) => {
               const on = checked.includes(i);
@@ -97,7 +97,7 @@ export function VerifyRepair() {
           <p className="mt-3 text-xs text-zinc-500">{g.ifFails}</p>
         </Section>
 
-        <Section title="Photo (optional, required if not fixed)">
+        <Section title="2. Photo (required if not fixed)">
           <PhotoInput value={photo} onChange={setPhoto} label="Add a photo of the repaired area" />
           {!photo && (
             <div className="mt-2 flex gap-3 text-xs font-medium text-brand">
@@ -105,15 +105,19 @@ export function VerifyRepair() {
               <button type="button" onClick={() => setPhoto(samplePhoto("leak"))}>Sample: still leaking</button>
             </div>
           )}
+        </Section>
+
+        <Section title="3. Anything to add? (optional)">
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="Anything to add? (optional)"
-            className="mt-3 w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
+            placeholder="e.g. Looks dry after running the shower"
+            className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
           />
         </Section>
 
+        <h2 className="px-1 text-sm font-semibold text-zinc-900">4. Your result</h2>
         <label className="flex gap-3 rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-700">
           <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 size-4 accent-[var(--brand)]" />
           I have checked the repair and confirm the defect is fixed. The case closes once the developer has also signed off.

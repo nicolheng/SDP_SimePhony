@@ -3,7 +3,6 @@ import json
 import sqlite3
 
 from . import config
-from .timeutil import norm
 
 # column -> SQL type, added only if missing
 CASE_COLUMNS = {
@@ -13,6 +12,11 @@ CASE_COLUMNS = {
     "signoff_reminder_at": "TEXT",   # in-app sign-off reminder sent
     "auto_closed_at": "TEXT",        # closed automatically after the sign-off period
     "signoff_overdue_at": "TEXT",    # high urgency past the sign-off period: flagged to SDP
+    "booking_status": "TEXT",        # PENDING until the assigned worker accepts, then CONFIRMED
+    "handed_over_from": "TEXT",      # worker who handed the current job over (couldn't make it)
+    "handover_reason": "TEXT",
+    "handed_over_at": "TEXT",
+    "handover_prev_slot": "TEXT",    # job start before the hand-over (same as now if the time was kept)
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 
@@ -41,8 +45,5 @@ def migrate(conn: sqlite3.Connection) -> None:
     # Seeded cases: the technician on a case with a verdict did the inspection.
     conn.execute("UPDATE cases SET inspector_id = technician_id WHERE inspector_id IS NULL AND verdict_at IS NOT NULL")
 
-    # Demo clock starts at the newest seeded case.
-    if not conn.execute("SELECT 1 FROM app_meta WHERE key = 'now'").fetchone():
-        latest = conn.execute("SELECT MAX(created_at) AS m FROM cases").fetchone()["m"]
-        if latest:
-            conn.execute("INSERT INTO app_meta (key, value) VALUES ('now', ?)", (norm(latest),))
+    # Demo clock runs on real time; "Skip days" adds to this offset.
+    conn.execute("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('clock_offset_days', '0')")

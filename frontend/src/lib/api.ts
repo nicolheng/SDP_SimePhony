@@ -54,6 +54,16 @@ export async function markRepaired(caseId: string, note: string, photoUrl: strin
   await apiAction(`/api/cases/${caseId}/repaired`, { note, photo: photoUrl });
 }
 
+export async function acceptJob(caseId: string, technicianId: string) {
+  await apiAction(`/api/cases/${caseId}/accept`, { technician_id: technicianId });
+}
+
+/** Decline the job, or give it up after accepting (emergency). The TriageAgent assigns the next available colleague;
+ * `sameTime` says whether the buyer keeps their booking time. */
+export async function handOverJob(caseId: string, technicianId: string, reason: string) {
+  return apiAction<{ technicianId: string; sameTime: boolean; start: string }>(`/api/cases/${caseId}/handover`, { technician_id: technicianId, reason });
+}
+
 // ---------- SDP ----------
 
 export async function developerSignOff(caseId: string) {

@@ -96,6 +96,9 @@ export const WORKERS: Technician[] = [...TECHNICIANS, ...SUBCONTRACTORS];
 /** Any worker: in-house technician or subcontractor. */
 export const getTechnician = (id?: string) => WORKERS.find((t) => t.id === id);
 
+/** Just the person's name, for the buyer's screens where company names don't fit. */
+export const workerName = (id?: string) => getTechnician(id)?.name ?? "—";
+
 /** "Kamal Yusof (Alpha Waterproofing Sdn Bhd)" or just the technician's name. */
 export const workerLabel = (id?: string) => {
   const w = getTechnician(id);

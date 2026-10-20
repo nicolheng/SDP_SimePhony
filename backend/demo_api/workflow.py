@@ -3,6 +3,7 @@ import base64
 import json
 import re
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import db
@@ -25,7 +26,10 @@ class Ctx:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        self.now = norm(conn.execute("SELECT value FROM app_meta WHERE key = 'now'").fetchone()["value"])
+        # Real Malaysia-time clock (stored as UTC), plus however many days the demo has skipped ahead.
+        row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
+        self.offset_days = float(row["value"]) if row else 0.0
+        self.now = add_days(iso(datetime.now(timezone.utc)), self.offset_days)
         self.units = {r["unit_id"]: dict(r) for r in conn.execute("SELECT * FROM units")}
         self.workers = [
             {**dict(r), "skills": json.loads(r["skills"]), "blocks": json.loads(r["blocks"]), "kind": r["kind"] or "technician"}
@@ -74,7 +78,7 @@ def load_case(ctx: Ctx, case_id: str) -> dict:
     if not row:
         raise WorkflowError(f"Case {case_id} not found.")
     c = dict(row)
-    for k in ("created_at", "closed_at", "verdict_at", "repaired_at", "buyer_signed_at", "developer_signed_at", "signoff_reminder_at", "auto_closed_at", "signoff_overdue_at"):
+    for k in ("created_at", "closed_at", "verdict_at", "repaired_at", "buyer_signed_at", "developer_signed_at", "signoff_reminder_at", "auto_closed_at", "signoff_overdue_at", "handed_over_at", "handover_prev_slot"):
         c[k] = norm(c.get(k))
     return c
 
@@ -85,7 +89,13 @@ SAVED_COLUMNS = [
     "developer_signed", "buyer_signed", "buyer_signed_at", "buyer_signoff_note", "developer_signed_at", "developer_signed_by",
     "verification_status", "inspection_outcome", "closed_at", "inspector_id", "support_id", "repair_hours",
     "signoff_reminder_at", "auto_closed_at", "signoff_overdue_at", "booking_status",
+    "handed_over_from", "handover_reason", "handed_over_at", "handover_prev_slot",
 ]
+
+
+def assign(c: dict, worker_id: str) -> None:
+    """Give the case's next job to a worker; they still have to accept it."""
+    c.update(technician_id=worker_id, booking_status="PENDING", handed_over_from=None, handover_reason=None, handed_over_at=None, handover_prev_slot=None)
 
 
 def save_case(ctx: Ctx, c: dict) -> None:
@@ -248,13 +258,15 @@ def _continue_new_case(ctx: Ctx, c: dict, slot: str | None) -> None:
          f"Found {len(sim['refs'])} related case(s); recurrence_count={sim['occurrence']} in this unit; {len(sim['stack_units'])} other unit(s) in the stack"
          if sim["refs"] else "No related cases: treated as a new defect")
     t = agents.triage(ctx, c, slot)
-    c.update(technician_id=t["technician_id"], triage_reason=t["reason"], status="VISIT_SCHEDULED", booking_status="CONFIRMED")
+    assign(c, t["technician_id"])
+    c.update(triage_reason=t["reason"], status="VISIT_SCHEDULED")
     save_case(ctx, c)
     book(ctx, c["case_id"], t["technician_id"], t["slot"], "visit")
     event(ctx, c["case_id"], "case.assigned", f"Assigned to {ctx.worker(t['technician_id'])['name']}", technician_id=t["technician_id"])
     step(ctx, c["case_id"], "TriageAgent", t["reason"])
     notify_buyer(ctx, c, "received", slot=fmt_datetime(t["slot"]))
-    notify_tech(ctx, c, "New inspection visit", f"{c['unit_id']}: {c['summary']}. Inspection visit {fmt_datetime(t['slot'])}.")
+    notify_tech(ctx, c, "New inspection visit: please accept",
+                f"{c['unit_id']}: {c['summary']}. Inspection visit {fmt_datetime(t['slot'])}. Accept it in the app, or hand it over if you can't make it.")
 
 
 def book_repair(ctx: Ctx, case_id: str, start: str) -> None:
@@ -270,7 +282,8 @@ def book_repair(ctx: Ctx, case_id: str, start: str) -> None:
     for s in option["slots"]:
         book(ctx, case_id, worker_id, s, "repair")
     c["inspector_id"] = c.get("inspector_id") or c.get("technician_id")
-    c.update(technician_id=worker_id, repair_hours=plan["hours"], status="REPAIR_BOOKED")
+    assign(c, worker_id)
+    c.update(repair_hours=plan["hours"], status="REPAIR_BOOKED")
     save_case(ctx, c)
     duration = agents.fmt_hours(plan["hours"])
     w = ctx.worker(worker_id)
@@ -375,7 +388,8 @@ def _reopen(ctx: Ctx, c: dict, description: str) -> None:
         notify_buyer(ctx, c, "escalated")
     else:
         t = agents.triage(ctx, c, None)
-        c.update(technician_id=t["technician_id"], status="VISIT_SCHEDULED", inspection_outcome=None, verdict_note=None, verdict_at=None)
+        assign(c, t["technician_id"])
+        c.update(status="VISIT_SCHEDULED", inspection_outcome=None, verdict_note=None, verdict_at=None)
         save_case(ctx, c)
         book(ctx, case_id, t["technician_id"], t["slot"], "visit")
         step(ctx, case_id, "TriageAgent", f"Below escalation threshold; revisit: {t['reason']}")
@@ -390,6 +404,8 @@ def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str |
     c = load_case(ctx, case_id)
     if c["status"] not in ("VISIT_SCHEDULED", "EXTRA_INSPECTION"):
         raise WorkflowError("This case isn't waiting for an inspection result.")
+    if c.get("booking_status") == "PENDING":
+        raise WorkflowError("Accept the job before recording the result.")
     if outcome not in ("VALID", "INVALID") or not note.strip():
         raise WorkflowError("Choose Valid or Invalid and add a note.")
     add_photo(ctx, case_id, photo, "verdict")
@@ -410,6 +426,8 @@ def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     c = load_case(ctx, case_id)
     if c["status"] != "REPAIR_BOOKED":
         raise WorkflowError("This case has no booked repair.")
+    if c.get("booking_status") == "PENDING":
+        raise WorkflowError("Accept the job before marking it repaired.")
     if not note.strip():
         raise WorkflowError("Add a repair note.")
     add_photo(ctx, case_id, photo, "repair")
@@ -429,6 +447,76 @@ def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     step(ctx, case_id, "VerificationAgent", f"Retrieved {config.CATEGORY_LABEL.get(c['category'], '').lower()} protocol; {len(guide['steps'])} case-specific checks for the buyer")
     event(ctx, case_id, "verification.requested", "Buyer asked to verify the repair and sign off; developer sign-off also required")
     notify_buyer(ctx, c, "verify")
+
+
+# Jobs a worker can accept or hand over, and the slot kind each one books.
+JOB_KIND = {"VISIT_SCHEDULED": "visit", "EXTRA_INSPECTION": "visit", "REPAIR_BOOKED": "repair"}
+JOB_NAME = {"VISIT_SCHEDULED": "inspection visit", "EXTRA_INSPECTION": "detailed inspection", "REPAIR_BOOKED": "repair"}
+
+
+def _my_job(ctx: Ctx, case_id: str, worker_id: str) -> tuple[dict, str, list[str]]:
+    c = load_case(ctx, case_id)
+    kind = JOB_KIND.get(c["status"])
+    if not kind:
+        raise WorkflowError("This case has no job to accept or hand over right now.")
+    if c["technician_id"] != worker_id:
+        raise WorkflowError("This job is assigned to another technician.")
+    starts = [norm(r["start_at"]) for r in ctx.conn.execute(
+        "SELECT start_at FROM slots WHERE case_id = ? AND kind = ? AND technician_id = ? ORDER BY start_at", (case_id, kind, worker_id))]
+    return c, kind, starts
+
+
+def accept_job(ctx: Ctx, case_id: str, worker_id: str) -> None:
+    c, _, starts = _my_job(ctx, case_id, worker_id)
+    if c.get("booking_status") != "PENDING":
+        raise WorkflowError("You've already accepted this job.")
+    c["booking_status"] = "CONFIRMED"
+    save_case(ctx, c)
+    job = JOB_NAME[c["status"]]
+    event(ctx, case_id, "booking.confirmed", f"{ctx.worker_label(worker_id)} accepted the {job}", technician_id=worker_id)
+    notify_buyer(ctx, c, "confirmed", job=job, slot=fmt_datetime(starts[0]) if starts else "the booked time")
+
+
+def hand_over(ctx: Ctx, case_id: str, worker_id: str, reason: str) -> dict:
+    """The assigned worker can't make it (declined, or an emergency after accepting): the TriageAgent moves the job to the
+    next available colleague, keeping the time if someone is free then, otherwise at the earliest free time."""
+    c, kind, starts = _my_job(ctx, case_id, worker_id)
+    reason = reason.strip()
+    if not reason:
+        raise WorkflowError("Please give a reason.")
+    options = agents.handover_options(ctx, c, kind, starts)
+    if not options:
+        raise WorkflowError("No other qualified technician is free in the next 2 weeks. Please contact the SDP office.")
+    opt = options[0]
+    declined = c.get("booking_status") == "PENDING"
+    new_id = opt["technicianId"]
+    ctx.conn.execute("UPDATE slots SET case_id = NULL, kind = NULL WHERE case_id = ? AND kind = ? AND technician_id = ?", (case_id, kind, worker_id))
+    ctx.invalidate()
+    for s in opt["slots"]:
+        book(ctx, case_id, new_id, s, kind)
+    if c["status"] == "EXTRA_INSPECTION" and c.get("support_id") and not opt["sameTime"]:
+        # Joint inspection: the subcontractor moves to the new time too.
+        ctx.conn.execute("UPDATE slots SET case_id = NULL, kind = NULL WHERE case_id = ? AND kind = 'visit' AND technician_id = ?", (case_id, c["support_id"]))
+        ctx.invalidate()
+        book(ctx, case_id, c["support_id"], opt["start"], "visit")
+        notify_tech(ctx, c, "Joint inspection moved", f"{c['unit_id']}: now {fmt_datetime(opt['start'])} with {ctx.worker(new_id)['name']}.", worker_id=c["support_id"])
+    old = starts[0] if starts else None
+    assign(c, new_id)
+    c.update(handed_over_from=worker_id, handover_reason=reason, handed_over_at=ctx.now, handover_prev_slot=old)
+    save_case(ctx, c)
+
+    job = JOB_NAME[c["status"]]
+    prev = ctx.worker(worker_id)["name"]
+    event(ctx, case_id, "booking.rejected", f"{ctx.worker_label(worker_id)} {'declined' if declined else 'can no longer do'} the {job}: {reason}",
+          technician_id=worker_id, reason=reason)
+    step(ctx, case_id, "TriageAgent", f"Hand-over: assigned next available colleague, {ctx.worker_label(new_id)}")
+    event(ctx, case_id, "case.assigned", f"Handed over to {ctx.worker_label(new_id)} "
+          + ("(same time)" if opt["sameTime"] else f"(moved to {fmt_datetime(opt['start'])})"), technician_id=new_id)
+    notify_tech(ctx, c, "Job handed over to you: please accept",
+                f"{c['unit_id']}: {c['summary']}. {job.capitalize()} {fmt_datetime(opt['start'])}, handed over by {prev}.")
+    notify_buyer(ctx, c, "reassigned", job=job, previous=prev, slot=fmt_datetime(opt["start"]),
+                 same_time=opt["sameTime"], old_slot=fmt_datetime(old) if old else "")
+    return {"technicianId": new_id, "sameTime": opt["sameTime"], "start": opt["start"]}
 
 
 # ---------- SDP ----------
@@ -454,7 +542,8 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
     ctx.conn.execute("INSERT OR REPLACE INTO inspection_briefs (case_id, brief, created_at) VALUES (?, ?, ?)", (c["case_id"], json.dumps(brief), ctx.now))
     t = agents.triage(ctx, c, None)
     sub = agents.subcontractor_for(ctx, c)
-    c.update(technician_id=t["technician_id"], support_id=sub["technician_id"] if sub else None, status="EXTRA_INSPECTION",
+    assign(c, t["technician_id"])
+    c.update(support_id=sub["technician_id"] if sub else None, status="EXTRA_INSPECTION",
              inspection_outcome=None, verdict_note=None, verdict_at=None)
     save_case(ctx, c)
     book(ctx, c["case_id"], t["technician_id"], t["slot"], "visit")
@@ -509,8 +598,9 @@ def sweep_signoffs(ctx: Ctx) -> None:
 
 
 def skip_days(ctx: Ctx, days: float) -> None:
+    ctx.offset_days += days
     ctx.now = add_days(ctx.now, days)
-    ctx.conn.execute("UPDATE app_meta SET value = ? WHERE key = 'now'", (ctx.now,))
+    ctx.conn.execute("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('clock_offset_days', ?)", (str(ctx.offset_days),))
     event(ctx, None, "agent.step", f"Demo clock moved forward {days:g} days")
     sweep_signoffs(ctx)
 
@@ -538,7 +628,8 @@ def simulate_rain(ctx: Ctx) -> None:
         c["occurrence_count"] = sim["occurrence"]
         step(ctx, case_id, "SimilarDefectAgent", f"Linked to {len(sim['refs'])} related case(s) in stack A-08")
         t = agents.triage(ctx, c, None)
-        c.update(technician_id=t["technician_id"], triage_reason=t["reason"], status="VISIT_SCHEDULED", booking_status="CONFIRMED")
+        assign(c, t["technician_id"])
+        c.update(triage_reason=t["reason"], status="VISIT_SCHEDULED")
         save_case(ctx, c)
         book(ctx, case_id, t["technician_id"], t["slot"], "visit")
         step(ctx, case_id, "TriageAgent", t["reason"])

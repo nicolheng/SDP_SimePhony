@@ -1,5 +1,5 @@
 "use client";
-import { Bot, CalendarClock, Clock, Loader2, MessageSquare, ShieldAlert, Wrench } from "lucide-react";
+import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, Loader2, MessageSquare, ShieldAlert, UserRound, Wrench } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -12,10 +12,11 @@ import { PhotoThumb } from "@/components/photo";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { fmtHours } from "@/lib/agents";
 import { answerFollowUp, canReopen, signoffDeadline } from "@/lib/api";
-import { CATEGORY_LABEL, DEMO_BUYER, REPAIR_PLAN, RULES, workerLabel } from "@/lib/constants";
+import { CATEGORY_LABEL, DEMO_BUYER, REPAIR_PLAN, RULES, workerName } from "@/lib/constants";
 import { addDays, daysBetween, fmtDate, fmtDateTime } from "@/lib/dates";
 import { BUYER_EXPLAIN } from "@/lib/status";
 import { useDemo } from "@/lib/store";
+import type { Case } from "@/lib/types";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -23,6 +24,65 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <dt className="shrink-0 text-zinc-500">{label}</dt>
       <dd className="text-right font-medium text-zinc-900">{children}</dd>
     </div>
+  );
+}
+
+const JOB_NAME: Partial<Record<Case["status"], string>> = {
+  VISIT_SCHEDULED: "Inspection visit",
+  EXTRA_INSPECTION: "Detailed inspection",
+  REPAIR_BOOKED: "Repair",
+};
+
+/** Who is coming and when, including a hand-over to a different technician. */
+function YourTechnician({ c }: { c: Case }) {
+  const job = JOB_NAME[c.status];
+  const slot = c.status === "REPAIR_BOOKED" ? c.repairSlot : c.visitSlot;
+  if (!job || !c.technicianId) return null;
+  const confirmed = c.bookingStatus !== "pending";
+  const h = c.handover;
+  const moved = h?.previousSlot && slot && h.previousSlot !== slot;
+  return (
+    <Section>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900">{job}</h2>
+        <span
+          className={
+            confirmed
+              ? "inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200"
+              : "inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200"
+          }
+        >
+          {confirmed ? <CheckCircle2 className="size-3" /> : <Clock className="size-3" />} {confirmed ? "Confirmed" : "Awaiting confirmation"}
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-red-50 text-brand">
+          <UserRound className="size-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold leading-snug">{workerName(c.technicianId)}</p>
+          <p className="flex items-center gap-1 text-xs text-zinc-600">
+            <CalendarClock className="size-3.5" /> {slot ? fmtDateTime(slot) : "Time to be confirmed"}
+          </p>
+        </div>
+      </div>
+      {c.supportId && c.status === "EXTRA_INSPECTION" && <p className="mt-2 text-xs text-zinc-600">With subcontractor {workerName(c.supportId)}</p>}
+      {h && (
+        <p className="mt-3 flex gap-2 rounded-xl bg-sky-50 p-2.5 text-xs text-sky-900 ring-1 ring-sky-200">
+          <ArrowRightLeft className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Changed from {workerName(h.fromId)}, who is no longer available.{" "}
+            {moved ? (
+              <>
+                New time: <span className="font-semibold">{fmtDateTime(slot!)}</span> (was {fmtDateTime(h.previousSlot!)}).
+              </>
+            ) : (
+              "Your booking time stays the same."
+            )}
+          </span>
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -64,6 +124,8 @@ export function CaseDetail() {
             <p className="mt-1.5 text-sm text-zinc-700">{BUYER_EXPLAIN[c.status]}</p>
           </div>
         </Section>
+
+        <YourTechnician c={c} />
 
         {/* Next step for the buyer */}
         {c.status === "INFO_NEEDED" && (
@@ -177,12 +239,12 @@ export function CaseDetail() {
             <Row label={c.status === "EXTRA_INSPECTION" ? "Joint extra inspection" : "Inspection visit"}>
               {c.visitSlot ? fmtDateTime(c.visitSlot) : "—"}
             </Row>
-            <Row label="Inspected by">{workerLabel(c.inspectorId ?? (c.repairSlot ? undefined : c.technicianId))}</Row>
-            {c.supportId && <Row label="With subcontractor">{workerLabel(c.supportId)}</Row>}
+            <Row label="Inspected by">{workerName(c.inspectorId ?? (c.repairSlot ? undefined : c.technicianId))}</Row>
+            {c.supportId && <Row label="With subcontractor">{workerName(c.supportId)}</Row>}
             <Row label="Repair">
               {c.repairSlot ? `${fmtDateTime(c.repairSlot)} · ${fmtHours(c.repairHours ?? REPAIR_PLAN[c.category].hours)}` : c.status === "VALID" ? "Not booked yet" : "—"}
             </Row>
-            {c.repairSlot && <Row label="Repair by">{workerLabel(c.technicianId)}</Row>}
+            {c.repairSlot && <Row label="Repair by">{workerName(c.technicianId)}</Row>}
           </dl>
         </Section>
 

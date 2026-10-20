@@ -162,12 +162,13 @@ def triage(ctx, case: dict, preferred: str | None) -> dict:
 # ---------- Repair allocation ----------
 
 
-def repairers_for(ctx, case: dict) -> list[dict]:
+def repairers_for(ctx, case: dict, any_kind: bool = False) -> list[dict]:
+    """Workers with the trade for this repair: the planned kind (in-house or subcontractor) first, or anyone qualified."""
     plan = config.REPAIR_PLAN.get(case["category"], config.REPAIR_PLAN["other"])
     block = ctx.units[case["unit_id"]]["block"]
     fits = [w for w in ctx.workers if block in w["blocks"] and set(w["skills"]) & set(plan["skills"])]
     planned = [w for w in fits if w["kind"] == plan["by"]]
-    return planned or fits
+    return fits if any_kind else planned or fits
 
 
 def repair_blocks(hours: float) -> int:
@@ -181,10 +182,10 @@ def fmt_hours(h: float) -> str:
     return f"about {n} hour{'' if h == 1 else 's'}"
 
 
-def repair_options(ctx, case: dict) -> list[dict]:
+def repair_options(ctx, case: dict, pool: list[dict] | None = None) -> list[dict]:
     plan = config.REPAIR_PLAN.get(case["category"], config.REPAIR_PLAN["other"])
     n = repair_blocks(plan["hours"])
-    pool = repairers_for(ctx, case)
+    pool = repairers_for(ctx, case) if pool is None else pool
     # Jobs stay within one session: 1 block any time, 2 blocks morning or afternoon, longer = from 9am.
     starts = list(range(len(config.SLOT_TIMES))) if n == 1 else [0, 2] if n == 2 else [0]
     days = sorted({local_day(s) for s in upcoming_slots(ctx.now)})
@@ -207,6 +208,32 @@ def subcontractor_for(ctx, case: dict) -> dict | None:
     return next((w for w in ctx.workers if w["kind"] == "subcontractor" and block in w["blocks"] and set(w["skills"]) & set(plan["skills"])), None)
 
 
+# ---------- Hand-over (technician can't make it) ----------
+
+
+def handover_options(ctx, case: dict, kind: str, current: list[str]) -> list[dict]:
+    """Colleagues who can take over the job: at the same time if they're free, otherwise their next free time.
+    Same-time options come first, then the earliest."""
+    if kind == "repair":
+        pool = repairers_for(ctx, case, any_kind=True)
+    else:
+        pool = technicians_for(ctx, case["category"], ctx.units[case["unit_id"]]["block"])
+    pool = [w for w in pool if w["technician_id"] not in (case.get("technician_id"), case.get("support_id"))]
+    repair = repair_options(ctx, case, pool) if kind == "repair" else []
+    out = []
+    for w in pool:
+        wid = w["technician_id"]
+        if current and all(not busy(ctx, wid, s) for s in current):
+            slots = current
+        elif kind == "repair":
+            slots = next((o["slots"] for o in repair if wid in o["workerIds"]), None)
+        else:
+            slots = next(([s] for s in upcoming_slots(ctx.now) if not busy(ctx, wid, s)), None)
+        if slots:
+            out.append({"technicianId": wid, "start": slots[0], "slots": slots, "sameTime": slots == current})
+    return sorted(out, key=lambda o: (not o["sameTime"], o["start"]))
+
+
 # ---------- CommsAgent ----------
 
 
@@ -221,13 +248,17 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
         "info_needed": ("We need a little more information", f"{ref}. {case.get('follow_up_question') or ''}"),
         "valid": ("Defect confirmed — please book a repair", f"{ref}. The technician confirmed the defect: \"{extra.get('note', '')}\". Please choose a repair slot in the app."),
         "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect: \"{extra.get('note', '')}\". This case is now closed. If the problem gets worse or changes, please submit a new report."),
-        "repair_booked": ("Repair booked", f"{ref}. Repair on {extra.get('slot')} by {ctx.worker_label(case.get('technician_id'))}, estimated {extra.get('duration')}."),
+        "repair_booked": ("Repair booked", f"{ref}. Repair on {extra.get('slot')} by {tech_name}, estimated {extra.get('duration')}."),
         "verify": ("Please check the repair and sign off", f"{ref}. The repair is done. Follow the short checklist in the app, then sign off if it is fixed."),
         "closed": ("Case closed", f"{ref}. You and the developer have both signed off. You can reopen this case within {g} days if the problem returns."),
         "reopened": ("Case reopened", f"{ref}. We've reopened your case with the new photo you provided. We'll update you on the next step shortly."),
         "escalated": ("Your case is being reviewed", f"{ref}. Because this problem has come back, we've asked our team to arrange a more detailed inspection. We'll confirm the visit soon."),
         "extra_inspection": ("Detailed inspection scheduled", f"{ref}. A detailed inspection is booked for {extra.get('slot')} with {tech_name}."),
         "revisit": ("Technician revisit booked", f"{ref}. {tech_name} will revisit on {extra.get('slot')}."),
+        "confirmed": ("Technician confirmed", f"{ref}. {tech_name} confirmed your {extra.get('job')} on {extra.get('slot')}."),
+        "reassigned": ("Your technician has changed",
+                       f"{ref}. {extra.get('previous')} is no longer available, so {tech_name} will handle your {extra.get('job')} "
+                       + (f"at the same time, {extra.get('slot')}." if extra.get("same_time") else f"on {extra.get('slot')} (moved from {extra.get('old_slot')}).")),
     }
     return messages.get(kind, ("Update on your case", ref))
 

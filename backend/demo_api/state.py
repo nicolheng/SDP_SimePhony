@@ -98,6 +98,10 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "technicianId": r["technician_id"],
             "inspectorId": r.get("inspector_id"),
             "supportId": r.get("support_id"),
+            # Seeded jobs have no status and count as accepted.
+            "bookingStatus": "pending" if r.get("booking_status") == "PENDING" else "confirmed",
+            "handover": {"fromId": r["handed_over_from"], "reason": r.get("handover_reason") or "", "at": norm(r.get("handed_over_at")),
+                         "previousSlot": norm(r.get("handover_prev_slot"))} if r.get("handed_over_from") else None,
             "repairHours": r.get("repair_hours") or (config.REPAIR_PLAN.get(category, config.REPAIR_PLAN["other"])["hours"] if repair_starts else None),
             "visitSlot": slot_of("visit"),
             "repairSlot": repair_starts[0] if repair_starts else None,

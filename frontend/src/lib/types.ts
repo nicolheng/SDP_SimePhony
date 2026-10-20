@@ -128,6 +128,10 @@ export interface Case {
   inspectorId?: string;
   /** Subcontractor joining an approved extra inspection. */
   supportId?: string;
+  /** Whether the assigned worker has accepted their current job (visit or repair); missing = accepted. */
+  bookingStatus?: "pending" | "confirmed";
+  /** The previous worker couldn't make it and handed the current job over. */
+  handover?: { fromId: string; reason: string; at: string; previousSlot?: string };
   /** Estimated repair duration, set when the repair is booked. */
   repairHours?: number;
   visitSlot?: string; // ISO start

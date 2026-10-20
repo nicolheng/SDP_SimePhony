@@ -24,11 +24,30 @@ export function useCaseEvents(id: string | null): CaseEvent[] {
   return useMemo(() => (id ? events.filter((e) => e.caseId === id) : events), [events, id]);
 }
 
+/** When each progress step happened (done) or is due (upcoming), from the case and its events. */
+function stepTimes(c: Case, events: CaseEvent[]): string[] {
+  const last = (type: CaseEvent["type"]) => [...events].reverse().find((e) => e.type === type)?.at;
+  const at = (iso?: string | null) => (iso ? fmtDateTime(iso) : "");
+  if (c.status === "INVALID") return [`Reported ${at(c.createdAt)}`, c.verdict ? `Inspected ${at(c.verdict.at)}` : "", c.closedAt ? `Closed ${at(c.closedAt)}` : ""];
+  const inspected = c.verdict?.at;
+  const repairBooked = last("repair.booked");
+  const signed = c.signoff?.buyer?.at ?? c.closedAt;
+  return [
+    `Reported ${at(c.createdAt)}`,
+    inspected ? `Inspected ${at(inspected)}` : c.visitSlot ? `Scheduled for ${at(c.visitSlot)}` : "",
+    repairBooked ? `Booked ${at(repairBooked)}${c.repairSlot ? ` · for ${at(c.repairSlot)}` : ""}` : c.status === "VALID" ? "Waiting for you to choose a slot" : "",
+    c.repairedAt ? `Repaired ${at(c.repairedAt)}` : c.repairSlot ? `Scheduled for ${at(c.repairSlot)}` : "",
+    signed ? `Signed off ${at(signed)}` : "",
+  ];
+}
+
 /** Vertical progress list, styled after the SDP app's Construction Progress screen. */
 export function CaseProgress({ c }: { c: Case }) {
+  const events = useCaseEvents(c.id);
   const idx = buyerStepIndex(c.status);
   const steps = c.status === "INVALID" ? ["Reported", "Inspection visit", "Not a defect — closed"] : BUYER_STEPS;
   const done = c.status === "INVALID" ? 3 : idx;
+  const times = stepTimes(c, events);
   return (
     <ol className="space-y-2">
       {steps.map((s, i) => {
@@ -50,7 +69,10 @@ export function CaseProgress({ c }: { c: Case }) {
             >
               {complete && <Check className="size-3.5" strokeWidth={3} />}
             </span>
-            <span className={cn("text-sm", complete ? "text-zinc-700" : current ? "font-semibold text-zinc-900" : "text-zinc-400")}>{s}</span>
+            <span className="min-w-0">
+              <span className={cn("block text-sm", complete ? "text-zinc-700" : current ? "font-semibold text-zinc-900" : "text-zinc-400")}>{s}</span>
+              {times[i] && <span className={cn("block text-[11px]", complete ? "text-zinc-500" : "text-zinc-400")}>{times[i]}</span>}
+            </span>
             {current && c.status !== "CLOSED" && <span className="ml-auto text-[11px] font-medium text-brand">Now</span>}
           </li>
         );

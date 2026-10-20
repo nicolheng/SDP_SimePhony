@@ -41,7 +41,7 @@ export function ReopenCase() {
             <PhotoThumb photo={c.photos[0]} className="aspect-square" />
           </div>
         </Section>
-        <Section title="New photo">
+        <Section title="1. New photo *">
           <PhotoInput value={photo} onChange={setPhoto} label="Take a new photo" required />
           {!photo && (
             <button type="button" onClick={() => setPhoto(samplePhoto("leak-worse"))} className="mt-2 text-xs font-medium text-brand">
@@ -49,7 +49,7 @@ export function ReopenCase() {
             </button>
           )}
         </Section>
-        <Section title="What happened? (optional)">
+        <Section title="2. What happened? (optional)">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
