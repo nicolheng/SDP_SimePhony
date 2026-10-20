@@ -18,7 +18,15 @@ FORBIDDEN_TERMS = {
         # promises that the defect will not return
         "will not come back", "won't come back", "won't happen again", "will not happen again",
         "will not recur", "permanent", "for good", "never leak",
-    ]
+    ],
+    # admissions of responsibility / offers to pay / offers of a dispute process (INVALID is final)
+    "responsibility": [
+        "will pay", "pay for", "cover the cost", "no cost to you", "at no charge",
+        "apologize", "apologise", "we are sorry", "we're sorry", "responsibility", "liable", "liability",
+        "oversight",
+    ],
+    "dispute": ["appeal", "dispute"],
+
 }
 
 def scan_for_liability(text: str) -> tuple[bool, list[str]]:
