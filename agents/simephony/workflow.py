@@ -10,7 +10,7 @@ from .similar_defect import similar_defect_node
 from .triage import triage_node
 from .booking import booking_node
 from .comms import comms_node
-from .verification import verification_node
+from .verification import verification_node, verification_result_node
 from .recurrence import recurrence_node
 from .initial_inspection import initial_inspection_node
 
@@ -37,6 +37,20 @@ class AgentState(TypedDict):
     current_status: str # Case status (e.g., SUBMITTED, ASSIGNED, etc.)
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
+    # Event-driven fields
+    event: str # case.created | repair.done | verification.submitted | case.reopened
+    case_id: str
+    verdict_note: str
+    repair_note: str
+    repair_photo_path: Optional[str]
+    closed_at: str # ISO timestamp, timezone-aware
+    reopen_photo_path: Optional[str]
+    reopen_description: str # what the buyer wrote when reopening
+    reopen_count: int
+    verification_outcome: str # FIXED | NOT_FIXED | CANNOT_VERIFY
+    verification_status: str
+    verification_result: dict
+    recurrence_result: dict
 
 # 3. Build the LangGraph
 workflow = StateGraph(AgentState)
@@ -48,8 +62,40 @@ workflow.add_node("triage", triage_node)
 workflow.add_node("booking", booking_node)
 workflow.add_node("comms", comms_node)
 workflow.add_node("verification", verification_node)
+workflow.add_node("verification_result", verification_result_node)
 workflow.add_node("recurrence", recurrence_node)
 workflow.add_node("initial_inspection", initial_inspection_node)
+
+def prepare_new_case(state: dict) -> dict:
+    """Past-grace reopen: start a fresh case from the reopen photo, dropping the old case's results."""
+    state.update({
+        "user_description": state.get("reopen_description") or state.get("user_description", ""),
+        "image_path": state.get("reopen_photo_path"),
+        "case_id": "C-NEW",
+        "intake_result": {},
+        "similar_cases_result": {},
+        "triage_result": {},
+        "booking_result": {},
+        "comms_result": {},
+        "initial_inspection_result": {},
+        "missing_info": [],
+        "verification_result": {},
+        "verification_outcome": "",
+        "verification_status": "",
+        "verdict_note": "",
+        "repair_note": "",
+        "repair_photo_path": None,
+        "closed_at": "",
+        "tried_technicians": [],
+        "reassignment_count": 0,
+        "reopen_count": 0,
+        "event": "case.created",
+        "current_status": "SUBMITTED",
+    })
+    return state  # recurrence_result is kept so the NEW_CASE decision stays visible
+
+
+workflow.add_node("prepare_new_case", prepare_new_case)
 
 # 4. Define the edges
 def should_reassign(state: AgentState):
@@ -58,16 +104,52 @@ def should_reassign(state: AgentState):
         return "booking"
     return "comms"
 
-workflow.set_entry_point("intake")
+def route_event(state: AgentState) -> str:
+    event = state.get("event")
+    if not event or event == "case.created":
+        return "intake"
+    return {
+        "repair.done": "verification",
+        "verification.submitted": "verification_result",
+        "case.reopened": "recurrence",
+    }.get(event, "unhandled_event")
+
+
+def unhandled_event(state: dict) -> dict:
+    """An event this graph has no agent for (e.g. verdict.recorded): change nothing, contact no one."""
+    print(f"[WORKFLOW] No agent handles event {state.get('event')!r}; state left unchanged")
+    return state
+
+
+workflow.add_node("unhandled_event", unhandled_event)
+
+def after_verification(state: AgentState):
+    result = state.get("verification_result") or {}
+    if result.get("rejected_reason") or result.get("needs_technician_input"):
+        return END  # technician message stays in state for the technician app; no buyer email
+    return "comms"
+
+def after_verification_result(state: AgentState):
+    if (state.get("verification_result") or {}).get("rejected_reason"):
+        return END  # wrong status or unknown outcome: no buyer email
+    return "comms"
+
+def after_recurrence(state: AgentState):
+    if state.get("recurrence_result", {}).get("action") == "NEW_CASE":
+        return "prepare_new_case"
+    return "comms"
+
+workflow.set_conditional_entry_point(route_event)
 workflow.add_edge("intake", "similar_defect")
 workflow.add_edge("similar_defect", "triage")
 workflow.add_edge("triage", "booking")
 workflow.add_conditional_edges("booking", should_reassign)
+workflow.add_conditional_edges("verification", after_verification)
+workflow.add_conditional_edges("verification_result", after_verification_result)
+workflow.add_conditional_edges("recurrence", after_recurrence)
+workflow.add_edge("prepare_new_case", "intake")
 workflow.add_edge("comms", END)
-
-# Event-driven edges (Placeholders for later implementation)
-# Note: In a real app, these would be triggered by external events (e.g., repair.done)
-# and would route to verification, recurrence, etc.
+workflow.add_edge("unhandled_event", END)
 
 # 5. Compile the graph
 agent_app = workflow.compile()

@@ -19,12 +19,16 @@ def booking_node(state: dict) -> dict:
     # 2. Retrieve the triage verdict from state
     triage_result = state.get("triage_result", {})
     required_skill = triage_result.get("assigned_skill", "general")
-    urgency = triage_result.get("urgency", "NORMAL")
+    urgency = str(triage_result.get("urgency", "normal")).lower()
     
     # 3. Get technician availability
     block = state.get("unit_id", "A-12-08").split("-")[0]
-    slots_data = get_available_slots(skill=required_skill, block=block)
-    all_slots = slots_data.get("slots", [])
+    try:
+        all_slots = sorted(get_available_slots(skill=required_skill, block=block).get("slots", []),
+                           key=lambda s: s.get("start", ""))
+    except Exception as e:
+        print(f"⚠️ [BOOKING] Slot lookup failed: {e}")
+        all_slots = []
     
     # Filter out technicians who already rejected this case
     available_slots = [s for s in all_slots if s["technician_id"] not in tried_techs]
@@ -32,11 +36,13 @@ def booking_node(state: dict) -> dict:
     if not available_slots:
         print("❌ [BOOKING] No more available technicians. Escalating.")
         state["booking_result"] = {"error": "No more available technicians. Escalating to SDP staff."}
+        state["tried_technicians"] = tried_techs
+        state["reassignment_count"] = reassign_count
         state["current_status"] = "ESCALATION_PENDING"
         return state
 
     # 4. Smart Slot Selection
-    if urgency == "HIGH":
+    if urgency == "high":
         chosen_slot = available_slots[0]
     else:
         same_block_slots = [s for s in available_slots if s.get("block") == block]
@@ -45,7 +51,7 @@ def booking_node(state: dict) -> dict:
     # 5. Assign Technician
     print(f"🛠️ [BOOKING] Trying technician {chosen_slot['technician_id']} for slot {chosen_slot['slot_id']}")
     assignment = assign_technician(
-        case_id="C-NEW", 
+        case_id=state.get("case_id", "C-NEW"), 
         technician_id=chosen_slot["technician_id"], 
         slot_id=chosen_slot["slot_id"], 
         reason=f"Matched skill {required_skill} and availability"
