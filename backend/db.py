@@ -11,8 +11,9 @@ SEED_DB_PATH = ROOT / os.getenv("SEED_DB_PATH", "data/seed.db")
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 
-def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, check_same_thread=False)
+# Paths default to None and resolve to DB_PATH at call time, so tests can point DB_PATH elsewhere.
+def connect(path: Path | None = None) -> sqlite3.Connection:
+    conn = sqlite3.connect(path or DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -20,7 +21,7 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
 
 
 @contextmanager
-def get_conn(path: Path = DB_PATH):
+def get_conn(path: Path | None = None):
     conn = connect(path)
     try:
         yield conn
@@ -29,7 +30,7 @@ def get_conn(path: Path = DB_PATH):
         conn.close()
 
 
-def init_schema(path: Path = DB_PATH) -> None:
+def init_schema(path: Path | None = None) -> None:
     with get_conn(path) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         case_columns = {
@@ -41,15 +42,20 @@ def init_schema(path: Path = DB_PATH) -> None:
             )
         if "booking_status" not in case_columns:
             conn.execute("ALTER TABLE cases ADD COLUMN booking_status TEXT")
+        if "preferred_visit_at" not in case_columns:
+            conn.execute("ALTER TABLE cases ADD COLUMN preferred_visit_at TEXT")
 
 
 def next_record_id(conn: sqlite3.Connection, table: str) -> str:
-    """Return the next prefixed ID for a supported event, photo, message, or email table."""
+    """Return the next prefixed ID (e.g. CE-0042) for a table with prefixed text IDs."""
     identifiers = {
+        "cases": ("case_id", "C"),
         "case_events": ("event_id", "CE"),
         "case_photos": ("photo_id", "CP"),
         "buyer_messages": ("message_id", "BM"),
         "outbox": ("email_id", "OB"),
+        "verifications": ("verification_id", "V"),
+        "assignment_history": ("assignment_id", "AH"),
     }
     if table not in identifiers:
         raise ValueError(f"Unsupported record ID table: {table}")

@@ -62,6 +62,75 @@ escalation:
         - supervisor
         - maintenance_team
 
+# Predefined post-repair checks, returned by get_verification_protocol.
+# VerificationAgent turns these into case-specific steps using the case's location,
+# description, photos and the technician's repair_note. 
+verification_protocols:
+  water_leak:
+    - Run the water source above or next to the repaired spot (shower, basin or the unit above) for 10 minutes.
+    - Look at the repaired area for new drips, damp patches or spreading stains.
+    - Touch the repaired surface with a dry hand to check it is not damp.
+    - Check again after the next heavy rain if the leak only appeared during rain.
+  plumbing:
+    - Open the repaired tap or valve fully and let the water run for 2 minutes.
+    - Look under and around the repaired pipe or fitting for drips or pooling.
+    - Wipe the joint dry with a tissue, wait 5 minutes and check the tissue stays dry.
+    - Check the water pressure feels normal compared with other taps in the unit.
+  waterproofing:
+    - Pour or run water over the repaired area (shower floor, balcony) for 10 minutes.
+    - Check the ceiling or wall below or next to the area for damp patches.
+    - Look for water pooling instead of draining away.
+  drainage:
+    - Run the shower or tap that drains to the repaired trap for 3 minutes.
+    - Check the water drains away without pooling.
+    - Check for any foul smell near the floor trap.
+  sanitary_fittings:
+    - Flush the toilet or use the repaired fitting 3 times as normal.
+    - Check the cistern stops filling after each flush.
+    - Check the base or fitting does not rock and there is no water around it.
+  electrical:
+    - Switch the repaired circuit or appliance on and off 3 times as normal.
+    - Use the repaired socket with a normal appliance for 10 minutes.
+    - Check the breaker does not trip and there is no sparking, buzzing or burning smell.
+    - Do not open the distribution board or touch any wiring.
+  wall_crack:
+    - Look at the repaired area in good light; the crack line should not be visible.
+    - Lightly run your hand over the surface; it should feel smooth and level.
+    - Check again after a few days for hairline cracks returning.
+  structural_crack:
+    - Look at the repaired area from a safe distance; it should not show new cracks or gaps.
+    - Check for flaking or spalling concrete around the repair.
+    - Report immediately if you see the crack widening; do not lean on or load the area.
+  tiles:
+    - Gently knock on each repaired tile with your knuckle; a hollow, drum-like sound means it is not bonded.
+    - Walk across the repaired tiles; they should not move, rock or click.
+    - Look at the grout lines for gaps or cracks.
+  flooring:
+    - Walk across the repaired area; it should not creak, flex or lift.
+    - Look for gaps, raised edges or uneven joints.
+  ceiling:
+    - Look at the repaired ceiling area from below in good light for sagging, cracks or open joints.
+    - Check for damp patches or stains if the defect involved water.
+  roof:
+    - After the next rain, check the ceiling below the repaired area for damp or stains.
+    - Do not go onto the roof yourself.
+  door_window:
+    - Open and close the repaired door or window 5 times; it should move smoothly without sticking.
+    - Lock and unlock it; the lock should engage fully.
+    - Check the gaps around the frame look even and no light or draught comes through.
+  paint:
+    - Look at the repainted area in daylight for bubbles, peeling or colour differences.
+    - Lightly touch the surface once dry; it should not be tacky or flaking.
+  cabinetry:
+    - Open and close each repaired door or drawer 5 times.
+    - Check hinges and soft-close parts work and doors line up evenly.
+  external_works:
+    - Look at the repaired area for cracks, gaps or loose parts.
+    - After rain, check for pooling water around the repaired area.
+  other:
+    - Use the repaired item as you normally would.
+    - Check that the problem you originally reported no longer happens.
+
 # Suggested safety behavior for AI agents.
 safety:
   high_urgency:

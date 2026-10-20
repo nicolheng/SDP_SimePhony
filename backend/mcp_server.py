@@ -1,70 +1,65 @@
 # backend/mcp_server.py
-"""FastMCP server exposing the real tools from CONTRACTS.md §2. Agents connect via McpToolset."""
+"""FastMCP server exposing the agent-facing tools from tools.py (CONTRACTS.md §2).
+
+Human decisions (technician verdict, mark repaired, buyer verification / sign-off / reopen, SDP
+approval, repair booking) are deliberately not exposed: people make them in the web app, and an AI
+client must not take them on their behalf.
+
+Run:
+    python backend/mcp_server.py                 # stdio (an MCP client starts this as a subprocess)
+    python backend/mcp_server.py --http          # streamable HTTP on MCP_PORT (default 8002), path /mcp
+"""
+import os
+import sys
+
 from fastmcp import FastMCP
-from tools import (
-    create_case, add_photo, get_unit, get_available_slots, assign_technician, 
-    book_slot, record_verdict, record_signoff, reopen_case, send_email,
-    get_case_history, find_similar_cases, get_stack_cases, get_recurring_stats,
-    request_extra_inspection, get_approval_status, get_systemic_issues, attach_inspection_brief
+
+import tools
+
+mcp = FastMCP(
+    "simephony",
+    instructions=(
+        "Defect-management tools for the SimePhony property defect workflow. Times use the app's demo "
+        "clock (get_clock), not the real date. Case statuses are in CONTRACTS.md; business rules are in "
+        "the simephony://rules resource. Write tools return {ok: false, error} when a business rule "
+        "blocks the action."
+    ),
 )
 
-mcp = FastMCP("simephony")
+READ_ONLY = {"readOnlyHint": True}
 
-# P3 Tools
-@mcp.tool()
-def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot_id: str) -> dict: return create_case(unit_id, buyer_id, description, preferred_slot_id)
+for fn in (
+    tools.get_clock, tools.get_case, tools.get_unit, tools.get_case_history,
+    tools.get_available_slots, tools.get_booking_options, tools.get_verification_protocol,
+    tools.find_similar_cases, tools.check_escalation, tools.get_stack_cases, tools.get_recurring_stats,
+    tools.get_systemic_issues, tools.get_approval_status,
+):
+    mcp.tool(fn, annotations=READ_ONLY)
 
-@mcp.tool()
-def add_photo(case_id: str, photo_path: str, kind: str) -> dict: return add_photo(case_id, photo_path, kind)
+for fn in (
+    tools.save_intake_result,        # IntakeAgent
+    tools.save_similar_cases,        # SimilarDefectAgent
+    tools.assign_technician,         # TriageAgent
+    tools.escalate_booking,          # TriageAgent
+    tools.start_verification,        # VerificationAgent
+    tools.request_extra_inspection,  # RecurrenceAgent
+    tools.attach_inspection_brief,   # InitialInspectionAgent
+    tools.notify_buyer,              # CommsAgent
+    tools.notify_technician,
+    tools.send_email,
+    tools.log_agent_step,
+):
+    mcp.tool(fn)
 
-@mcp.tool()
-def get_unit(unit_id: str) -> dict: return get_unit(unit_id)
 
-@mcp.tool()
-def get_available_slots(skill: str, block: str, from_date: str, to_date: str) -> list[dict]: return get_available_slots(skill, block, from_date, to_date)
+@mcp.resource("simephony://rules", mime_type="text/yaml")
+def business_rules() -> str:
+    """rules.yaml: category -> skill, urgency rules, grace period, escalation thresholds, verification protocols."""
+    return tools.RULES_PATH.read_text(encoding="utf-8")
 
-@mcp.tool()
-def assign_technician(case_id: str, technician_id: str, slot_id: str, reason: str) -> dict: return assign_technician(case_id, technician_id, slot_id, reason)
-
-@mcp.tool()
-def book_slot(case_id: str, slot_id: str, kind: str) -> dict: return book_slot(case_id, slot_id, kind)
-
-@mcp.tool()
-def record_verdict(case_id: str, verdict: str, note: str, photo_path: str = None) -> dict: return record_verdict(case_id, verdict, note, photo_path)
-
-@mcp.tool()
-def record_signoff(case_id: str, party: str) -> dict: return record_signoff(case_id, party)
-
-@mcp.tool()
-def reopen_case(case_id: str, photo_path: str, description: str) -> dict: return reopen_case(case_id, photo_path, description)
-
-@mcp.tool()
-def send_email(to: str, subject: str, body: str, case_id: str) -> dict: return send_email(to, subject, body, case_id)
-
-# P4 Tools
-@mcp.tool()
-def get_case_history(case_id: str = None, unit_id: str = None) -> list[dict]: return get_case_history(case_id, unit_id)
-
-@mcp.tool()
-def find_similar_cases(case_id: str = None, text: str = None, filters: dict = None, top_k: int = 5) -> list[dict]: return find_similar_cases(case_id, text, filters, top_k)
-
-@mcp.tool()
-def get_stack_cases(block: str, stack: str) -> list[dict]: return get_stack_cases(block, stack)
-
-@mcp.tool()
-def get_recurring_stats(filters: dict = None) -> dict: return get_recurring_stats(filters)
-
-@mcp.tool()
-def request_extra_inspection(case_id: str, reasons: list, systemic_issue_id: str = None, create_systemic_issue: bool = False, issue_details: dict = None) -> dict: return request_extra_inspection(case_id, reasons, systemic_issue_id, create_systemic_issue, issue_details)
-
-@mcp.tool()
-def get_approval_status(approval_id: str) -> dict: return get_approval_status(approval_id)
-
-@mcp.tool()
-def get_systemic_issues(status: str = None, category: str = None, block: str = None) -> list[dict]: return get_systemic_issues(status, category, block)
-
-@mcp.tool()
-def attach_inspection_brief(case_id: str, brief: str) -> dict: return attach_inspection_brief(case_id, brief)
 
 if __name__ == "__main__":
-    mcp.run()
+    if "--http" in sys.argv:
+        mcp.run(transport="http", host="127.0.0.1", port=int(os.getenv("MCP_PORT", "8002")))
+    else:
+        mcp.run()

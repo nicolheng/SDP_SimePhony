@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS cases (
     missing_info         TEXT,                      -- JSON array of what IntakeAgent still needs
     follow_up_question   TEXT,                      -- question IntakeAgent asks the buyer
     occurrence_count     INTEGER NOT NULL DEFAULT 1,-- reports of this defect in this unit
+    preferred_visit_at   TEXT,                      -- ISO 8601 visit time the buyer picked when reporting
     assignment_attempts INTEGER DEFAULT 0,          -- number of technician assignment attempts
     booking_status       TEXT,                      -- nullable booking negotiation status
     triage_reason        TEXT,                      -- why TriageAgent picked this technician and slot

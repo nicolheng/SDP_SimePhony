@@ -12,8 +12,8 @@ SUBMITTED → INFO_NEEDED → ASSIGNED → VISIT_SCHEDULED → VALID / INVALID
 |---|---|---|
 | `SUBMITTED` | Buyer submitted photo + description + visit slot | buyer app |
 | `INFO_NEEDED` | IntakeAgent needs more info (missing room, blurry photo…) | IntakeAgent |
-| `ASSIGNED` | Technician picked | TriageAgent |
-| `VISIT_SCHEDULED` | Inspection slot booked | TriageAgent |
+| `ASSIGNED` | Technician picked and visit time held; waiting for the technician to accept | TriageAgent |
+| `VISIT_SCHEDULED` | Technician accepted the visit (booking confirmed) | technician app |
 | `VALID` | Technician confirmed the defect | technician app |
 | `INVALID` | Technician rejected the defect. **Terminal** — the case ends here | technician app |
 | `REPAIR_BOOKED` | Buyer booked a repair slot | buyer app / CommsAgent |
@@ -34,30 +34,77 @@ SUBMITTED → INFO_NEEDED → ASSIGNED → VISIT_SCHEDULED → VALID / INVALID
   earlier `INVALID` case and shows it in the history.
 - `INVALID` cases do not count toward the escalation threshold (3rd occurrence / stack cluster).
 
-## 2. MCP tools
+## 2. Tools (`backend/tools.py`) and the MCP server
 
-Inputs/outputs are drafts — fill in exact types on Day 1. Stubs live in
-`agents/simephony/stub_tools.py`; real tools in `backend/mcp_server.py`.
+`backend/tools.py` holds the business rules and is the one place that changes a case. It follows the
+web app's model (`backend/demo_api`): the **demo clock** (`app_meta.now`, moved by "skip days"),
+visits/repairs on fixed **Malaysia-time 2-hour blocks** (09:00, 11:00, 14:00, 16:00; no Sundays;
+14-day window), bookings stored as rows in `slots`, visits by **in-house technicians**, repairs per
+`demo_api/config.py` `REPAIR_PLAN` (duration, and subcontractors for specialist trades).
 
-| Tool | Inputs | Output | Built by | Used by |
-|---|---|---|---|---|
-| `create_case` | unit_id, buyer_id, description, preferred_slot_id | `{case_id, status}` | P3 | P1 |
-| `add_photo` | case_id, photo_path, kind (`original`/`reopen`/`verdict`) | `{photo_id, url}` | P3 | P1 |
-| `get_unit` | unit_id | `{unit_id, block, floor, stack, contractor, buyer}` | P3 | P1 |
-| `get_available_slots` | skill, block, from_date, to_date | `[{slot_id, technician_id, start, end}]` | P3 | P2 |
-| `assign_technician` | case_id, technician_id, slot_id, reason | `{ok}` | P3 | P2 |
-| `book_slot` | case_id, slot_id, kind (`visit`/`repair`) | `{ok, booking_id}` | P3 | P2 |
-| `record_verdict` | case_id, verdict (`VALID`/`INVALID`), note, photo_path? | `{ok}` | P3 | P2 |
-| `record_signoff` | case_id, party (`developer`/`buyer`) | `{ok, both_signed}` | P3 | P2 |
-| `reopen_case` | case_id, photo_path, description | `{ok, reopen_count}` or error if outside grace or case is `INVALID` | P3 | P2 |
-| `send_email` | to, subject, body, case_id | `{status: "sent" \| "logged, not sent"}` | P3 | P1, P2 |
-| `get_case_history` | case_id or unit_id | `[event]` | P4 | P1, P2 |
-| `find_similar_cases` | case_id or text, filters (unit/floor/stack/category/contractor), top_k | `[{case_id, score, reason}]` | P4 | P1, P2 |
-| `get_stack_cases` | block, stack | `[case]` | P4 | P1, P2 |
-| `get_recurring_stats` | filters | `{by_category, by_block, top_recurring}` | P4 | P1 |
-| `request_extra_inspection` | case_id, reasons[] | `{approval_id}` | P4 | P2 |
-| `get_approval_status` | approval_id | `{status: pending/approved/rejected}` | P4 | P2 |
-| `attach_inspection_brief` | case_id, brief (markdown/JSON) | `{ok}` | P4 | P1 |
+- **Agents (P1/P2):** `sys.path` add `backend/`, then `import tools` and call the functions directly.
+  The first call sets up the DB (schema + web-app migrations), so FastAPI doesn't need to be running.
+- **MCP clients:** `python backend/mcp_server.py` (stdio) or `--http` (port `MCP_PORT`, default 8002).
+  Exposes the read and agent tools below plus the resource `simephony://rules`. Human decisions are
+  **not** exposed: an AI client must not record verdicts, sign off or approve escalations.
+- **Web app:** `demo_api/workflow.py` still has its own copies of these rules; it should call
+  `tools.py` later so there is one source of truth.
+
+Write tools return `{ok: false, error}` (never raise) when a rule blocks the action. Every event
+written has a `message` (shown on the timeline and SDP trace page). Times are UTC `...000Z`.
+
+### Read tools (MCP + direct)
+
+| Tool | Inputs | Output |
+|---|---|---|
+| `get_clock` | – | `{now, now_local}` demo time; use it instead of the real date |
+| `get_case` | case_id | full case + unit, buyer, technician / inspector / support, photos, bookings, verification (guide), related_cases, inspection_brief, approvals, repair_plan |
+| `get_unit` | unit_id | `{unit_id, block, floor, stack, contractor, buyer}` |
+| `get_case_history` | case_id or unit_id | `[event]` |
+| `get_available_slots` | block, skill? (str or list), from_date?, to_date? (YYYY-MM-DD, Malaysia), include_subcontractors?, limit? | `[{start, start_local, technician_id, technician_name, kind}]` free blocks |
+| `get_booking_options` | case_id, kind (`visit`/`repair`), limit=3 | visit: `{skills, preferred_at, preferred: {start, technicians} \| null, alternatives: [{start, technicians}], excluded_technicians, no_availability}` (technicians who rejected this visit are left out); repair: `{plan, preferred_worker, options: [{start, slots, workers}], no_availability}` |
+| `get_verification_protocol` | category | `{steps}` safe checks from rules.yaml `verification_protocols` |
+| `find_similar_cases` | case_id or text, filters?, top_k | `[{case_id, score, reason, unit_id, status, counts_toward_escalation}]`: same unit, same stack, next door, same contractor, blended with embedding similarity |
+| `check_escalation` | case_id | `{occurrence_count, stack_units, stack_unit_count, repeated_defect, stack_cluster, should_escalate, reasons, existing_systemic_issue, pending_approval_id}` (rules in §4) |
+| `get_stack_cases` | block, stack | `[case]` |
+| `get_recurring_stats` | filters | `{by_category, by_block, top_recurring}` |
+| `get_systemic_issues` | status?, category?, block? | `[systemic_issue]` |
+| `get_approval_status` | approval_id | `{status: pending/approved/rejected}` |
+
+### Agent write tools (MCP + direct)
+
+| Tool | Inputs | Effect | Agent |
+|---|---|---|---|
+| `save_intake_result` | case_id, intake (AI Intake JSON) | → `INFO_NEEDED` if follow_up_question, else `SUBMITTED` | IntakeAgent |
+| `save_similar_cases` | case_id, links `[{related_case_id, reason, score?}]`, occurrence_count? | `case_links` shown on the case page | SimilarDefectAgent |
+| `assign_technician` | case_id, technician_id, start, reason, urgency?, support_id? | requests the visit and holds the time, booking `PENDING`: `SUBMITTED`/`REOPENED` → `ASSIGNED`; `EXTRA_INSPECTION` stays, optional subcontractor joins. Refuses technicians who rejected this visit | TriageAgent |
+| `escalate_booking` | case_id, reason | nobody free or all rejected: booking `NEEDS_STAFF`, email SDP | TriageAgent |
+| `start_verification` | case_id, guide `{intro, steps, ifFails}` or list of steps | `REPAIRED` → `PENDING_SIGNOFF` | VerificationAgent |
+| `request_extra_inspection` | case_id, reasons[], recommended_action?, title? | → `ESCALATION_PENDING`, approval, email SDP; **reuses the open systemic issue** for the stack (e.g. SI-002) or creates one | RecurrenceAgent |
+| `attach_inspection_brief` | case_id, brief `{timeline, photoComparison, neighbouringUnits, likelyComponents, checklist}` | needs an approved request; → `EXTRA_INSPECTION` | InitialInspectionAgent |
+| `notify_buyer` | case_id, title, body, email=true | in-app message + email | CommsAgent |
+| `notify_technician` | case_id, subject, body, technician_id? | email to the worker | CommsAgent |
+| `send_email` | to, subject, body, case_id? | Gmail SMTP (`EMAIL_ENABLED`, `EMAIL_REDIRECT_TO`); always in outbox | any |
+| `log_agent_step` | case_id, agent, message, data? | `agent.step` on the trace page | any |
+
+### Human actions (direct only, for the web app; not on MCP)
+
+| Function | Who | Effect |
+|---|---|---|
+| `create_case(unit_id, buyer_id, description, preferred_slot, photo?)` | buyer | → `SUBMITTED`; keeps `preferred_visit_at` |
+| `answer_follow_up(case_id, answer, photo?)` | buyer | appends to description; intake runs again |
+| `add_photo(case_id, photo, kind)` | any | photo = data URL or file path |
+| `respond_to_assignment(case_id, accept, reason?)` | technician | accept → booking `CONFIRMED`, `ASSIGNED` → `VISIT_SCHEDULED`; reject (reason required) → time freed, technician cleared, back to `SUBMITTED` (`REOPENED` for a revisit; `EXTRA_INSPECTION` stays), `booking.rejected` → TriageAgent reassigns |
+| `record_verdict(case_id, verdict, note, photo?)` | technician | visit must be confirmed; `VALID` / `INVALID` (terminal) |
+| `book_repair(case_id, start, technician_id?)` | buyer | `VALID` → `REPAIR_BOOKED` (repair plan hours, any qualified worker) |
+| `mark_repaired(case_id, repair_note, photo?)` | technician | → `REPAIRED` (VerificationAgent next) |
+| `record_verification(case_id, outcome, note, photo?)` | buyer | FIXED → buyer sign-off (closes if developer signed); NOT_FIXED (photo required) → `REOPENED`; CANNOT_VERIFY → no change |
+| `record_signoff(case_id, party, signed_by?)` | SDP / buyer | both signed → `CLOSED` |
+| `reopen_case(case_id, description, photo)` | buyer | `CLOSED` within `grace_period_days` of closing (demo clock), photo required → `REOPENED` |
+| `decide_approval(approval_id, approve, decided_by?)` | SDP | approved → `inspection.approved`; rejected → case `VALID` |
+
+Not in `tools.py` yet (still only in `demo_api`): the 14-day sign-off reminder / auto-close sweep and
+the demo controls (skip days, simulate rain).
 
 ## 3. Events
 
