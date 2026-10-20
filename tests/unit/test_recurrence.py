@@ -132,13 +132,29 @@ def test_naive_closed_at_treated_as_utc(state):
 
 
 @pytest.mark.parametrize("value", [None, ""])
-def test_missing_closed_at_raises(state, value):
+def test_missing_closed_at_refuses_reopen_without_crashing(state, value):
     if value is None:
         del state["closed_at"]
     else:
         state["closed_at"] = value
-    with pytest.raises(ValueError, match="closed_at required to reopen a CLOSED case"):
-        recurrence_node(state, now=NOW)
+    out = recurrence_node(state, now=NOW)
+    r = out["recurrence_result"]
+    assert r["accepted"] is False
+    assert r["action"] == "REJECTED"
+    assert r["code"] == "no_closed_date"
+    assert out["current_status"] == "CLOSED"
+    assert out["reopen_count"] == state.get("reopen_count", 0)
+
+
+@pytest.mark.parametrize("status,photo,code", [
+    ("INVALID", "p.jpg", "invalid_case"),
+    ("PENDING_SIGNOFF", "p.jpg", "not_closed"),
+    ("CLOSED", None, "no_photo"),
+])
+def test_rejections_carry_a_code(state, status, photo, code):
+    state["current_status"] = status
+    state["reopen_photo_path"] = photo
+    assert recurrence_node(state, now=NOW)["recurrence_result"]["code"] == code
 
 
 def test_grace_period_comes_from_rules(state):

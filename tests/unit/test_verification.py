@@ -277,9 +277,28 @@ def test_repair_done_requires_repaired_status(state, fake_llm, status):
     r = out["verification_result"]
     assert out["current_status"] == status
     assert r["rejected_reason"]
-    assert r["needs_technician_input"] is True
+    assert "needs_technician_input" not in r  # a wrong-status event is not a technician task
     assert r.get("protocol") is None
     assert fake_llm.calls == []
+
+
+def test_wrong_status_repair_done_keeps_existing_record(state, fake_llm):
+    state["current_status"] = "PENDING_SIGNOFF"
+    state["verification_result"] = {"protocol": "Look at the patch.", "needs_technician_input": False,
+                                    "technician_message": None}
+    r = verification_node(state)["verification_result"]
+    assert r["rejected_reason"]
+    assert r["protocol"] == "Look at the patch."
+    assert r["needs_technician_input"] is False
+    assert r["technician_message"] is None
+
+
+def test_new_guide_resets_earlier_verified_status(state, fake_llm):
+    state["verification_status"] = "verified"  # left over from an earlier repair cycle
+    fake_llm.responses = [_vision(), "Look at the ceiling patch for damp."]
+    out = verification_node(state)
+    assert out["current_status"] == "PENDING_SIGNOFF"
+    assert out["verification_status"] == "pending"
 
 
 def test_vision_outage_is_logged_and_labelled(state, fake_llm, capsys):

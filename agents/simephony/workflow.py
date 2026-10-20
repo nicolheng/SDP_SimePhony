@@ -45,6 +45,7 @@ class AgentState(TypedDict):
     repair_photo_path: Optional[str]
     closed_at: str # ISO timestamp, timezone-aware
     reopen_photo_path: Optional[str]
+    reopen_description: str # what the buyer wrote when reopening
     reopen_count: int
     verification_outcome: str # FIXED | NOT_FIXED | CANNOT_VERIFY
     verification_status: str
@@ -68,6 +69,7 @@ workflow.add_node("initial_inspection", initial_inspection_node)
 def prepare_new_case(state: dict) -> dict:
     """Past-grace reopen: start a fresh case from the reopen photo, dropping the old case's results."""
     state.update({
+        "user_description": state.get("reopen_description") or state.get("user_description", ""),
         "image_path": state.get("reopen_photo_path"),
         "case_id": "C-NEW",
         "intake_result": {},
@@ -103,11 +105,23 @@ def should_reassign(state: AgentState):
     return "comms"
 
 def route_event(state: AgentState) -> str:
+    event = state.get("event")
+    if not event or event == "case.created":
+        return "intake"
     return {
         "repair.done": "verification",
         "verification.submitted": "verification_result",
         "case.reopened": "recurrence",
-    }.get(state.get("event"), "intake")
+    }.get(event, "unhandled_event")
+
+
+def unhandled_event(state: dict) -> dict:
+    """An event this graph has no agent for (e.g. verdict.recorded): change nothing, contact no one."""
+    print(f"[WORKFLOW] No agent handles event {state.get('event')!r}; state left unchanged")
+    return state
+
+
+workflow.add_node("unhandled_event", unhandled_event)
 
 def after_verification(state: AgentState):
     result = state.get("verification_result") or {}
@@ -135,6 +149,7 @@ workflow.add_conditional_edges("verification_result", after_verification_result)
 workflow.add_conditional_edges("recurrence", after_recurrence)
 workflow.add_edge("prepare_new_case", "intake")
 workflow.add_edge("comms", END)
+workflow.add_edge("unhandled_event", END)
 
 # 5. Compile the graph
 agent_app = workflow.compile()

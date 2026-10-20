@@ -217,8 +217,9 @@ def verification_node(state: dict) -> dict:
     if status != "REPAIRED":
         # Not a repair to verify: leave the status alone and never message the buyer.
         reason = f"Repair verification needs status REPAIRED (status is {status})"
+        # Only the rejection is recorded; the existing record (guide already sent, flags) stays as it was.
         result = dict(state.get("verification_result") or {})
-        result.update({"rejected_reason": reason, "needs_technician_input": True, "technician_message": reason})
+        result["rejected_reason"] = reason
         result.setdefault("protocol", None)
         state["verification_result"] = result
         return state
@@ -267,6 +268,7 @@ def verification_node(state: dict) -> dict:
         "technician_message": None,
     }
     state["current_status"] = "PENDING_SIGNOFF"
+    state["verification_status"] = "pending"  # a new repair cycle: an earlier "verified" no longer applies
     return state
 
 

@@ -59,6 +59,16 @@ def test_route_event_mapping():
     assert route_event({"event": "case.reopened"}) == "recurrence"
 
 
+@pytest.mark.parametrize("event", ["verdict.recorded", "inspection.approved", "typo.event"])
+def test_unknown_event_ends_without_running_agents(fake_llm, no_side_effects, event):
+    assert route_event({"event": event}) == "unhandled_event"
+    final = _run({**_reopen_state(5), "event": event, "current_status": "VALID"})
+    assert final["current_status"] == "VALID"  # nothing re-ran intake/triage/booking
+    assert final.get("intake_result") == {"category": "water_leak"}
+    assert fake_llm.calls == []
+    no_side_effects.assert_not_called()
+
+
 def test_repair_done_resolved_reaches_comms(fake_llm, tmp_path, no_side_effects):
     photo = tmp_path / "repair.jpg"
     photo.write_bytes(b"fakejpg")
@@ -121,6 +131,23 @@ def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_pa
     assert final["verification_result"] == {}
     assert final["current_status"] == "ASSIGNED"
     assert final["comms_result"]["message"]
+
+
+def test_past_grace_new_case_uses_buyers_reopen_description(fake_llm, no_side_effects):
+    state = {**_reopen_state(60), "user_description": "Old: ceiling leak in bedroom",
+             "reopen_description": "Water dripping again near the window"}
+    fake_llm.responses = [INTAKE_JSON]
+    final = _run(state)
+    assert final["user_description"] == "Water dripping again near the window"
+    intake_text = [p["text"] for p in fake_llm.calls[0][-1]["content"] if p["type"] == "text"][0]
+    assert "Water dripping again near the window" in intake_text
+    assert "Old: ceiling leak" not in intake_text
+
+
+def test_past_grace_new_case_keeps_old_description_when_buyer_gave_none(fake_llm, no_side_effects):
+    state = {**_reopen_state(60), "user_description": "Ceiling leak in bedroom"}
+    fake_llm.responses = [INTAKE_JSON]
+    assert _run(state)["user_description"] == "Ceiling leak in bedroom"
 
 
 def _signoff_state(outcome, status="PENDING_SIGNOFF"):
