@@ -87,6 +87,72 @@ def test_recurrence_promises_flag(text):
     assert scan_for_liability(text)[0] is True, text
 
 
+# --- False alarms (PR A) ---
+
+@pytest.mark.parametrize("text", [
+    "The default settings were restored.",
+    "We reached a compromise on the visit time.",
+    "Please confirm your permanent address.",
+    "The technician fixed the fault in the socket.",
+    "An electrical fault was found in the socket.",
+    "The error code on the aircon display has cleared.",
+    "Thanks for the appealing photos of the repair.",
+])
+def test_harmless_words_do_not_count_as_liability(text):
+    assert scan_for_liability(text) == (False, []), text
+
+
+@pytest.mark.parametrize("text", [
+    "It was our fault.", "We are at fault for the leak.", "This was our mistake.", "We made a mistake.",
+    "This was an error on our part.", "This repair is permanent.", "The fix is permanent.",
+    "We admit the pipe was faulty.", "We guarantee the leak is gone.",
+    "Our team made a mistake.", "The technician made an error during the repair.",
+])
+def test_admissions_and_promises_still_flag(text):
+    assert scan_for_liability(text)[0] is True, text
+
+
+@pytest.mark.parametrize("text", [
+    # safety warnings from rules.yaml verification_protocols
+    "Do not open the distribution board or touch any wiring.",
+    "Do not go onto the roof yourself.",
+    "Check the breaker does not trip and there is no sparking, buzzing or burning smell.",
+    "If you see sparks, stop, do not touch the wiring, and report it.",
+    "Never use a ladder to check the ceiling.",
+    "Avoid touching the wiring near the socket.",
+    # descriptions of work, not instructions to the buyer
+    "We will repair the leak on your roof soon.",
+    "The fuse was replaced by our technician.",
+    "Our technician checked the wiring behind the socket.",
+])
+def test_warnings_and_work_descriptions_do_not_flag(text):
+    assert scan_for_unsafe_steps(text) == [], text
+
+
+@pytest.mark.parametrize("text", [
+    "Don't hesitate to open the panel and check.",
+    "Don't forget to reset the breaker.",
+    "Reset the breaker if the socket stops working.",
+    "We recommend you open the breaker panel.",
+    "We suggest opening the access panel to check.",
+    "Please check the wiring behind the socket.",
+    "You should turn off the mains first.",
+    "Do not wait, climb onto the roof and check.",
+    "Do not open the window; instead open the electrical panel.",
+    "Our technician says you should unscrew the faceplate.",
+])
+def test_risky_instructions_still_flag(text):
+    assert scan_for_unsafe_steps(text) != [], text
+
+
+def test_every_rules_yaml_check_step_passes_both_scans():
+    from agents.simephony.rules import load_rules
+    for category, steps in load_rules()["verification_protocols"].items():
+        for step in steps:
+            assert scan_for_unsafe_steps(step) == [], (category, step)
+            assert scan_for_liability(step) == (False, []), (category, step)
+
+
 def test_fixed_closings_pass_liability_scan():
     from agents.simephony.comms import INVALID_CLOSING
     assert scan_for_liability(INVALID_CLOSING) == (False, [])
