@@ -425,3 +425,26 @@ def test_invalid_fallback_leaves_out_unsafe_technician_note(fake_llm):
                      "verdict_note": "We admit the concrete was poor quality."})
     assert "admit" not in body.lower()
     assert body == f"{NEUTRAL_TEMPLATES['INVALID']}\n\n{CLOSING}"
+
+
+# --- PR C: escalation after a failed buyer check uses the inspection wording ---
+def test_escalation_after_failed_check_uses_inspection_template(fake_llm):
+    fake_llm.responses = ["Please remove the cover of the electrical panel."]  # forces the template
+    _, body = _send({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
+                     "verification_result": {"next_event": "case.reopened"},
+                     "recurrence_result": {"action": "ESCALATED"}})
+    assert body == NEUTRAL_TEMPLATES["ESCALATED"]
+
+
+def test_old_escalation_ignored_after_a_fixed_check(fake_llm):
+    # recurrence_result from an earlier reopen must not change a later FIXED confirmation email
+    fake_llm.responses = ["Please remove the cover of the electrical panel."]
+    _, body = _send({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
+                     "verification_result": {"next_event": None}, "recurrence_result": {"action": "ESCALATED"}})
+    assert body == NEUTRAL_TEMPLATES["ESCALATION_PENDING"]
+
+
+def test_subject_after_failed_check_escalation():
+    assert email_subject({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
+                          "verification_result": {"next_event": "case.reopened"},
+                          "recurrence_result": {"action": "ESCALATED"}}) == "[C-1] Your case is being reviewed"

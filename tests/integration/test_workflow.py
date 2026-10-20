@@ -218,7 +218,7 @@ def test_default_event_runs_new_case_chain(fake_llm, no_side_effects):
 
 # --- Original manual demo script (needs the real Ollama model); no longer runs on import ---
 def run_live_demo():
-    image_path = "tests/test_cases/images/test_wall_break.jpeg"
+    image_path = "tests/data/test_cases/images/test_wall_break.jpeg"
 
     if not os.path.exists(image_path):
         print(f" Error: Please check if '{image_path}' exists!")
@@ -269,3 +269,33 @@ def run_live_demo():
 
 if __name__ == "__main__":
     run_live_demo()
+
+
+# --- PR C: NOT_FIXED reopens the case and runs the escalation check ---
+def _not_fixed_state(reopen_count):
+    return {**_signoff_state("NOT_FIXED"), "reopen_photo_path": IMAGE, "reopen_count": reopen_count}
+
+
+def test_not_fixed_reopens_and_emails_buyer(fake_llm, no_side_effects):
+    fake_llm.responses = ["Your case has been reopened."]
+    final = _run(_not_fixed_state(0))
+    assert final["current_status"] == "REOPENED"
+    assert final["reopen_count"] == 1
+    assert final["recurrence_result"]["action"] == "REOPENED"
+    no_side_effects.assert_called_once()
+
+
+def test_not_fixed_on_third_occurrence_escalates(fake_llm, no_side_effects):
+    fake_llm.responses = ["We are arranging a more detailed inspection."]
+    with patch("agents.simephony.recurrence.request_extra_inspection", return_value={"approval_id": "AP-9"}) as ri:
+        final = _run(_not_fixed_state(1))
+    assert final["current_status"] == "ESCALATION_PENDING"
+    assert final["recurrence_result"]["approval_id"] == "AP-9"
+    ri.assert_called_once()
+
+
+def test_not_fixed_without_photo_ends_without_email(fake_llm, no_side_effects):
+    final = _run(_signoff_state("NOT_FIXED"))
+    assert final["current_status"] == "PENDING_SIGNOFF"
+    assert "photo" in final["verification_result"]["rejected_reason"]
+    no_side_effects.assert_not_called()

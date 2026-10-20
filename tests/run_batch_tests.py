@@ -12,8 +12,8 @@ from agents.simephony.workflow import agent_app
 # 2. Get the directory where this script lives
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Load the test cases from the tests/test_cases/ folder
-cases_file = os.path.join(script_dir, "test_cases", "cases.json")
+# Load the test cases from the tests/data/test_cases/ folder
+cases_file = os.path.join(script_dir, "data", "test_cases", "cases.json")
 with open(cases_file, "r", encoding="utf-8") as f:
     test_cases = json.load(f)
 
@@ -24,7 +24,7 @@ for case in test_cases:
     
     # 3. Smart Image Path Fix: Grab just the filename and look in the local tests folder
     img_filename = os.path.basename(case["image_path"])
-    image_path = os.path.join(script_dir, "test_cases", "images", img_filename)
+    image_path = os.path.join(script_dir, "data", "test_cases", "images", img_filename)
 
     initial_state = {
         "user_description": case["description"],

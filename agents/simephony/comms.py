@@ -60,8 +60,11 @@ def _template_key(state: dict) -> str:
 
 
 def _reopen_action(state: dict) -> str | None:
-    """The recurrence decision, only when this update is about the reopen that just happened."""
-    if state.get("event") != "case.reopened":
+    """The recurrence decision, only when this update is about the reopen that just happened:
+    a buyer reopen, or a failed buyer check (NOT_FIXED) that reopened the case."""
+    reopened_by_check = (state.get("event") == "verification.submitted"
+                         and (state.get("verification_result") or {}).get("next_event") == "case.reopened")
+    if state.get("event") != "case.reopened" and not reopened_by_check:
         return None
     return (state.get("recurrence_result") or {}).get("action")
 

@@ -100,7 +100,7 @@ def test_initial_inspection():
     mock_state = {
         "unit_id": "A-12-08",
         "user_description": "Ceiling bocor lagi, dah 3 kali ni!",
-        "image_path": "tests/test_cases/images/water_leak_again.jpg",
+        "image_path": "tests/data/test_cases/images/water_leak_again.jpg",
         "intake_result": {
             "category": "water_leak",
             "sub_category": "ceiling_leak",
@@ -195,14 +195,14 @@ def run_workflow(unit_id: str, description: str, image_path: str) -> dict:
 run_workflow(
     unit_id="A-12-08",
     description="Ceiling bocor lagi, dah 3 kali ni!",
-    image_path="tests/test_cases/images/water_leak_again.jpg" # <-- UPDATED PATH
+    image_path="tests/data/test_cases/images/water_leak_again.jpg" # <-- UPDATED PATH
 )
 
 # --- RUN 2: The Clean Unit (Should be normal triage) ---
 run_workflow(
     unit_id="C-05-02",
     description="Water leaking from ceiling.",
-    image_path="tests/test_cases/images/ceiling-water-leak.jpg" # <-- UPDATED PATH
+    image_path="tests/data/test_cases/images/ceiling-water-leak.jpg" # <-- UPDATED PATH
 )
 
 print("\n🎉 Planted Story Test Finished!")

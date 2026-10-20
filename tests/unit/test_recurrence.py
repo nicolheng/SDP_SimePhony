@@ -162,3 +162,29 @@ def test_grace_period_comes_from_rules(state):
         _closed_myt(state, datetime(2026, 10, 1, 9, 0, tzinfo=MYT))
         out = recurrence_node(state, now=datetime(2026, 10, 7, 9, 0, tzinfo=MYT))
     assert out["recurrence_result"]["action"] == "NEW_CASE"
+
+
+# --- PR C: escalation check after a failed buyer check (case already REOPENED) ---
+from agents.simephony.recurrence import reopen_escalation_node
+
+
+def _already_reopened(count):
+    return {"case_id": "H-NEW", "unit_id": "A-12-08", "current_status": "REOPENED", "reopen_count": count,
+            "intake_result": {"category": "water_leak"}}
+
+
+def test_escalation_after_failed_check_below_threshold(stubs):
+    out = reopen_escalation_node(_already_reopened(1))
+    r = out["recurrence_result"]
+    assert out["current_status"] == "REOPENED"
+    assert out["reopen_count"] == 1  # the reopen was already counted; not counted twice
+    assert r["action"] == "REOPENED" and r["accepted"] is True and r["occurrence"] == 2
+    stubs[1].assert_not_called()
+
+
+def test_escalation_after_failed_check_on_third_occurrence(stubs):
+    out = reopen_escalation_node(_already_reopened(2))
+    r = out["recurrence_result"]
+    assert out["current_status"] == "ESCALATION_PENDING"
+    assert r["action"] == "ESCALATED" and r["occurrence"] == 3 and r["approval_id"] == "APR-STUB"
+    stubs[1].assert_called_once_with("H-NEW", ["3rd occurrence"])

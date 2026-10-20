@@ -11,7 +11,7 @@ from .triage import triage_node
 from .booking import booking_node
 from .comms import comms_node
 from .verification import verification_node, verification_result_node
-from .recurrence import recurrence_node
+from .recurrence import recurrence_node, reopen_escalation_node
 from .initial_inspection import initial_inspection_node
 
 # 1. Setup Qwen Client (Points to local Ollama by default)
@@ -64,6 +64,7 @@ workflow.add_node("comms", comms_node)
 workflow.add_node("verification", verification_node)
 workflow.add_node("verification_result", verification_result_node)
 workflow.add_node("recurrence", recurrence_node)
+workflow.add_node("reopen_escalation", reopen_escalation_node)
 workflow.add_node("initial_inspection", initial_inspection_node)
 
 def prepare_new_case(state: dict) -> dict:
@@ -130,8 +131,11 @@ def after_verification(state: AgentState):
     return "comms"
 
 def after_verification_result(state: AgentState):
-    if (state.get("verification_result") or {}).get("rejected_reason"):
-        return END  # wrong status or unknown outcome: no buyer email
+    result = state.get("verification_result") or {}
+    if result.get("rejected_reason"):
+        return END  # wrong status, unknown outcome or NOT_FIXED without a photo: no buyer email
+    if result.get("next_event") == "case.reopened":
+        return "reopen_escalation"  # NOT_FIXED reopened the case: check escalation before telling the buyer
     return "comms"
 
 def after_recurrence(state: AgentState):
@@ -148,6 +152,7 @@ workflow.add_conditional_edges("verification", after_verification)
 workflow.add_conditional_edges("verification_result", after_verification_result)
 workflow.add_conditional_edges("recurrence", after_recurrence)
 workflow.add_edge("prepare_new_case", "intake")
+workflow.add_edge("reopen_escalation", "comms")
 workflow.add_edge("comms", END)
 workflow.add_edge("unhandled_event", END)
 
@@ -159,7 +164,7 @@ if __name__ == "__main__":
     example_state = {
         "unit_id": "A-12-08",
         "user_description": "Ceiling bocor lagi, dah 3 kali ni!",
-        "image_path": "tests/test_cases/images/water_leak_again.jpg",
+        "image_path": "tests/data/test_cases/images/water_leak_again.jpg",
         "intake_result": {},
         "similar_cases_result": {},
         "triage_result": {},

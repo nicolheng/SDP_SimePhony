@@ -23,7 +23,7 @@ Scenario triage (docs/TEST_SCENARIOS.md, checked against CONTRACTS.md §1/§7 an
 | 5.1 Concurrent write-storm | NOT TESTABLE | Agents never write to SQLite (create_case etc. are NotImplementedError in backend/tools.py; agents use stub_tools). Only backend/db.py itself could be load-tested, not through agents. |
 | 5.2 Long-running state recovery | NOT TESTABLE | workflow.compile() has no SqliteSaver checkpointer and no interrupt; the graph is one invoke per event and the caller carries state. (The event routing itself is tested: repair.done goes straight to verification without re-running intake.) |
 | CONTRACTS §7 inspection.approved -> InitialInspectionAgent | NOT TESTABLE | `initial_inspection` is added to the graph but has no edge; route_event has no inspection.approved route; get_approval_status is not wired. SDP approval / rejection after ESCALATION_PENDING cannot be driven. |
-| CONTRACTS §1 technician verdict (VALID / INVALID) | PARTIAL | No graph event for verdict.recorded (an unknown event falls through to intake and re-runs the new-case chain), so VALID/INVALID are simulated by setting current_status. Tested: INVALID is terminal (reopen rejected, no escalation); NOT_FIXED -> VALID. |
+| CONTRACTS §1 technician verdict (VALID / INVALID) | PARTIAL | No graph event for verdict.recorded (an unknown event falls through to intake and re-runs the new-case chain), so VALID/INVALID are simulated by setting current_status. Tested: INVALID is terminal (reopen rejected, no escalation); NOT_FIXED (with photo) -> REOPENED. |
 
 Bugs this file found, now fixed and kept as regression tests:
 - A stale verification_status == "verified" from an earlier repair cycle made the 2nd
@@ -269,15 +269,18 @@ def test_unclear_after_photo_holds_buyer_email(fake_llm, world, tmp_path):
     _assert_emails_safe(world)
 
 
-def test_not_fixed_returns_case_to_valid(fake_llm, world, tmp_path):
+def test_not_fixed_reopens_the_case(fake_llm, world, tmp_path):
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     s = _step(fake_llm, s, "repair.done", REPAIR_OK, current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=_photo(tmp_path, "after.jpg"))
-    s = _step(fake_llm, s, "verification.submitted", [MSG_VALID], verification_outcome="NOT_FIXED")
-    assert s["current_status"] == "VALID"
+    s = _step(fake_llm, s, "verification.submitted", [MSG_REOPENED], verification_outcome="NOT_FIXED",
+              reopen_photo_path=_photo(tmp_path, "still-leaking.jpg"))
+    assert s["current_status"] == "REOPENED"
+    assert s["reopen_count"] == 1
     assert s["verification_status"] == "not_verified"
-    assert s["verification_result"]["next_event"] == "repair.rebook"
-    assert _emails(world)[-1]["subject"] == "[C-0001] Defect confirmed: please book a repair"
+    assert s["recurrence_result"]["action"] == "REOPENED"
+    world.request_extra_inspection.assert_not_called()
+    assert _emails(world)[-1]["subject"] == "[C-0001] Case reopened"
     _assert_emails_safe(world)
 
 

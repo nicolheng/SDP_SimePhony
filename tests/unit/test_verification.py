@@ -211,14 +211,25 @@ def test_outcome_fixed():
     assert out["verification_result"]["next_event"] is None
 
 
-def test_outcome_not_fixed():
+def test_outcome_not_fixed_reopens_the_case():
     out = verification_result_node(
-        {"verification_outcome": "NOT_FIXED", "current_status": "PENDING_SIGNOFF", "verification_result": {"x": 1}}
+        {"verification_outcome": "NOT_FIXED", "current_status": "PENDING_SIGNOFF", "verification_result": {"x": 1},
+         "reopen_photo_path": "/tmp/still-leaking.jpg", "reopen_count": 0}
     )
-    assert out["current_status"] == "VALID"
+    assert out["current_status"] == "REOPENED"  # CONTRACTS: NOT_FIXED (with photo) -> REOPENED
+    assert out["reopen_count"] == 1
     assert out["verification_status"] == "not_verified"
-    assert out["verification_result"]["next_event"] == "repair.rebook"
+    assert out["verification_result"]["next_event"] == "case.reopened"
     assert out["verification_result"]["x"] == 1
+
+
+def test_outcome_not_fixed_needs_a_photo():
+    out = verification_result_node(
+        {"verification_outcome": "NOT_FIXED", "current_status": "PENDING_SIGNOFF", "reopen_count": 0}
+    )
+    assert "photo" in out["verification_result"]["rejected_reason"]
+    assert out["current_status"] == "PENDING_SIGNOFF"
+    assert out["reopen_count"] == 0
 
 
 def test_outcome_cannot_verify():

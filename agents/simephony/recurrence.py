@@ -53,7 +53,17 @@ def recurrence_node(state: dict, now: datetime | None = None) -> dict:
         return reject("Grace period has passed; submit a new case", "past_grace", "NEW_CASE")
 
     state["reopen_count"] = count + 1
-    occurrence = state["reopen_count"] + 1
+    return _escalate_or_reopen(state, "Reopened within grace period")
+
+
+def reopen_escalation_node(state: dict) -> dict:
+    """Escalation check for a case the buyer's failed check already reopened (verification NOT_FIXED).
+    The reopen is already counted in reopen_count, so there is no gate and no second increment."""
+    return _escalate_or_reopen(state, "Reopened after the buyer's check failed")
+
+
+def _escalate_or_reopen(state: dict, reason: str) -> dict:
+    occurrence = state.get("reopen_count", 0) + 1
     category = (state.get("intake_result") or {}).get("category")
     esc = check_escalation(state["case_id"], state["unit_id"], category, occurrence)
 
@@ -65,6 +75,5 @@ def recurrence_node(state: dict, now: datetime | None = None) -> dict:
             occurrence, esc["cluster_size"], esc["reasons"], approval.get("approval_id"))
     else:
         state["current_status"] = "REOPENED"
-        state["recurrence_result"] = _result(
-            True, "Reopened within grace period", "REOPENED", occurrence, esc["cluster_size"])
+        state["recurrence_result"] = _result(True, reason, "REOPENED", occurrence, esc["cluster_size"])
     return state

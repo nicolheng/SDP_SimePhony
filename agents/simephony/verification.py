@@ -289,9 +289,14 @@ def verification_result_node(state: dict) -> dict:
         state["current_status"] = "PENDING_SIGNOFF"
         state["verification_status"] = "verified"
     elif outcome == "NOT_FIXED":
+        # CONTRACTS: NOT_FIXED needs a new photo and reopens the case; RecurrenceAgent checks escalation next.
+        if not state.get("reopen_photo_path"):
+            result["rejected_reason"] = "NOT_FIXED needs a new photo showing the problem"
+            return state
         state["verification_status"] = "not_verified"
-        state["current_status"] = "VALID"
-        result["next_event"] = "repair.rebook"
+        state["current_status"] = "REOPENED"
+        state["reopen_count"] = state.get("reopen_count", 0) + 1
+        result["next_event"] = "case.reopened"
     elif outcome == "CANNOT_VERIFY":
         state["verification_status"] = "pending"
     return state
