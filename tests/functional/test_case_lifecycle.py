@@ -12,7 +12,7 @@ Scenario triage (docs/TEST_SCENARIOS.md, checked against CONTRACTS.md §1/§7 an
 
 | Scenario | Verdict | What is tested / concrete blocker |
 |---|---|---|
-| 1.1 New case -> triage -> booking | PARTIAL | Tested: intake -> similar_defect -> triage -> booking -> comms reaches ASSIGNED with a plumbing technician and one buyer email. Booking and comms now go through backend/tools.py (get_booking_options / assign_technician / notify_buyer; real-DB tests in tests/integration/); here they are faked. VISIT_SCHEDULED comes when the technician accepts in the app (respond_to_assignment), outside the agents. |
+| 1.1 New case -> triage -> booking | PARTIAL | Tested: intake -> similar_defect -> triage -> booking -> comms reaches VISIT_SCHEDULED (booking PENDING until the technician accepts in the app) with a plumbing technician and one buyer email. Booking and comms go through backend/tools.py (get_booking_options / assign_technician / notify_buyer; real-DB tests in tests/integration/); here they are faked. |
 | 1.2 Repair done -> verification -> closure | PARTIAL | Tested: repair.done -> photo check -> PENDING_SIGNOFF with the buyer guide in the email; FIXED keeps PENDING_SIGNOFF. Blocker: no agent ever sets CLOSED. Sign-off needs record_signoff (P3, NotImplementedError); by design vision is advisory and never closes a case. CLOSED + closed_at are simulated here. |
 | 2.1 Reopen -> recurrence loop | PARTIAL | Tested: reopen #1 -> REOPENED (reopen_count 1); reopen #2 -> ESCALATION_PENDING and request_extra_inspection called (D1: occurrence = reopen_count + 1, so the 2nd reopen is the 3rd occurrence; the doc's "reopen_count=3" is out of date). RecurrenceAgent now calls tools.check_escalation + tools.request_extra_inspection (real-DB tests in tests/integration/test_recurrence_tools.py); here they are faked. Blocker: no "alert the technician" step on the 2nd occurrence exists. |
 | 2.2 Vertical stack cluster | PARTIAL | Tested: on the 1st reopen, tools.check_escalation reporting 3 stack units escalates with tools' stack reason (real seed.db: tests/unit/test_escalation.py). Blockers: no `zone_mapping` table (block + stack from `units` is used instead); no 48-hour window; the check only runs on case.reopened, never on case.created, so three fresh reports never cluster; no "Stack Cluster Detected" log. |
@@ -58,7 +58,7 @@ INTAKE_JSON = json.dumps({
     "follow_up_question": "", "preliminary_outcome": "VALID_DEFECT", "mismatch_detected": False,
 })
 SIMILAR_JSON = json.dumps({"cluster_reason": "No earlier cases in this unit."})
-URGENCY = "NORMAL"
+URGENCY = '{"urgency": "normal", "rule": "none"}'  # triage keeps intake urgency
 VISION_OK = json.dumps({"assessment": "looks_resolved",
                         "observations": "Ceiling board replaced, no staining visible.",
                         "matches_location": True})
@@ -70,16 +70,19 @@ PHRASED_CHECKS = (
 )
 REPAIR_NOTE = "Resealed the pipe joint above the shower and replaced the stained ceiling board."
 
-MSG_ASSIGNED = "A technician has been assigned to your water leak case. We will share the visit slot soon."
-MSG_REPAIR_INTRO = "The technician has completed the repair. Please check it using the steps below before signing off."
+MSG_RECEIVED = "We have received your water leak report and requested a technician visit."
+MSG_REPAIR_INTRO = "The technician has completed the repair."
+MSG_READY = "The developer has approved the repair, so it is ready for you to check."
+REPAIR_DONE_NOTE = "The developer reviews the repair first. We will let you know when you can check it and sign off."
 MSG_THANKS = "Thank you for checking the repair."
 MSG_REOPENED = "Your case has been reopened. We will arrange a technician visit."
 MSG_ESCALATED = "Your case has been referred to our team for a further inspection."
 MSG_VALID = "Our technician confirmed the defect still needs work. We will arrange another repair visit."
 MSG_INVALID = "Our technician reviewed your report and found it is not a developer defect."
 
-CREATED = [INTAKE_JSON, SIMILAR_JSON, URGENCY, MSG_ASSIGNED]   # intake, similar_defect, triage, comms
+CREATED = [INTAKE_JSON, SIMILAR_JSON, URGENCY, MSG_RECEIVED]   # intake, similar_defect, triage, comms
 REPAIR_OK = [VISION_OK, PHRASED_CHECKS, MSG_REPAIR_INTRO]       # vision, phrase checks, comms
+DEADLINE = "Sat, 31 Oct, 5:00 pm"
 
 
 # ---------------------------------------------------------------- helpers
@@ -163,6 +166,8 @@ def world(monkeypatch, escalation_db, booking_db):
     escalation_db.request.return_value = {"ok": True, "approval_id": "APR-1", "issue_id": "SI-002"}
     # similar_defect would otherwise read data/simephony.db through backend/tools.py
     monkeypatch.setattr(similar_defect, "find_similar_cases", lambda **kw: [])
+    monkeypatch.setattr(backend_tools, "get_signoff_info", lambda case_id: {
+        "ok": True, "status": "PENDING_SIGNOFF", "developer_signed": True, "deadline_local": DEADLINE, "guide": None})
     return w
 
 
@@ -171,6 +176,7 @@ def _closed_case(fake_llm, world, tmp_path) -> dict:
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     s = _step(fake_llm, s, "repair.done", REPAIR_OK, current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=_photo(tmp_path, "after.jpg"))
+    s = _step(fake_llm, s, "developer.signed", [MSG_READY])
     s = _step(fake_llm, s, "verification.submitted", [MSG_THANKS], verification_outcome="FIXED")
     return {**s, "current_status": "CLOSED", "closed_at": _days_ago(5)}
 
@@ -180,7 +186,7 @@ def _closed_case(fake_llm, world, tmp_path) -> dict:
 def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     # 1. case.created -> intake -> similar_defect -> triage -> booking -> comms
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
-    assert s["current_status"] == "ASSIGNED"
+    assert s["current_status"] == "VISIT_SCHEDULED"
     assert s["intake_result"]["category"] == "water_leak"
     assert s["triage_result"]["assigned_skill"] == "plumbing"
     assert s["triage_result"]["urgency"] == "normal"  # CONTRACTS lowercase
@@ -204,8 +210,14 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert "Run the shower for a few minutes" in guide
     assert IF_FAILS in guide  # web app wording: choose "Still not fixed" and add a photo
     mail = _emails(world)[-1]
+    assert mail["subject"] == "[C-0001] Repair done"
+    assert guide not in mail["body"] and mail["body"].endswith(REPAIR_DONE_NOTE)  # SDP signs first
+
+    # 2b. SDP signs the repair off -> the buyer gets the guide and their deadline
+    s = _step(fake_llm, s, "developer.signed", [MSG_READY])
+    mail = _emails(world)[-1]
     assert mail["subject"] == "[C-0001] Please check the repair and sign off"
-    assert guide in mail["body"]
+    assert f"sign off by {DEADLINE}" in mail["body"] and guide in mail["body"]
 
     # 3. buyer submits FIXED (SDP signed first) -> the last sign-off closes the case, no guide re-sent
     s = _step(fake_llm, s, "verification.submitted", [MSG_THANKS], verification_outcome="FIXED")
@@ -215,8 +227,8 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
 
     # 4. both parties sign -> CLOSED (outside world); buyer reopens within grace
     s = _step(fake_llm, {**s, "current_status": "CLOSED", "closed_at": _days_ago(5)},
-              "case.reopened", [MSG_REOPENED], reopen_photo_path=_photo(tmp_path, "reopen1.jpg"))
-    assert s["current_status"] == "REOPENED"
+              "case.reopened", [URGENCY, MSG_REOPENED], reopen_photo_path=_photo(tmp_path, "reopen1.jpg"))
+    assert s["current_status"] == "VISIT_SCHEDULED"  # below the threshold: revisit booked
     assert s["reopen_count"] == 1
     assert s["recurrence_result"]["action"] == "REOPENED"
     assert s["recurrence_result"]["occurrence"] == 2
@@ -235,7 +247,7 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
 
     mails = _emails(world)
     assert [m["subject"] for m in mails] == [
-        "[C-0001] We've received your report", "[C-0001] Please check the repair and sign off",
+        "[C-0001] We've received your report", "[C-0001] Repair done", "[C-0001] Please check the repair and sign off",
         "[C-0001] Your case is closed", "[C-0001] Case reopened", "[C-0001] Your case is being reviewed",
     ]
     assert {m["to"] for m in mails} == {BUYER}
@@ -262,9 +274,9 @@ def test_not_fixed_reopens_the_case(fake_llm, world, tmp_path):
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     s = _step(fake_llm, s, "repair.done", REPAIR_OK, current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=_photo(tmp_path, "after.jpg"))
-    s = _step(fake_llm, s, "verification.submitted", [MSG_REOPENED], verification_outcome="NOT_FIXED",
+    s = _step(fake_llm, s, "verification.submitted", [URGENCY, MSG_REOPENED], verification_outcome="NOT_FIXED",
               reopen_photo_path=_photo(tmp_path, "still-leaking.jpg"))
-    assert s["current_status"] == "REOPENED"
+    assert s["current_status"] == "VISIT_SCHEDULED"  # below the threshold: revisit booked
     assert s["reopen_count"] == 1
     assert s["verification_status"] == "not_verified"
     assert s["recurrence_result"]["action"] == "REOPENED"
@@ -306,6 +318,7 @@ def test_invalid_case_cannot_be_reopened(fake_llm, world, tmp_path):
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     # technician rejects the defect (technician app; no graph event for verdict.recorded)
     invalid = {**s, "current_status": "INVALID", "verdict_note": "Stain is condensation from the exhaust fan."}
+    world.escalation.calls.clear()  # the new report's own escalation check is not part of the reopen
 
     s = _step(fake_llm, invalid, "case.reopened", [],  # fixed reply, no LLM call
               reopen_photo_path=_photo(tmp_path, "reopen.jpg"), closed_at=_days_ago(3))
@@ -328,8 +341,8 @@ def test_invalid_case_cannot_be_reopened(fake_llm, world, tmp_path):
 def test_stack_cluster_escalates_on_first_reopen(fake_llm, world, tmp_path):
     # tools.check_escalation: 3 units in stack A-08 with this defect (INVALID / other categories are
     # filtered by tools.py itself; covered on a real seed.db in tests/unit/test_escalation.py)
-    world.escalation.stack_units = 3
     closed = _closed_case(fake_llm, world, tmp_path)
+    world.escalation.stack_units = 3  # the cluster formed after this report (a cluster at report time escalates the new case)
 
     s = _step(fake_llm, closed, "case.reopened", [MSG_ESCALATED],
               reopen_photo_path=_photo(tmp_path, "reopen.jpg"))
@@ -353,7 +366,7 @@ def test_technician_rejection_reassigns(fake_llm, world, tmp_path):
     assert s["booking_result"]["assignment_ok"] is True
     assert s["tried_technicians"] == ["T-PLUMB-1"]
     assert s["reassignment_count"] == 1
-    assert s["current_status"] == "ASSIGNED"
+    assert s["current_status"] == "VISIT_SCHEDULED"
     assert "T-PLUMB" not in _user_text(fake_llm.calls[-1])  # buyer never sees technician IDs
     assert len(_emails(world)) == 1
     _assert_emails_safe(world)
@@ -377,14 +390,15 @@ def test_all_technicians_reject_escalates_without_looping(fake_llm, world, tmp_p
 
 def test_second_repair_cycle_resends_buyer_guide(fake_llm, world, tmp_path):
     closed = _closed_case(fake_llm, world, tmp_path)
-    s = _step(fake_llm, closed, "case.reopened", [MSG_REOPENED],
+    s = _step(fake_llm, closed, "case.reopened", [URGENCY, MSG_REOPENED],
               reopen_photo_path=_photo(tmp_path, "reopen.jpg"))
-    assert s["current_status"] == "REOPENED"
+    assert s["current_status"] == "VISIT_SCHEDULED"  # below the threshold: revisit booked
 
     s = _step(fake_llm, s, "repair.done", REPAIR_OK, current_status="REPAIRED",
               repair_note="Replaced the leaking elbow joint above the shower.",
               repair_photo_path=_photo(tmp_path, "after2.jpg"))
     assert s["current_status"] == "PENDING_SIGNOFF"
+    s = _step(fake_llm, s, "developer.signed", [MSG_READY])  # SDP signs the 2nd repair -> guide again
     assert s["verification_result"]["protocol"] in _emails(world)[-1]["body"]
 
 
@@ -403,11 +417,12 @@ def test_live_happy_path_prints_emails(world, tmp_path):
     """Same lifecycle on real Ollama (qwen2.5:7b + llava-llama3). Run with `-m live_llm -s`."""
     state = {**_new_case(tmp_path), "image_path": LIVE_IMAGE}
     s = _step(None, state, "case.created", [])
-    assert s["current_status"] == "ASSIGNED"
+    assert s["current_status"] == "VISIT_SCHEDULED"
 
     s = _step(None, s, "repair.done", [], current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=LIVE_IMAGE)
     if s["current_status"] == "PENDING_SIGNOFF":  # vision is advisory; it may hold the email
+        s = _step(None, s, "developer.signed", [])  # SDP signs first; then the buyer gets the guide
         assert s["verification_result"]["protocol"] in _emails(world)[-1]["body"]
         s = _step(None, s, "verification.submitted", [], verification_outcome="FIXED")
     else:
@@ -415,7 +430,7 @@ def test_live_happy_path_prints_emails(world, tmp_path):
 
     s = _step(None, {**s, "current_status": "CLOSED", "closed_at": _days_ago(5)},
               "case.reopened", [], reopen_photo_path=LIVE_IMAGE)
-    assert s["current_status"] == "REOPENED"
+    assert s["current_status"] == "VISIT_SCHEDULED"  # below the threshold: revisit booked
     s = _step(None, {**s, "current_status": "CLOSED", "closed_at": _days_ago(2)},
               "case.reopened", [], reopen_photo_path=LIVE_IMAGE)
     assert s["current_status"] == "ESCALATION_PENDING"

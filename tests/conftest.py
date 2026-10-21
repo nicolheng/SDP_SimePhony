@@ -223,9 +223,12 @@ def escalation_db(monkeypatch):
 # Safety net: tests never write the live data/simephony.db through tools.py
 # ---------------------------------------------------------------------------
 class FakeBookingDB:
-    """Stands in for tools.get_booking_options / assign_technician / escalate_booking.
+    """Stands in for tools.get_booking_options / assign_technician / escalate_booking and the hand-over
+    tools get_reassignment_options / reassign_job.
     `options` = visit times with free technicians (earliest first); `preferred` = the buyer's chosen
-    time if someone is free then; `refuse` = technician ids assign_technician turns down."""
+    time if someone is free then; `refuse` = technician ids assign_technician / reassign_job turn down;
+    `handover` = colleagues who can take a handed-over job (same time first); `status` = the case status
+    the tools report (VISIT_SCHEDULED, or EXTRA_INSPECTION / REPAIR_BOOKED kept on a hand-over)."""
 
     def __init__(self):
         self.preferred = None
@@ -241,6 +244,15 @@ class FakeBookingDB:
         self.option_calls: list[str] = []
         self.assigned: list[dict] = []
         self.escalated: list[dict] = []
+        self.status = "VISIT_SCHEDULED"
+        self.job = "inspection visit"
+        self.handover = [
+            {"technician_id": "T-PLUMB-2", "name": "Siti Rahman", "start": "2026-10-22T01:00:00.000Z",
+             "start_local": "Thu 22 Oct, 9:00 am", "same_time": True},
+            {"technician_id": "T-PLUMB-3", "name": "Raj Kumar", "start": "2026-10-22T03:00:00.000Z",
+             "start_local": "Thu 22 Oct, 11:00 am", "same_time": False},
+        ]
+        self.reassigned: list[dict] = []
 
     def get_booking_options(self, case_id, kind="visit"):
         self.option_calls.append(case_id)
@@ -251,7 +263,17 @@ class FakeBookingDB:
         if technician_id in self.refuse:
             return {"ok": False, "error": f"{technician_id} is already booked at {start}"}
         self.assigned.append({"case_id": case_id, "technician_id": technician_id, "start": start, "reason": reason, "urgency": urgency})
-        return {"ok": True, "status": "ASSIGNED", "booking_status": "PENDING", "technician_id": technician_id, "start": start}
+        return {"ok": True, "status": self.status, "booking_status": "PENDING", "technician_id": technician_id, "start": start}
+
+    def get_reassignment_options(self, case_id):
+        return {"case_id": case_id, "job": self.job, "previous_start": "2026-10-22T01:00:00.000Z", "options": list(self.handover)}
+
+    def reassign_job(self, case_id, technician_id, start):
+        if technician_id in self.refuse:
+            return {"ok": False, "error": f"{technician_id} at {start} is not one of the reassignment options"}
+        self.reassigned.append({"case_id": case_id, "technician_id": technician_id, "start": start})
+        return {"ok": True, "status": self.status, "booking_status": "PENDING", "technician_id": technician_id,
+                "start": start, "same_time": start == "2026-10-22T01:00:00.000Z"}
 
     def escalate_booking(self, case_id, reason):
         self.escalated.append({"case_id": case_id, "reason": reason})
@@ -269,8 +291,17 @@ def _no_live_db_writes(request, monkeypatch):
     monkeypatch.setattr(backend_tools, "get_booking_options", booking.get_booking_options)
     monkeypatch.setattr(backend_tools, "assign_technician", booking.assign_technician)
     monkeypatch.setattr(backend_tools, "escalate_booking", booking.escalate_booking)
+    monkeypatch.setattr(backend_tools, "get_reassignment_options", booking.get_reassignment_options)
+    monkeypatch.setattr(backend_tools, "reassign_job", booking.reassign_job)
     monkeypatch.setattr(backend_tools, "set_repair_estimate", MagicMock(return_value={"ok": True, "repair_hours": 4}))
     monkeypatch.setattr(backend_tools, "save_similar_cases", MagicMock(return_value={"ok": True, "linked": 0}))
+    # reads too: a first report with no history, unless a test uses escalation_db
+    monkeypatch.setattr(backend_tools, "check_escalation", MagicMock(return_value={
+        "occurrence_count": 1, "reopen_count": 0, "stack_unit_count": 1, "reasons": [], "pending_approval_id": None}))
+    monkeypatch.setattr(backend_tools, "attach_inspection_brief", MagicMock(return_value={"ok": True, "status": "EXTRA_INSPECTION"}))
+    monkeypatch.setattr(backend_tools, "send_email", MagicMock(return_value={"status": "logged, not sent", "email_id": "E-STUB"}))
+    monkeypatch.setattr(backend_tools, "get_signoff_info", MagicMock(return_value={
+        "ok": True, "status": "PENDING_SIGNOFF", "developer_signed": True, "deadline_local": "Sat, 31 Oct, 5:00 pm", "guide": None}))
     monkeypatch.setattr(backend_tools, "set_triage_result", MagicMock(return_value={"ok": True, "urgency": "normal"}))
     monkeypatch.setattr(backend_tools, "save_intake_result",
                         MagicMock(return_value={"ok": True, "status": "SUBMITTED", "warnings": []}))

@@ -34,9 +34,10 @@ def check_escalation(case_id: str) -> dict:
     return tools.check_escalation(case_id)
 
 
-def request_extra_inspection(case_id: str, reasons: list[str]) -> dict:
-    """Ask SDP to approve an extra inspection (-> ESCALATION_PENDING, approval row, SDP email)."""
-    return tools.request_extra_inspection(case_id, reasons)
+def request_extra_inspection(case_id: str, reasons: list[str], keep_status: bool = False) -> dict:
+    """Ask SDP to approve an extra inspection (approval row, SDP email): a reopen -> ESCALATION_PENDING;
+    keep_status=True (new report) leaves the booked visit as it is."""
+    return tools.request_extra_inspection(case_id, reasons, keep_status=keep_status)
 
 
 def get_verification_protocol(category: str) -> dict:
@@ -62,8 +63,38 @@ def get_booking_options(case_id: str, kind: str = "visit") -> dict:
 
 
 def assign_technician(case_id: str, technician_id: str, start: str, reason: str, urgency: str | None = None) -> dict:
-    """Hold the visit for a technician (booking PENDING until they accept in the app)."""
+    """Book the visit with a technician (VISIT_SCHEDULED; EXTRA_INSPECTION stays), booking PENDING until they accept."""
     return tools.assign_technician(case_id, technician_id, start, reason, urgency)
+
+
+def attach_inspection_brief(case_id: str, brief: dict) -> dict:
+    """After SDP approves: save the technician's pre-inspection brief (-> EXTRA_INSPECTION)."""
+    return tools.attach_inspection_brief(case_id, brief)
+
+
+def send_email(to: str, subject: str, body: str, case_id: str | None = None) -> dict:
+    """Email via Gmail SMTP (EMAIL_ENABLED); always logged in the outbox."""
+    return tools.send_email(to, subject, body, case_id)
+
+
+def get_signoff_info(case_id: str) -> dict:
+    """What the buyer's sign-off message needs: the saved guide, whether SDP has signed, the buyer's deadline."""
+    case = tools.get_case(case_id)
+    if case.get("ok") is False:
+        return case
+    verification = case.get("verification") or {}
+    return {"ok": True, "status": case["status"], "developer_signed": bool(case.get("developer_signed_at")),
+            "deadline_local": tools.fmt_datetime(tools.signoff_deadline(case)), "guide": verification.get("protocol")}
+
+
+def get_reassignment_options(case_id: str) -> dict:
+    """After a hand-over: colleagues who can take the job, same time first. {job, options: [...]}."""
+    return tools.get_reassignment_options(case_id)
+
+
+def reassign_job(case_id: str, technician_id: str, start: str) -> dict:
+    """Give a handed-over job to one of those colleagues (they still accept it; the case keeps its status)."""
+    return tools.reassign_job(case_id, technician_id, start)
 
 
 def escalate_booking(case_id: str, reason: str) -> dict:

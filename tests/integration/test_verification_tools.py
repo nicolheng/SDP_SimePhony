@@ -70,3 +70,28 @@ def test_db_refusal_is_recorded_not_crashing(fake_llm, photo):
     r = out["verification_result"]
     assert r["verification_id"] is None
     assert "start verification" in r["save_error"]
+
+
+
+def test_signoff_ready_loads_saved_guide_and_deadline():
+    # C-0007: plumbing, REPAIRED in seed.db. Guide saved at repair.done; SDP signs; the buyer's step reads it back.
+    import tools
+    from agents.simephony.verification import signoff_ready_node
+    tools.start_verification("C-0007", {"intro": "The photo shows the repair at the kitchen sink.",
+                                        "steps": ["Run the tap for 5 minutes.", "Look under the sink for drips."],
+                                        "ifFails": "If any check fails, do not sign off."})
+    tools.record_signoff("C-0007", "developer")
+    out = signoff_ready_node({"case_id": "C-0007", "event": "developer.signed", "current_status": "PENDING_SIGNOFF"})
+    assert out["verification_result"]["protocol"] == (
+        "The photo shows the repair at the kitchen sink.\nRun the tap for 5 minutes.\n"
+        "Look under the sink for drips.\nIf any check fails, do not sign off.")
+    assert out["signoff_deadline_local"]  # e.g. "Mon, 2 Nov, 5:00 pm"
+    assert out["current_status"] == "PENDING_SIGNOFF"
+
+
+def test_signoff_ready_before_developer_signed_is_rejected():
+    import tools
+    from agents.simephony.verification import signoff_ready_node
+    tools.start_verification("C-0007", ["Run the tap for 5 minutes."])  # guide saved, SDP not signed yet
+    out = signoff_ready_node({"case_id": "C-0007", "event": "developer.signed", "current_status": "PENDING_SIGNOFF"})
+    assert "developer" in out["verification_result"]["rejected_reason"]

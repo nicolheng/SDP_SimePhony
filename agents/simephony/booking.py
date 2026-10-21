@@ -1,10 +1,12 @@
 # agents/simephony/booking.py
 """BookingAgent: picks the inspection visit time and technician through xiaowen's tools.py.
 
-tools.get_booking_options gives the free times (technicians who rejected this visit are left out);
-tools.assign_technician holds the time (case ASSIGNED, booking PENDING until the technician accepts
-in the app); tools.escalate_booking flags SDP when nobody is free (booking NEEDS_STAFF, status
-unchanged). A rejection in the app arrives later as a booking.rejected event and runs this node again.
+tools.get_booking_options gives the free times; tools.assign_technician books the visit (case
+VISIT_SCHEDULED, or EXTRA_INSPECTION kept; booking PENDING until the technician accepts in the app).
+When a worker hands a job over in the app (visit, detailed inspection or repair), a booking.rejected
+event runs this node again: tools.get_reassignment_options lists colleagues (same time first) and
+tools.reassign_job gives them the job; the case keeps its status. tools.escalate_booking flags SDP when
+nobody is free (booking NEEDS_STAFF, status unchanged).
 """
 from . import backend_tools
 
@@ -37,8 +39,45 @@ def _escalate(state: dict, case_id: str, reason: str, tried: list[str], attempts
     return state  # current_status unchanged (CONTRACTS: escalate_booking keeps the status)
 
 
+def _reassign(state: dict, case_id: str, tried: list[str], attempts: int) -> dict:
+    """A worker handed the job over: give it to a colleague (same time if someone is free then)."""
+    try:
+        found = backend_tools.get_reassignment_options(case_id)
+    except Exception as e:
+        found = {"ok": False, "error": str(e)}
+    if found.get("ok") is False:
+        print(f"⚠️ [BOOKING] Hand-over options for {case_id} unavailable: {found.get('error')}")
+        state["booking_result"] = {"error": found.get("error")}
+        return state
+    job = found.get("job") or "job"
+    for option in found.get("options") or []:
+        when = "at the same time" if option["same_time"] else f"moved to {option['start_local']}"
+        reason = f"Hand-over: {option['name']} takes over the {job}, {when}."
+        try:
+            given = backend_tools.reassign_job(case_id, option["technician_id"], option["start"])
+        except Exception as e:
+            given = {"ok": False, "error": str(e)}
+        if given.get("ok") is False:
+            print(f"🔄 [BOOKING] {option['technician_id']} not reassigned: {given.get('error')}")
+            tried.append(option["technician_id"])
+            attempts += 1
+            continue
+        print(f"🛠️ [BOOKING] {reason}")
+        state["booking_result"] = {
+            "assigned_technician": option["technician_id"], "technician_name": option["name"],
+            "start": option["start"], "start_local": option["start_local"], "same_time": option["same_time"],
+            "job": job, "reassigned": True, "assignment_ok": True, "booking_status": "PENDING", "reason": reason,
+            "reassignment_count": attempts,
+        }
+        state["tried_technicians"] = tried
+        state["reassignment_count"] = attempts
+        state["current_status"] = given.get("status") or state.get("current_status")
+        return state
+    return _escalate(state, case_id, f"Nobody else is free to take the {job}.", tried, attempts)
+
+
 def booking_node(state: dict) -> dict:
-    """P2 (Nicol) owns this. Finds a visit time and technician for the case and holds the booking."""
+    """P2 (Nicol) owns this. Books the inspection visit, or gives a handed-over job to a colleague."""
     case_id = state.get("case_id")
     tried = list(state.get("tried_technicians") or [])
     attempts = state.get("reassignment_count", 0)
@@ -49,6 +88,8 @@ def booking_node(state: dict) -> dict:
     if not case_id or case_id == "C-NEW":
         state["booking_result"] = {"error": f"Case {case_id!r} is not in the DB yet; nothing to book"}
         return state
+    if state.get("event") == "booking.rejected":
+        return _reassign(state, case_id, tried, attempts)
 
     try:
         options = backend_tools.get_booking_options(case_id, "visit")
@@ -87,7 +128,7 @@ def booking_node(state: dict) -> dict:
             }
             state["tried_technicians"] = tried
             state["reassignment_count"] = attempts
-            state["current_status"] = "ASSIGNED"
+            state["current_status"] = held.get("status") or "VISIT_SCHEDULED"
             return state
 
     return _escalate(state, case_id, f"No {skill} technician is free in the booking window.", tried, attempts)

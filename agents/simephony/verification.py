@@ -243,6 +243,37 @@ def verification_node(state: dict) -> dict:
     return state
 
 
+def _guide_text(guide) -> str | None:
+    """The saved guide ({intro, steps, ifFails} or a list of steps) as the text the buyer gets."""
+    if isinstance(guide, dict):
+        lines = [guide.get("intro"), *(guide.get("steps") or []), guide.get("ifFails")]
+        return "\n".join(x for x in lines if x) or None
+    if isinstance(guide, list):
+        return "\n".join(guide) or None
+    return guide or None
+
+
+def signoff_ready_node(state: dict) -> dict:
+    """SDP signed the repair off (developer.signed): the buyer can now check it. Loads the guide saved at
+    repair.done and the buyer's sign-off deadline, for CommsAgent. Sign-off order: technician -> SDP -> buyer."""
+    result = dict(state.get("verification_result") or {})
+    result.pop("rejected_reason", None)
+    try:
+        info = backend_tools.get_signoff_info(state.get("case_id"))
+    except Exception as e:
+        info = {"ok": False, "error": str(e)}
+    if info.get("ok") is False:
+        result["rejected_reason"] = f"Sign-off details unavailable: {info.get('error')}"
+    elif info["status"] != "PENDING_SIGNOFF" or not info["developer_signed"]:
+        result["rejected_reason"] = "The developer has not signed this repair off yet"
+    else:
+        result["protocol"] = _guide_text(info.get("guide")) or result.get("protocol")
+        state["signoff_deadline_local"] = info["deadline_local"]
+        state["current_status"] = "PENDING_SIGNOFF"
+    state["verification_result"] = result
+    return state
+
+
 def verification_result_node(state: dict) -> dict:
     """Applies the buyer's verification outcome (D2)."""
     outcome = state.get("verification_outcome")

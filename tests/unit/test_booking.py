@@ -1,3 +1,4 @@
+import pytest
 # BookingAgent on xiaowen's booking tools (faked here by FakeBookingDB in tests/conftest.py;
 # the real tools on a temp seed.db are in tests/integration/test_booking_tools.py).
 from agents.simephony.booking import booking_node
@@ -15,7 +16,7 @@ def test_normal_urgency_books_the_buyers_preferred_time(booking_db):
     r = out["booking_result"]
     assert r["start"] == "2026-10-23T06:00:00.000Z"
     assert r["assigned_technician"] == "T-PLUMB-1"
-    assert out["current_status"] == "ASSIGNED"
+    assert out["current_status"] == "VISIT_SCHEDULED"
     assert r["booking_status"] == "PENDING"  # waits for the technician to accept in the app
 
 
@@ -45,7 +46,7 @@ def test_refused_assignment_tries_the_next_technician(booking_db):
     r = out["booking_result"]
     assert r["assigned_technician"] == "T-PLUMB-2"  # same time, next free technician
     assert out["tried_technicians"] == ["T-PLUMB-1"]
-    assert out["current_status"] == "ASSIGNED"
+    assert out["current_status"] == "VISIT_SCHEDULED"
 
 
 def test_technicians_already_tried_are_skipped(booking_db):
@@ -90,3 +91,51 @@ def test_options_lookup_failure_is_recorded(booking_db, monkeypatch):
 def test_alternatives_are_the_other_times(booking_db):
     r = booking_node(_state())["booking_result"]
     assert [a["start"] for a in r["alternatives"]] == ["2026-10-22T03:00:00.000Z", "2026-10-23T06:00:00.000Z"]
+
+
+# --- Hand-over (xiaowen's flow): the technician hands the job over in the app -> booking.rejected ---
+def _handover(**extra):
+    return {**_state(current_status="VISIT_SCHEDULED", event="booking.rejected"), **extra}
+
+
+def test_handed_over_job_goes_to_a_colleague_at_the_same_time(booking_db):
+    out = booking_node(_handover())
+    r = out["booking_result"]
+    assert booking_db.reassigned == [{"case_id": "C-1", "technician_id": "T-PLUMB-2", "start": "2026-10-22T01:00:00.000Z"}]
+    assert booking_db.assigned == []  # a hand-over is reassigned, never booked again from scratch
+    assert r["assigned_technician"] == "T-PLUMB-2" and r["same_time"] is True and r["reassigned"] is True
+    assert r["booking_status"] == "PENDING" and "Siti Rahman" in r["reason"] and "same time" in r["reason"]
+    assert out["current_status"] == "VISIT_SCHEDULED"  # the case keeps its status
+
+
+def test_handover_moves_the_time_when_nobody_is_free_then(booking_db):
+    booking_db.handover = booking_db.handover[1:]
+    r = booking_node(_handover())["booking_result"]
+    assert r["assigned_technician"] == "T-PLUMB-3" and r["same_time"] is False
+    assert "Thu 22 Oct, 11:00 am" in r["reason"]
+
+
+def test_refused_reassignment_tries_the_next_colleague(booking_db):
+    booking_db.refuse = {"T-PLUMB-2"}
+    assert booking_node(_handover())["booking_result"]["assigned_technician"] == "T-PLUMB-3"
+
+
+@pytest.mark.parametrize("status, job", [("EXTRA_INSPECTION", "detailed inspection"), ("REPAIR_BOOKED", "repair")])
+def test_any_job_can_be_handed_over(booking_db, status, job):
+    booking_db.status, booking_db.job = status, job
+    out = booking_node(_handover(current_status=status))
+    assert out["current_status"] == status and job in out["booking_result"]["reason"]
+
+
+def test_nobody_to_take_the_job_escalates_to_sdp(booking_db):
+    booking_db.handover = []
+    out = booking_node(_handover())
+    assert out["booking_result"]["booking_status"] == "NEEDS_STAFF"
+    assert booking_db.escalated and "inspection visit" in booking_db.escalated[0]["reason"]
+    assert out["current_status"] == "VISIT_SCHEDULED"
+
+
+def test_extra_inspection_booking_keeps_its_status(booking_db):
+    booking_db.status = "EXTRA_INSPECTION"
+    out = booking_node(_state(current_status="ESCALATION_PENDING"))
+    assert out["current_status"] == "EXTRA_INSPECTION"
