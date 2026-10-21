@@ -174,7 +174,7 @@ export function SdpCaseDetail() {
             </Panel>
           )}
           {c.similar.length > 0 && (
-            <Panel title="Related cases (SimilarDefectAgent)">
+            <Panel title="Related cases (Similar Defect Agent)">
               <SimilarList c={c} />
             </Panel>
           )}

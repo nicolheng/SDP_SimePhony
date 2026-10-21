@@ -100,7 +100,7 @@ export default function TechnicianHome() {
                         {c.unitId} · {c.summary}
                       </p>
                       <p className="text-xs text-violet-900/80">
-                        InitialInspectionAgent: inspection brief and checklist ready.
+                        Initial Inspection Agent: inspection brief and checklist ready.
                       </p>
                     </div>
                   </Link>

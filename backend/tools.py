@@ -41,7 +41,7 @@ import db
 from demo_api import config
 from demo_api.analytics import cluster_confidence
 from demo_api.migrate import migrate
-from demo_api.timeutil import add_days, days_between, demo_now, fmt_datetime, local_day, norm, parse, slot_iso
+from demo_api.timeutil import add_days, days_between, demo_now, fmt_date, fmt_datetime, local_day, norm, parse, slot_iso
 
 ROOT = db.ROOT
 UPLOADS_DIR = ROOT / os.getenv("UPLOADS_DIR", "uploads")
@@ -1626,6 +1626,6 @@ def sweep_signoffs() -> list[dict]:
                 _save(conn, case_id, signoff_reminder_at=now)
                 _emit(conn, case_id, "signoff.reminder", f"Sign-off reminder sent to buyer ({-int(-left)} day(s) left)")
                 tail = "If we don't hear from you, our team will follow up." if case["urgency"] == "high" else "After that the case will close automatically."
-                message("Reminder: please sign off your repair", f"{ref}. Please check the repair and sign off by {fmt_datetime(deadline)}. {tail}")
+                message("Reminder: please sign off your repair", f"{ref}. Please check the repair and sign off by {fmt_date(deadline)}. {tail}")
                 done.append({"case_id": case_id, "action": "reminder"})
     return done

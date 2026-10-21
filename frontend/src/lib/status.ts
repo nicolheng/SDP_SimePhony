@@ -104,10 +104,10 @@ export const TECH_EXPLAIN: Record<CaseStatus, string> = {
   VALID: "You confirmed the defect. Waiting for the buyer to book a repair slot.",
   INVALID: "You marked this as not a defect. The case is closed.",
   REPAIR_BOOKED: "Repair booked. Fix the defect, then Mark Repaired with a note and photo.",
-  REPAIRED: "Repair recorded. The VerificationAgent is preparing the buyer's checklist.",
+  REPAIRED: "Repair recorded. The Verification Agent is preparing the buyer's checklist.",
   PENDING_SIGNOFF: "Waiting for the developer, then the buyer, to sign off your repair (the buyer has 14 days after the developer, then the case closes automatically).",
   CLOSED: "Both parties signed off. The case is closed.",
-  REOPENED: "The buyer reported the problem again. The RecurrenceAgent is checking the history.",
+  REOPENED: "The buyer reported the problem again. The Recurrence Agent is checking the history.",
   ESCALATION_PENDING: "The problem keeps coming back. SDP staff are deciding on an extra inspection.",
   EXTRA_INSPECTION: "Detailed inspection approved. Use the AI inspection brief and checklist on site.",
 };

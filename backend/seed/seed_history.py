@@ -336,7 +336,7 @@ def seed_history():
 
             if status in ("VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION", "CLOSED"):
                 t += timedelta(days=2)
-                events_to_insert.append((case_id, "verdict.recorded", json.dumps({"outcome": "VALID", "note": "Verified defect on site."}), t.isoformat()))
+                events_to_insert.append((case_id, "verdict.recorded", json.dumps({"outcome": "VALID", "note": verdict_note or "Verified defect on site."}), t.isoformat()))
                 photos_to_insert.append((case_id, f"sample_{category}_verdict.jpg", "verdict", t.isoformat()))
                 buyer_messages_to_insert.append((case_id, "Inspection Verdict", "Technician inspected the defect on site and confirmed it is a valid defect.", t.isoformat()))
 
@@ -347,7 +347,7 @@ def seed_history():
 
             if status in ("REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION", "CLOSED"):
                 t += timedelta(days=3)
-                events_to_insert.append((case_id, "repair.done", json.dumps({"note": "Repairs completed by technician."}), t.isoformat()))
+                events_to_insert.append((case_id, "repair.done", json.dumps({"note": repair_note or "Repairs completed by technician."}), t.isoformat()))
                 photos_to_insert.append((case_id, f"sample_{category}_repair.jpg", "repair", t.isoformat()))
                 events_to_insert.append((case_id, "verification.requested", json.dumps({"protocol": f"{category}_protocol"}), (t + timedelta(minutes=10)).isoformat()))
                 buyer_messages_to_insert.append((case_id, "Repair Completed", "The repair is done. Please follow the verification guide to confirm.", t.isoformat()))
@@ -698,12 +698,49 @@ def seed_history():
             ("C-0009", "C-8-06", "sanitary_fittings", "loose_fitting", "master bathroom", "Toilet flush button sticking and constantly running", "SUBMITTED", "normal", "T-02", 0, 0, None, "pending", None, 0, 0),
             ("C-0010", "A-2-05", "electrical", "faulty_socket", "living room", "Power socket sparks when TV plugged in", "ASSIGNED", "high", "T-03", 0, -1, None, "pending", None, 0, 0),
             ("C-0011", "B-11-03", "structural_crack", "beam_crack", "balcony", "Noticed 2mm diagonal crack on balcony beam", "ESCALATION_PENDING", "high", "T-04", 2, -3, None, "pending", "VALID_DEFECT", 0, 0),
-            ("C-0012", "A-14-04", "ceiling", "cracked_plasterboard", "foyer ceiling", "Plaster ceiling sagged with visible crack along joist", "EXTRA_INSPECTION", "normal", "T-04", 1, -5, None, "pending", "VALID_DEFECT", 0, 0),
             ("C-0013", "A-3-02", "water_leak", "wall_seepage", "living room", "Wall dampness reported without photo or exact room", "INFO_NEEDED", "normal", "T-01", 0, -1, None, "pending", None, 0, 0),
             ("C-0014", "A-12-08", "water_leak", "ceiling_leak", "bathroom ceiling", "Ceiling leak needs a technician visit", "VISIT_SCHEDULED", "high", "T-02", 0, 0, None, "pending", None, 0, 0),
         ]
 
+        # What the buyer wrote, and the technician's inspection and repair notes (only for cases that got that far).
+        live_text = {
+            "C-0001": ("The main circuit breaker in the DB box trips 2-3 times a day, usually when the kettle and microwave in the kitchen "
+                       "run together. The whole unit loses power each time.", None, None),
+            "C-0002": ("Several floor tiles in the living room near the sofa sound hollow when we walk on them, and one tile edge has started to lift.",
+                       "Tap test confirmed 6 hollow tiles in a 1.5 m x 1 m area near the sofa; one tile edge lifted about 2 mm. Poor adhesive "
+                       "coverage under the tiles. Valid defect: hollow tiles to be hacked out and re-laid.", None),
+            "C-0003": ("The balcony sliding door is hard to open and keeps coming off the bottom track. It scrapes and gets stuck halfway.",
+                       "Bottom rollers on the sliding panel are worn and the track is dented near the lock side, so the panel jumps the track. "
+                       "Valid defect: replace both bottom rollers and straighten the track.", None),
+            "C-0004": ("Paint on the wall below the window in bedroom 2 is bubbling and flaking off near the skirting. The wall feels damp after heavy rain.",
+                       "Paint blistering over a 60 cm wide area below the window sill. Moisture reading high at the sill corner: rainwater is getting "
+                       "in through a gap in the window frame sealant. Valid defect.",
+                       "Resealed the window frame with silicone, scraped off the loose paint, applied sealer primer and two coats of matching "
+                       "emulsion once the wall was dry."),
+            "C-0005": ("The floor drain in the shower area drains very slowly. Water stays pooled for hours after a shower and starts to smell.", None, None),
+            "C-0006": ("There is a thin crack in the plaster above the living room door frame.",
+                       "Hairline shrinkage crack in the skim coat only, under 0.3 mm wide, with no movement and not through to the blockwork. "
+                       "Cosmetic, not a developer defect.", None),
+            "C-0007": ("Water is dripping slowly from the drain pipe under the kitchen sink. The cabinet base is wet and starting to swell.",
+                       "Slip joint on the sink waste pipe is loose and its washer is cracked; it drips every few seconds when the sink is used. Valid defect.",
+                       "Replaced the cracked washer and the bottle trap, re-tightened all joints and ran the sink at full flow for 10 minutes: "
+                       "no drips. Dried out the cabinet base."),
+            "C-0008": ("A brown moisture mark on the bathroom ceiling came back after heavy rain, in the same spot that was repaired before.",
+                       "Damp patch about 40 cm across on the bathroom ceiling board with a high moisture reading. Leak traced to the floor trap "
+                       "of the bathroom above. Valid defect.",
+                       "Resealed the floor trap joint in the unit above, replaced the stained ceiling board and repainted. Area dry on completion."),
+            "C-0009": ("The toilet flush button in the master bathroom sticks after flushing and the water keeps running into the bowl until I jiggle it.", None, None),
+            "C-0010": ("The power socket behind the TV in the living room sparks when I plug in the TV, and there is a burning smell. We have stopped using it.", None, None),
+            "C-0011": ("There is a diagonal crack about 2 mm wide on the balcony beam. It was patched before but has opened up again.",
+                       "Diagonal crack 2 mm wide and 45 cm long at the beam end near the column, running through the plaster into the concrete. "
+                       "Valid defect: needs crack injection and monitoring.",
+                       "Injected the crack with epoxy resin, re-plastered and painted, and fixed a crack monitoring gauge across it."),
+            "C-0013": ("There is dampness on the wall, the paint looks wet and there is a musty smell.", None, None),
+            "C-0014": ("The bathroom ceiling is leaking again. Water drips from the ceiling near the light after the unit upstairs showers.", None, None),
+        }
+
         for cid, uid, cat, sub, loc, summary, status, urg, tid, reopens, created_offset, slot_offset, vstatus, outcome, b_sign, dev_sign in live_cases:
+            description, verdict_note, repair_note = live_text[cid]
             ct = now + timedelta(days=created_offset)
             cl_at = ct + timedelta(days=2) if status == "INVALID" else None
             assignment_slot_id = None
@@ -720,7 +757,7 @@ def seed_history():
                     raise RuntimeError("Unable to find slots for the seeded assignment negotiation")
                 assignment_slot_id = accepted_slot["slot_id"]
 
-            missing = ["room_location", "clear_photo"] if status == "INFO_NEEDED" else None
+            missing =["room_location", "clear_photo"] if status == "INFO_NEEDED" else None
             follow_q = "Could you please specify which room has the wall dampness and attach a close-up photo?" if status == "INFO_NEEDED" else None
 
             add_case(
@@ -730,7 +767,7 @@ def seed_history():
                 sub_category=sub,
                 location=loc,
                 summary=summary,
-                description=f"{summary}. Reported recently by resident.",
+                description=description,
                 urgency=urg,
                 status=status,
                 missing_info=missing,
@@ -744,8 +781,11 @@ def seed_history():
                 inspection_outcome=outcome,
                 buyer_signed=b_sign,
                 developer_signed=dev_sign,
+                verdict_note=verdict_note,
+                verdict_at=ct + timedelta(days=2) if status == "INVALID" else None,
+                repair_note=repair_note,
                 verification_result="NOT_FIXED" if status == "REOPENED" else None,
-                verification_note="Buyer indicated defect returned" if status == "REOPENED" else None,
+                verification_note="The stain came back after the heavy rain on Sunday, in the same place as before." if status == "REOPENED" else None,
                 assignment_attempts=2 if cid == "C-0014" else None,
                 assignment_slot_id=assignment_slot_id,
             )

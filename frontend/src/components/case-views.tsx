@@ -2,6 +2,7 @@
 import { Bot, Check, CircleCheck, Mail } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
+import { agentLabel } from "@/lib/agents";
 import { fmtDate, fmtDateTime, fmtShort } from "@/lib/dates";
 import { BUYER_STEPS, buyerStepIndex } from "@/lib/status";
 import { useDemo } from "@/lib/store";
@@ -9,6 +10,7 @@ import type { Case, CaseEvent } from "@/lib/types";
 import { CATEGORY_LABEL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { Section } from "./mobile";
+import { StatusBadge } from "./status-badge";
 
 export function useCaseId() {
   return useParams<{ id: string }>().id;
@@ -134,7 +136,7 @@ export function EventTimeline({ events, compact, large }: { events: CaseEvent[];
               <span>{compact ? fmtShort(e.at) : fmtDateTime(e.at)}</span>
               {isAgent ? (
                 <span className="inline-flex items-center gap-1 font-medium text-violet-700">
-                  <Bot className="size-3" /> {e.agent ?? "System"}
+                  <Bot className="size-3" /> {e.agent ? agentLabel(e.agent) : "System"}
                 </span>
               ) : isEmail ? (
                 <span className="inline-flex items-center gap-1 font-medium text-sky-700">
@@ -167,8 +169,8 @@ export function SimilarList({ c }: { c: Case }) {
   );
 }
 
-/** Earlier reports of the same issue in the same unit: title and date only, in the approval-history style. Renders nothing if none. */
-export function PreviousReports({ c }: { c: Case }) {
+/** Earlier reports of the same issue in the same unit: title, date and status, in the approval-history style. Renders nothing if none. */
+export function PreviousReports({ c, buyer }: { c: Case; buyer?: boolean }) {
   const cases = useDemo((s) => s.cases);
   const list = useMemo(
     () => cases.filter((x) => x.id !== c.id && x.unitId === c.unitId && x.category === c.category && x.createdAt < c.createdAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -183,7 +185,10 @@ export function PreviousReports({ c }: { c: Case }) {
           <CircleCheck className="mt-0.5 size-5 shrink-0 text-zinc-400" />
           <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
             <p className="text-sm font-medium">{x.summary}</p>
-            <span className="shrink-0 text-xs text-zinc-500">{fmtDate(x.createdAt)}</span>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <span className="text-xs text-zinc-500">{fmtDate(x.createdAt)}</span>
+              <StatusBadge status={x.status} buyer={buyer} className="px-1.5 py-0 text-[10px]" />
+            </div>
           </div>
         </li>
       ))}
