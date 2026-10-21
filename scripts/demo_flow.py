@@ -32,7 +32,7 @@ for stream in (sys.stdout, sys.stderr):
 IMAGES = ROOT / "tests" / "data" / "test_cases" / "images"
 LEAK_PHOTO = str(IMAGES / "ceiling-water-leak.jpg")
 LEAK_AGAIN_PHOTO = str(IMAGES / "water_leak_again.jpg")
-FIXED_PHOTO = str(IMAGES / "image.jpg")
+FIXED_PHOTO = str(IMAGES / "ceiling_repaired.jpg")  # Pexels 3615726 (La Miko), free Pexels licence
 DRAIN_PHOTO = str(IMAGES / "bathroom_pooling.jpg")
 
 
