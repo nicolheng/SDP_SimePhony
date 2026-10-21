@@ -12,15 +12,15 @@ Scenario triage (docs/TEST_SCENARIOS.md, checked against CONTRACTS.md §1/§7 an
 
 | Scenario | Verdict | What is tested / concrete blocker |
 |---|---|---|
-| 1.1 New case -> triage -> booking | PARTIAL | Tested: intake -> similar_defect -> triage -> booking -> comms reaches ASSIGNED with a plumbing technician and one buyer email. Blockers: create_case / assign_technician / book_slot / send_email in backend/tools.py raise NotImplementedError, so agents use agents/simephony/stub_tools.py and nothing is written to simephony.db (no `case_status`, `urgency` or `outbox` row to check); stub send_email does not write the outbox; book_slot is never called, so there is no BOOKED / VISIT_SCHEDULED state; triage emits HIGH/NORMAL, not "URGENT". |
+| 1.1 New case -> triage -> booking | PARTIAL | Tested: intake -> similar_defect -> triage -> booking -> comms reaches ASSIGNED with a plumbing technician and one buyer email. Booking and comms now go through backend/tools.py (get_booking_options / assign_technician / notify_buyer; real-DB tests in tests/integration/); here they are faked. VISIT_SCHEDULED comes when the technician accepts in the app (respond_to_assignment), outside the agents. |
 | 1.2 Repair done -> verification -> closure | PARTIAL | Tested: repair.done -> photo check -> PENDING_SIGNOFF with the buyer guide in the email; FIXED keeps PENDING_SIGNOFF. Blocker: no agent ever sets CLOSED. Sign-off needs record_signoff (P3, NotImplementedError); by design vision is advisory and never closes a case. CLOSED + closed_at are simulated here. |
 | 2.1 Reopen -> recurrence loop | PARTIAL | Tested: reopen #1 -> REOPENED (reopen_count 1); reopen #2 -> ESCALATION_PENDING and request_extra_inspection called (D1: occurrence = reopen_count + 1, so the 2nd reopen is the 3rd occurrence; the doc's "reopen_count=3" is out of date). RecurrenceAgent now calls tools.check_escalation + tools.request_extra_inspection (real-DB tests in tests/integration/test_recurrence_tools.py); here they are faked. Blocker: no "alert the technician" step on the 2nd occurrence exists. |
 | 2.2 Vertical stack cluster | PARTIAL | Tested: on the 1st reopen, tools.check_escalation reporting 3 stack units escalates with tools' stack reason (real seed.db: tests/unit/test_escalation.py). Blockers: no `zone_mapping` table (block + stack from `units` is used instead); no 48-hour window; the check only runs on case.reopened, never on case.created, so three fresh reports never cluster; no "Stack Cluster Detected" log. |
-| 3.1 No available slots | PARTIAL | Tested: every technician rejects -> booking loop ends (no infinite loop) at ESCALATION_PENDING with one buyer email. Blockers: no PENDING_SLOT status in CONTRACTS §1 and no "High Demand" / delay notice template; no 7-day look-ahead (get_available_slots is a stub with no date range); no outbox. |
+| 3.1 No available slots | TESTABLE NOW | Tested: every technician refused -> tools.escalate_booking (booking NEEDS_STAFF, status unchanged, SDP emailed) and one "We're arranging your visit" (high demand) buyer email; real-DB version in tests/integration/test_booking_tools.py. |
 | 3.2 Expired grace reopen | TESTABLE NOW | Tested: reopen 40 days after close -> NEW_CASE -> prepare_new_case -> full new-case chain on the reopen photo, case_id "C-NEW"; the caller's CLOSED state is untouched. Caveat: "C-NEW" is a fixed placeholder until create_case (P3) issues real ids. |
 | 4.1 Liability trap | TESTABLE NOW | Covered by tests/unit/test_comms.py and tests/integration/test_comms_guardrail_integration.py (scripted liable draft -> rewrite -> neutral template). Here every email of every lifecycle step is also run through scan_for_liability and scan_for_unsafe_steps. Real-model behaviour only under `-m live_llm`. |
 | 4.2 Injection via description | PARTIAL | Skill comes from rules.yaml category_to_skill (deterministic), so injection cannot change the skill. Blocker: urgency is an LLM decision, so resisting the injection can only be checked with the real model (`-m live_llm`); technician choice is stub data; "URGENT" is not a label the code emits. |
-| 5.1 Concurrent write-storm | NOT TESTABLE | Agents never write to SQLite (create_case etc. are NotImplementedError in backend/tools.py; agents use stub_tools). Only backend/db.py itself could be load-tested, not through agents. |
+| 5.1 Concurrent write-storm | PARTIAL | Agents now write through backend/tools.py (all stubs removed), so a write-storm can be driven through the agents on a temp seed.db; not load-tested yet. |
 | 5.2 Long-running state recovery | NOT TESTABLE | workflow.compile() has no SqliteSaver checkpointer and no interrupt; the graph is one invoke per event and the caller carries state. (The event routing itself is tested: repair.done goes straight to verification without re-running intake.) |
 | CONTRACTS §7 inspection.approved -> InitialInspectionAgent | NOT TESTABLE | `initial_inspection` is added to the graph but has no edge; route_event has no inspection.approved route; get_approval_status is not wired. SDP approval / rejection after ESCALATION_PENDING cannot be driven. |
 | CONTRACTS §1 technician verdict (VALID / INVALID) | PARTIAL | No graph event for verdict.recorded (an unknown event falls through to intake and re-runs the new-case chain), so VALID/INVALID are simulated by setting current_status. Tested: INVALID is terminal (reopen rejected, no escalation); NOT_FIXED (with photo) -> REOPENED. |
@@ -77,11 +77,6 @@ MSG_REOPENED = "Your case has been reopened. We will arrange a technician visit.
 MSG_ESCALATED = "Your case has been referred to our team for a further inspection."
 MSG_VALID = "Our technician confirmed the defect still needs work. We will arrange another repair visit."
 MSG_INVALID = "Our technician reviewed your report and found it is not a developer defect."
-
-SLOTS = [
-    {"slot_id": "S-1", "technician_id": "T-PLUMB-1", "start": "2026-10-22T10:00:00+08:00", "block": "A"},
-    {"slot_id": "S-2", "technician_id": "T-PLUMB-2", "start": "2026-10-23T10:00:00+08:00", "block": "A"},
-]
 
 CREATED = [INTAKE_JSON, SIMILAR_JSON, URGENCY, MSG_ASSIGNED]   # intake, similar_defect, triage, comms
 REPAIR_OK = [VISION_OK, PHRASED_CHECKS, MSG_REPAIR_INTRO]       # vision, phrase checks, comms
@@ -152,14 +147,13 @@ def _assert_emails_safe(world):
 
 
 @pytest.fixture
-def world(monkeypatch, escalation_db):
+def world(monkeypatch, escalation_db, booking_db):
     """Patch every tool where the agents look it up; nothing touches the DB or the network."""
     w = SimpleNamespace(
         sent=[],
         escalation=escalation_db,  # fake tools.check_escalation (tests/conftest.py)
         request_extra_inspection=escalation_db.request,
-        get_available_slots=MagicMock(return_value={"slots": [dict(s) for s in SLOTS]}),
-        assign_technician=MagicMock(return_value={"ok": True}),
+        booking=booking_db,  # fake get_booking_options / assign_technician / escalate_booking (tests/conftest.py)
     )
 
     def notify_buyer(case_id, title, body):  # same subject / recipient as the real tools.notify_buyer
@@ -167,8 +161,6 @@ def world(monkeypatch, escalation_db):
         return {"ok": True, "message_id": f"BM-{len(w.sent)}", "email_status": "logged, not sent"}
     monkeypatch.setattr(backend_tools, "notify_buyer", notify_buyer)
     escalation_db.request.return_value = {"ok": True, "approval_id": "APR-1", "issue_id": "SI-002"}
-    monkeypatch.setattr(booking, "get_available_slots", w.get_available_slots)
-    monkeypatch.setattr(booking, "assign_technician", w.assign_technician)
     # similar_defect would otherwise read data/simephony.db through backend/tools.py
     monkeypatch.setattr(similar_defect, "find_similar_cases", lambda **kw: [])
     return w
@@ -295,7 +287,8 @@ def test_reopen_after_grace_starts_new_case(fake_llm, world, tmp_path):
     assert s["case_id"] == "C-NEW"
     assert s["image_path"] == reopen_photo
     assert s["reopen_count"] == 0
-    assert s["current_status"] == "ASSIGNED"
+    assert s["current_status"] == "SUBMITTED"  # "C-NEW" isn't in the DB yet, so it can't be booked
+    assert "not in the DB" in s["booking_result"]["error"]
     assert s["verification_result"] == {}
     intake_call = fake_llm.calls[calls_before]
     assert _b64(reopen_photo) in _image_urls(intake_call)[0]  # new intake reads the reopen photo
@@ -351,11 +344,11 @@ def test_stack_cluster_escalates_on_first_reopen(fake_llm, world, tmp_path):
 
 
 def test_technician_rejection_reassigns(fake_llm, world, tmp_path):
-    world.assign_technician.side_effect = [{"ok": False, "reason": "Rejected"}, {"ok": True}]
+    world.booking.refuse = {"T-PLUMB-1"}  # tools.assign_technician turns T-PLUMB-1 down
 
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
 
-    assert world.assign_technician.call_count == 2
+    assert [a["technician_id"] for a in world.booking.assigned] == ["T-PLUMB-2"]
     assert s["booking_result"]["assigned_technician"] == "T-PLUMB-2"
     assert s["booking_result"]["assignment_ok"] is True
     assert s["tried_technicians"] == ["T-PLUMB-1"]
@@ -367,13 +360,15 @@ def test_technician_rejection_reassigns(fake_llm, world, tmp_path):
 
 
 def test_all_technicians_reject_escalates_without_looping(fake_llm, world, tmp_path):
-    world.assign_technician.return_value = {"ok": False, "reason": "Rejected"}
+    world.booking.refuse = {"T-PLUMB-1", "T-PLUMB-2", "T-PLUMB-3"}
 
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
 
-    assert world.assign_technician.call_count == len(SLOTS)
-    assert s["current_status"] == "ESCALATION_PENDING"
-    assert "No more available technicians" in s["booking_result"]["error"]
+    assert world.booking.assigned == []
+    assert sorted(s["tried_technicians"]) == ["T-PLUMB-1", "T-PLUMB-2", "T-PLUMB-3"]
+    assert s["current_status"] == "SUBMITTED"  # tools.escalate_booking keeps the status
+    assert s["booking_result"]["booking_status"] == "NEEDS_STAFF"
+    assert world.booking.escalated[-1]["case_id"] == CASE
     assert [m["subject"] for m in _emails(world)] == ["[C-0001] We're arranging your visit"]
     _assert_emails_safe(world)
 
@@ -395,7 +390,7 @@ def test_second_repair_cycle_resends_buyer_guide(fake_llm, world, tmp_path):
 
 def test_booking_assigns_technician_to_this_case(fake_llm, world, tmp_path):
     _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
-    assert world.assign_technician.call_args.kwargs["case_id"] == CASE
+    assert world.booking.assigned[-1]["case_id"] == CASE
 
 
 # ---------------------------------------------------------------- real model (deselected by default)

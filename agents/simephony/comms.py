@@ -29,6 +29,11 @@ NEUTRAL_TEMPLATES = {
         "We are currently experiencing high demand and no technician slot is available right now. "
         "Our team will contact you with the earliest available visit date."
     ),
+    # booking handed to SDP (tools.escalate_booking): the case status stays SUBMITTED / REOPENED
+    "NEEDS_STAFF": (
+        "We are currently experiencing high demand and no technician slot is available right now. "
+        "Our team will contact you with the earliest available visit date."
+    ),
 }
 _NEUTRAL_DEFAULT = "There is an update on your case. We will contact you shortly about the next steps."
 
@@ -56,6 +61,8 @@ def _template_key(state: dict) -> str:
             return "PENDING_SIGNOFF_NO_GUIDE"
     if status == "ESCALATION_PENDING" and _reopen_action(state) == "ESCALATED":
         return "ESCALATED"
+    if status in ("SUBMITTED", "REOPENED") and (state.get("booking_result") or {}).get("booking_status") == "NEEDS_STAFF":
+        return "NEEDS_STAFF"  # nobody free to visit; SDP books manually
     return status
 
 
@@ -80,6 +87,7 @@ SUBJECTS = {
     "REOPENED": "Case reopened",
     "ESCALATED": "Your case is being reviewed",
     "ESCALATION_PENDING": "We're arranging your visit",
+    "NEEDS_STAFF": "We're arranging your visit",
     "REOPEN_REJECTED": "About your reopen request",
 }
 _SUBJECT_DEFAULT = "Update on your case"
@@ -174,13 +182,13 @@ def comms_node(state: dict) -> dict:
     elif template_key == "PENDING_SIGNOFF_NO_GUIDE":
         prompt = (f"The technician reported the {category} repair is complete. Ask the resident to check "
                   "the repaired area before signing off. Do not list any steps.")
-    elif status == "REOPENED":
+    elif status == "REOPENED" and template_key != "NEEDS_STAFF":
         prompt = (f"The resident reopened their {category} case with a new photo. Tell them the case is reopened "
                   "and a technician will look at it again; we will confirm the visit. Do not describe any past repair.")
     elif template_key == "ESCALATED":
         prompt = (f"The resident's {category} problem has come back again. Tell them our team is arranging a more "
                   "detailed inspection and will confirm the visit soon. Do not describe any past repair.")
-    elif status == "ESCALATION_PENDING":
+    elif status == "ESCALATION_PENDING" or template_key == "NEEDS_STAFF":
         prompt = ("No technician slot is available right now because of high demand. Tell the resident our team "
                   "will contact them with the earliest available visit date.")
     else:

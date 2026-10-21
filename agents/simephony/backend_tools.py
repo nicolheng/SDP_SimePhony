@@ -38,3 +38,19 @@ def notify_buyer(case_id: str, title: str, body: str) -> dict:
     """Post the update to the buyer's in-app inbox and email it (subject "[case_id] title", outbox logged).
     The buyer is found from the case. Returns {ok, message_id, email_status}."""
     return tools.notify_buyer(case_id, title, body)
+
+
+def get_booking_options(case_id: str, kind: str = "visit") -> dict:
+    """Visit times with free qualified technicians for this case (rejected technicians left out):
+    {preferred, alternatives: [{start, start_local, technicians: [{technician_id, name}]}], no_availability}."""
+    return tools.get_booking_options(case_id, kind)
+
+
+def assign_technician(case_id: str, technician_id: str, start: str, reason: str, urgency: str | None = None) -> dict:
+    """Hold the visit for a technician (booking PENDING until they accept in the app)."""
+    return tools.assign_technician(case_id, technician_id, start, reason, urgency)
+
+
+def escalate_booking(case_id: str, reason: str) -> dict:
+    """Nobody free: booking NEEDS_STAFF, SDP emailed to book manually (case status unchanged)."""
+    return tools.escalate_booking(case_id, reason)

@@ -446,3 +446,32 @@ def test_subject_after_failed_check_escalation():
     assert email_subject({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
                           "verification_result": {"next_event": "case.reopened"},
                           "recurrence_result": {"action": "ESCALATED"}}) == "[C-1] Your case is being reviewed"
+
+
+# --- Booking escalation (tools.escalate_booking keeps the status, booking NEEDS_STAFF) ---
+@pytest.mark.parametrize("status", ["SUBMITTED", "REOPENED"])
+def test_no_technician_free_sends_arranging_your_visit(fake_llm, status):
+    fake_llm.responses = ["Please remove the cover of the electrical panel."]  # forces the template
+    state = {"current_status": status, "case_id": "C-1", "booking_result": {"booking_status": "NEEDS_STAFF"}}
+    _, body = _send(state)
+    assert body == NEUTRAL_TEMPLATES["NEEDS_STAFF"]
+    assert "high demand" in body.lower() and "earliest" in body.lower()
+    assert email_subject(state) == "[C-1] We're arranging your visit"
+
+
+def test_no_technician_free_prompt_mentions_high_demand(fake_llm):
+    fake_llm.responses = ["We are arranging your visit."]
+    _send({"current_status": "SUBMITTED", "case_id": "C-1", "booking_result": {"booking_status": "NEEDS_STAFF"}})
+    assert "high demand" in fake_llm.calls[0][-1]["content"]
+
+
+def test_old_needs_staff_flag_ignored_once_case_moves_on(fake_llm):
+    fake_llm.responses = ["Your defect is confirmed."]
+    state = {"current_status": "VALID", "case_id": "C-1", "booking_result": {"booking_status": "NEEDS_STAFF"}}
+    assert email_subject(state) == "[C-1] Defect confirmed: please book a repair"
+
+
+def test_reopened_case_with_nobody_free_gets_high_demand_prompt(fake_llm):
+    fake_llm.responses = ["We are arranging your visit."]
+    _send({"current_status": "REOPENED", "case_id": "C-1", "booking_result": {"booking_status": "NEEDS_STAFF"}})
+    assert "high demand" in fake_llm.calls[0][-1]["content"]

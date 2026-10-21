@@ -38,7 +38,7 @@ class AgentState(TypedDict):
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
     # Event-driven fields
-    event: str # case.created | repair.done | verification.submitted | case.reopened
+    event: str # case.created | repair.done | verification.submitted | case.reopened | booking.rejected
     case_id: str
     verdict_note: str
     repair_note: str
@@ -113,6 +113,7 @@ def route_event(state: AgentState) -> str:
         "repair.done": "verification",
         "verification.submitted": "verification_result",
         "case.reopened": "recurrence",
+        "booking.rejected": "booking",  # technician turned the visit down in the app: book someone else
     }.get(event, "unhandled_event")
 
 

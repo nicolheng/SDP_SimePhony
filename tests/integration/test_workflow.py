@@ -129,12 +129,14 @@ def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_pa
     assert final["reopen_count"] == 0
     assert final["intake_result"]["category"] == "water_leak"
     assert final["triage_result"]["urgency"] != "HIGH"
-    # T-PLUMB-2 rejects (stub), then T-PLUMB-3 is booked; the stale T-PLUMB-3 was not excluded
-    assert final["booking_result"]["assigned_technician"] == "T-PLUMB-3"
-    assert final["tried_technicians"] == ["T-PLUMB-2"]
+    # stale booking state from the old case is cleared; "C-NEW" isn't in the DB yet (the web app's
+    # create_case issues the real id), so nothing is booked or sent for it
+    assert final["tried_technicians"] == []
+    assert "not in the DB" in final["booking_result"]["error"]
     assert final["verification_result"] == {}
-    assert final["current_status"] == "ASSIGNED"
-    assert final["comms_result"]["message"]
+    assert final["current_status"] == "SUBMITTED"
+    assert final["comms_result"]["delivery"] == "no_case"
+    no_side_effects.assert_not_called()
 
 
 def test_past_grace_new_case_uses_buyers_reopen_description(fake_llm, no_side_effects):
@@ -303,3 +305,17 @@ def test_not_fixed_without_photo_ends_without_email(fake_llm, no_side_effects):
     assert final["current_status"] == "PENDING_SIGNOFF"
     assert "photo" in final["verification_result"]["rejected_reason"]
     no_side_effects.assert_not_called()
+
+
+# --- booking.rejected: a technician turned the visit down in the app; book someone else ---
+def test_booking_rejected_event_rebooks_and_tells_buyer(fake_llm, no_side_effects, booking_db):
+    fake_llm.responses = ["A technician has been assigned to your case."]
+    state = {"event": "booking.rejected", "case_id": "C-1", "unit_id": "A-12-08", "current_status": "SUBMITTED",
+             "intake_result": {"category": "water_leak"}, "user_description": "Ceiling leak",
+             "triage_result": {"assigned_skill": "plumbing", "urgency": "normal"}, "comms_result": {}}
+    assert route_event(state) == "booking"
+    final = _run(state)
+    assert final["current_status"] == "ASSIGNED"
+    assert booking_db.assigned[-1]["case_id"] == "C-1"
+    assert fake_llm.calls and "intake" not in str(fake_llm.calls[0])  # no intake/triage re-run
+    no_side_effects.assert_called_once()

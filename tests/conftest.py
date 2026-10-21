@@ -112,8 +112,8 @@ def fake_llm(request, monkeypatch):
     for name in _FN_MODULES:
         try:
             mod = importlib.import_module(f"agents.simephony.{name}")
-            monkeypatch.setattr(mod, "get_client", lambda: fake.client)
-            monkeypatch.setattr(mod, "get_models", lambda: ("fake-vl", "fake-text"))
+            monkeypatch.setattr(mod, "get_client", lambda: fake.client, raising=False)
+            monkeypatch.setattr(mod, "get_models", lambda: ("fake-vl", "fake-text"), raising=False)
         except ImportError:
             pass
             
@@ -222,15 +222,63 @@ def escalation_db(monkeypatch):
 # ---------------------------------------------------------------------------
 # Safety net: tests never write the live data/simephony.db through tools.py
 # ---------------------------------------------------------------------------
+class FakeBookingDB:
+    """Stands in for tools.get_booking_options / assign_technician / escalate_booking.
+    `options` = visit times with free technicians (earliest first); `preferred` = the buyer's chosen
+    time if someone is free then; `refuse` = technician ids assign_technician turns down."""
+
+    def __init__(self):
+        self.preferred = None
+        self.options = [
+            {"start": "2026-10-22T01:00:00.000Z", "start_local": "Thu 22 Oct, 9:00 am",
+             "technicians": [{"technician_id": "T-PLUMB-1", "name": "Ali Hassan"}, {"technician_id": "T-PLUMB-2", "name": "Siti Rahman"}]},
+            {"start": "2026-10-22T03:00:00.000Z", "start_local": "Thu 22 Oct, 11:00 am",
+             "technicians": [{"technician_id": "T-PLUMB-3", "name": "Raj Kumar"}]},
+            {"start": "2026-10-23T06:00:00.000Z", "start_local": "Fri 23 Oct, 2:00 pm",
+             "technicians": [{"technician_id": "T-PLUMB-1", "name": "Ali Hassan"}]},
+        ]
+        self.refuse: set[str] = set()
+        self.option_calls: list[str] = []
+        self.assigned: list[dict] = []
+        self.escalated: list[dict] = []
+
+    def get_booking_options(self, case_id, kind="visit"):
+        self.option_calls.append(case_id)
+        return {"case_id": case_id, "kind": kind, "preferred": self.preferred, "alternatives": list(self.options),
+                "excluded_technicians": [], "no_availability": not (self.preferred or self.options)}
+
+    def assign_technician(self, case_id, technician_id, start, reason, urgency=None):
+        if technician_id in self.refuse:
+            return {"ok": False, "error": f"{technician_id} is already booked at {start}"}
+        self.assigned.append({"case_id": case_id, "technician_id": technician_id, "start": start, "reason": reason, "urgency": urgency})
+        return {"ok": True, "status": "ASSIGNED", "booking_status": "PENDING", "technician_id": technician_id, "start": start}
+
+    def escalate_booking(self, case_id, reason):
+        self.escalated.append({"case_id": case_id, "reason": reason})
+        return {"ok": True, "booking_status": "NEEDS_STAFF", "email_status": "logged, not sent"}
+
+
 @pytest.fixture(autouse=True)
 def _no_live_db_writes(request, monkeypatch):
-    """Unless a test asks for `seed_db` (a temp copy), agent calls that write the DB are faked."""
+    """Unless a test asks for `seed_db` (a temp copy), agent calls that write the DB are faked.
+    Returns the fakes (booking: FakeBookingDB) so tests can adjust them via `booking_db`."""
     if "seed_db" in request.fixturenames:
-        return
+        return None
     from agents.simephony import backend_tools, recurrence
+    booking = FakeBookingDB()
+    monkeypatch.setattr(backend_tools, "get_booking_options", booking.get_booking_options)
+    monkeypatch.setattr(backend_tools, "assign_technician", booking.assign_technician)
+    monkeypatch.setattr(backend_tools, "escalate_booking", booking.escalate_booking)
     monkeypatch.setattr(backend_tools, "start_verification",
                         MagicMock(return_value={"ok": True, "verification_id": "V-STUB", "status": "PENDING_SIGNOFF"}))
     monkeypatch.setattr(recurrence, "request_extra_inspection",
                         MagicMock(return_value={"ok": False, "error": "live DB writes are disabled in tests"}))
     monkeypatch.setattr(backend_tools, "notify_buyer",
                         MagicMock(return_value={"ok": True, "message_id": "BM-STUB", "email_status": "logged, not sent"}))
+    return SimpleNamespace(booking=booking)
+
+
+@pytest.fixture
+def booking_db(_no_live_db_writes):
+    """The FakeBookingDB the live-DB guard installed (adjust options / refuse, read assigned / escalated)."""
+    return _no_live_db_writes.booking
