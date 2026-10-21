@@ -87,6 +87,15 @@ def test_hours_from_the_db_read_naturally(fake_llm):
     assert booked.endswith(f"Repair time: {SLOT} (about 2 hours).")
 
 
-def test_repair_booked_prompt_says_the_time_follows(fake_llm):
-    _msg(fake_llm, "repair_booked", case={"status": "REPAIR_BOOKED"}, slot=SLOT, duration="2 hours")
-    assert "the time follows" in fake_llm.calls[0][-1]["content"]
+def test_repair_booked_is_fixed_text_only(fake_llm):
+    # Live qwen wrote "We'll be in touch with the exact time soon" right above the fixed repair time.
+    _, body = _msg(fake_llm, "repair_booked", case={"status": "REPAIR_BOOKED"}, slot=SLOT, duration="2 hours")
+    assert body == f"Your repair is booked.\n\nRepair time: {SLOT} (about 2 hours)."
+    assert fake_llm.calls == []
+
+
+def test_detailed_inspection_is_fixed_text_only(fake_llm):
+    # Live qwen wrote "Your team has scheduled…" (it is our team).
+    _, body = _msg(fake_llm, "extra_inspection", case={"status": "EXTRA_INSPECTION"}, slot=SLOT)
+    assert body == f"Our team has arranged a detailed inspection of your case.\n\nInspection time: {SLOT}."
+    assert fake_llm.calls == []
