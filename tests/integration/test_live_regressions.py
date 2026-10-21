@@ -51,7 +51,7 @@ def test_comms_valid_asks_buyer_to_book_with_fixed_step():
 
 
 @pytest.mark.parametrize("state", [
-    {"current_status": "ASSIGNED", "booking_result": {"assigned_technician": "T-01", "technician_name": "Hafiz Osman"}},
+    {"current_status": "VISIT_SCHEDULED", "booking_result": {"assigned_technician": "T-01", "technician_name": "Hafiz Osman"}},
     {"current_status": "REOPENED", "event": "case.reopened", "recurrence_result": {"action": "REOPENED"}},
     {"current_status": "CLOSED", "verification_status": "verified"},
 ])

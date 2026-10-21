@@ -30,7 +30,7 @@ def test_update_lands_in_buyer_inbox_and_outbox(fake_llm):
 
 def test_unknown_case_is_recorded_not_crashing(fake_llm):
     fake_llm.responses = ["A technician has been assigned."]
-    out = comms_node({"case_id": "C-NOPE", "current_status": "ASSIGNED", "intake_result": {"category": "plumbing"}})
+    out = comms_node({"case_id": "C-NOPE", "current_status": "VISIT_SCHEDULED", "intake_result": {"category": "plumbing"}})
     r = out["comms_result"]
     assert r["delivery"] == "failed" and r["error"]
     assert r["message"] == "A technician has been assigned."

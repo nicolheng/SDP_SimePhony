@@ -6,7 +6,11 @@ from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeho
 
 INVALID_CLOSING = "If the problem gets worse or changes, please submit a new report."
 VALID_NEXT_STEP = "Please choose a repair time in the app."
-CLOSED_NOTE = "Your case is now closed."  # live qwen thanked the buyer without saying so
+CLOSED_NOTE = "Your case is now closed."
+# Sign-off order technician -> SDP -> buyer: at repair.done the buyer only hears the developer reviews first.
+NEW_CASE_REVIEW_NOTE = ("As this problem has been reported before in your unit, our team is also reviewing whether a "
+                        "more detailed inspection is needed.")
+REPAIR_DONE_NOTE = "The developer reviews the repair first. We will let you know when you can check it and sign off."  # live qwen thanked the buyer without saying so
 
 _FALLBACK = "Thank you for your report."
 
@@ -14,9 +18,12 @@ _FALLBACK = "Thank you for your report."
 NEUTRAL_TEMPLATES = {
     "VALID": "Our technician has confirmed the reported defect.",  # VALID_NEXT_STEP is appended
     "INVALID": "Our technician has reviewed your report and found that it is not covered as a developer defect.",
-    "ASSIGNED": "A technician has been assigned to your case. We will notify you of the visit slot soon.",
+    "VISIT_SCHEDULED": "We have received your report and requested a technician visit. We will confirm the time once the technician accepts.",
+    "REASSIGNED": "The technician for your case has changed.",  # the job's time is appended
+    "EXTRA_INSPECTION": "A detailed inspection of your case has been arranged.",  # the time is appended
+    "REPAIR_DONE": "The technician has reported that the repair is complete.",  # REPAIR_DONE_NOTE is appended
     "PENDING_SIGNOFF": (
-        "The technician has reported that the repair is complete. "
+        "The developer has approved the repair. "
         "Please check the repaired area using the steps below before signing off."
     ),
     "PENDING_SIGNOFF_NO_GUIDE": (
@@ -24,7 +31,7 @@ NEUTRAL_TEMPLATES = {
         "Please check the repaired area before signing off."
     ),
     "CLOSED": "Thank you for confirming the repair.",  # CLOSED_NOTE is appended
-    "REOPENED": "Your case has been reopened. We will contact you shortly about the next steps.",
+    "REOPENED": "Your case has been reopened. A technician revisit has been requested and we will confirm the time once the technician accepts.",
     "ESCALATED": (
         "Because this problem has come back, our team is arranging a more detailed inspection. "
         "We will confirm the visit with you soon."
@@ -69,13 +76,24 @@ def _clean(text: str) -> str:
 def _template_key(state: dict) -> str:
     """Which neutral template fits this update (used whenever LLM text can't be sent)."""
     status = state.get("current_status", "UNKNOWN")
+    if status == "PENDING_SIGNOFF" and state.get("event") == "repair.done":
+        return "REPAIR_DONE"  # guide saved; the buyer gets it once SDP has signed (developer.signed)
     if status == "PENDING_SIGNOFF":
         if not (state.get("verification_result") or {}).get("protocol"):
             return "PENDING_SIGNOFF_NO_GUIDE"
     if status == "ESCALATION_PENDING" and _reopen_action(state) == "ESCALATED":
         return "ESCALATED"
-    if status in ("SUBMITTED", "REOPENED") and (state.get("booking_result") or {}).get("booking_status") == "NEEDS_STAFF":
-        return "NEEDS_STAFF"  # nobody free to visit; SDP books manually
+    # Booking results count only for the update booking just made (a new booking that found nobody, or a
+    # hand-over); an old result left in the state never changes a later update.
+    booking = state.get("booking_result") or {}
+    handover = state.get("event") == "booking.rejected"
+    booked_now = handover or status in ("SUBMITTED", "REOPENED") or state.get("event") == "inspection.approved"
+    if booking.get("booking_status") == "NEEDS_STAFF" and booked_now:
+        return "NEEDS_STAFF"  # nobody free (or nobody to take a handed-over job); SDP books manually
+    if handover and booking.get("reassigned"):
+        return "REASSIGNED"  # a colleague took over a handed-over job; the case keeps its status
+    if _reopen_action(state) == "REOPENED":
+        return "REOPENED"  # below the threshold: the revisit is booked (status VISIT_SCHEDULED by now)
     return status
 
 
@@ -91,9 +109,12 @@ def _reopen_action(state: dict) -> str | None:
 
 # Buyer-facing email subjects, keyed like the neutral templates (never the raw status code).
 SUBJECTS = {
-    "ASSIGNED": "We've received your report",
+    "VISIT_SCHEDULED": "We've received your report",
+    "REASSIGNED": "Your technician has changed",
     "VALID": "Defect confirmed: please book a repair",
     "INVALID": "Inspection result",
+    "EXTRA_INSPECTION": "Detailed inspection scheduled",
+    "REPAIR_DONE": "Repair done",
     "PENDING_SIGNOFF": "Please check the repair and sign off",
     "PENDING_SIGNOFF_NO_GUIDE": "Please check the repair and sign off",
     "CLOSED": "Your case is closed",
@@ -186,22 +207,32 @@ def comms_node(state: dict) -> dict:
                   "the defect is confirmed. Do not mention booking, scheduling or timing.")
     elif status == "INVALID":
         prompt = f"The technician inspected the {category} report and determined it is not a developer defect. Tech note: {verdict_note}."
-    elif status == "ASSIGNED":
+    elif template_key == "REASSIGNED":
+        job = (state.get("booking_result") or {}).get("job") or "visit"
+        prompt = (f"The technician for the resident's {category} {job} has changed. Write one sentence telling "
+                  "them. Do not mention times, dates or names.")
+    elif template_key == "VISIT_SCHEDULED":
         prompt = (f"We received the resident's {category} report and requested a technician visit. "
                   "The visit time will be confirmed once the technician confirms.")
     elif status == "CLOSED":
         prompt = (f"The resident confirmed the {category} repair is fixed. Thank them in one sentence. "
                   "Do not ask them to do anything else.")
+    elif template_key == "EXTRA_INSPECTION":
+        prompt = (f"Our team has arranged a detailed inspection of the resident's {category} problem. Write one "
+                  "sentence telling them. Do not mention times, dates, names or any past repair.")
+    elif template_key == "REPAIR_DONE":
+        prompt = (f"The technician reported the {category} repair is complete. Write one sentence telling the "
+                  "resident. Do not mention sign-off, checks, steps or dates.")
     elif template_key == "PENDING_SIGNOFF":
-        prompt = (f"The technician reported the {category} repair is complete. Write a short intro asking the "
-                  "resident to check the repair using the steps that follow before signing off. "
-                  "Do not list any steps yourself.")
+        prompt = (f"The developer has approved the {category} repair, so it is ready for the resident to check. "
+                  "Write one sentence telling them. Do not list any steps or dates yourself.")
     elif template_key == "PENDING_SIGNOFF_NO_GUIDE":
         prompt = (f"The technician reported the {category} repair is complete. Ask the resident to check "
                   "the repaired area before signing off. Do not list any steps.")
-    elif status == "REOPENED" and template_key != "NEEDS_STAFF":
+    elif template_key == "REOPENED":
         prompt = (f"The resident reopened their {category} case with a new photo. Tell them the case is reopened "
-                  "and a technician will look at it again; we will confirm the visit. Do not describe any past repair.")
+                  "and a technician revisit has been requested; we will confirm the time once the technician "
+                  "accepts. Do not describe any past repair.")
     elif template_key == "ESCALATED":
         prompt = (f"The resident's {category} problem has come back again. Tell them our team is arranging a more "
                   "detailed inspection and will confirm the visit soon. Do not describe any past repair.")
@@ -251,7 +282,22 @@ def comms_node(state: dict) -> dict:
         message = f"{message}\n\n{timing}{VALID_NEXT_STEP}"
     if status == "CLOSED":
         message = f"{message}\n\n{CLOSED_NOTE}"
+    if template_key == "REASSIGNED":
+        b = state["booking_result"]
+        job = b.get("job") or "visit"
+        when = (f"stays at the same time: {b['start_local']}" if b.get("same_time")
+                else f"has moved to {b['start_local']}")
+        message = f"{message}\n\nYour {job} {when}."
+    if template_key == "REPAIR_DONE":
+        message = f"{message}\n\n{REPAIR_DONE_NOTE}"
+    if state.get("event") in (None, "", "case.created") and (state.get("new_case_escalation") or {}).get("escalated"):
+        message = f"{message}\n\n{NEW_CASE_REVIEW_NOTE}"
+    if template_key == "EXTRA_INSPECTION" and (state.get("booking_result") or {}).get("start_local"):
+        message = f"{message}\n\nInspection time: {state['booking_result']['start_local']}."
     if template_key == "PENDING_SIGNOFF":
+        deadline = state.get("signoff_deadline_local")
+        if deadline:
+            message = f"{message}\n\nPlease check the repair and sign off by {deadline} if it is fixed."
         message = f"{message}\n\n{state['verification_result']['protocol']}"
 
     # 5. Dynamic Sending
