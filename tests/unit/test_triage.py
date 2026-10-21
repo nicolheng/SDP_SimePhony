@@ -130,7 +130,7 @@ def test_triage_saves_urgency_to_the_case(sample_state, fake_llm, monkeypatch):
     save = MagicMock(return_value={"ok": True, "urgency": "high"})
     monkeypatch.setattr(backend_tools, "set_triage_result", save)
     fake_llm.responses = [_reply("high", "H2")]
-    out = triage_node(_state(sample_state, case_id="C-0016"))["triage_result"]
+    out = triage_node(_state(sample_state, case_id="C-0016", user_description="The socket sparked and smells burning."))["triage_result"]
     save.assert_called_once_with("C-0016", "high", out["justification"])
     assert out["save_error"] is None
 
@@ -150,3 +150,21 @@ def test_triage_save_refusal_is_recorded(sample_state, fake_llm, monkeypatch):
     monkeypatch.setattr(backend_tools, "set_triage_result", lambda *a: {"ok": False, "error": "case is CLOSED"})
     out = triage_node(_state(sample_state, case_id="C-1"))["triage_result"]
     assert out["save_error"] == "case is CLOSED"
+
+
+# Live qwen picked "severe water ingress or flooding" for a pooling floor trap, even with the prompt saying
+# pooling is not flooding: a high rule also needs its own words in the report.
+@pytest.mark.parametrize("desc, rule, expected", [
+    ("Water pools around the floor trap in the common bathroom and doesn't drain.", "H7", "normal"),
+    ("Water is pouring in and the bedroom floor is flooded ankle deep.", "H7", "high"),
+    ("Banjir dalam bilik air, air masuk dari pintu.", "H7", "high"),
+    ("Water dripping from the ceiling above the wardrobe.", "H1", "normal"),        # no electrical fitting named
+    ("Water leaking from the ceiling onto the light fitting.", "H1", "high"),
+    ("The ceiling is sagging and cracking above the bed.", "H5", "high"),
+    ("Small stain on the ceiling.", "H5", "normal"),
+    ("I can smell gas near the stove.", "H9", "high"),
+])
+def test_high_rule_needs_its_words_in_the_report(sample_state, fake_llm, desc, rule, expected):
+    fake_llm.responses = [_reply("high", rule)]
+    state = _state(sample_state, user_description=desc, intake_result={"category": "water_leak", "urgency": "normal"})
+    assert triage_node(state)["triage_result"]["urgency"] == expected

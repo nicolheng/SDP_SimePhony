@@ -10,6 +10,28 @@ def _normalize_urgency(value) -> str | None:
     return {"high": "high", "medium": "normal", "normal": "normal", "low": "low"}.get(m.group(1)) if m else None
 
 
+# A high rule also needs its own words in the report (English / Malay): live qwen called a pooling floor
+# trap "severe water ingress or flooding". Keyed by a phrase in the rules.yaml wording; other rules: no check.
+_HIGH_RULE_EVIDENCE = {
+    "electrical fittings": r"socket|switch|light|lamp|wiring|wire|plug|electric|power point|lampu|suis|soket|wayar",
+    "sparks": r"spark|burn|smok|scorch|percik|terbakar|hangus",
+    "live wiring": r"wire|wiring|wayar|cable|exposed",
+    "breaker": r"trip|breaker|fuse|power cut",
+    "collapse": r"collaps|sag|bulg|fall|runtuh|crack",
+    "structural": r"structur|major crack|wide crack|movement|shift|retak besar|beam|column",
+    "flooding": r"flood|banjir|pour|gush|ankle|knee|torrent|ingress",
+    "glass": r"glass|kaca|pane|falling",
+    "gas": r"\bgas\b",
+}
+
+
+def _has_evidence(rule: str, report: str) -> bool:
+    for phrase, words in _HIGH_RULE_EVIDENCE.items():
+        if phrase in rule.lower():
+            return re.search(words, report.lower()) is not None
+    return True
+
+
 def triage_node(state: dict) -> dict:
     """P2 (Nicol) owns this. Determines urgency and required skill for a defect."""
     client = get_client()
@@ -57,7 +79,9 @@ def triage_node(state: dict) -> dict:
         llm_urgency = _normalize_urgency(data.get("urgency"))
         rule_id = str(data.get("rule") or "").strip().upper()
         # A change counts only with a real rule from the matching list.
-        if rule_id in rule_ids and llm_urgency == {"H": "high", "L": "low"}[rule_id[0]]:
+        report = f"{user_desc} {(state.get('intake_result') or {}).get('summary') or ''}"
+        if (rule_id in rule_ids and llm_urgency == {"H": "high", "L": "low"}[rule_id[0]]
+                and (rule_id[0] == "L" or _has_evidence(rule_ids[rule_id], report))):
             urgency, matched_rule = llm_urgency, rule_ids[rule_id]
     except Exception:
         pass
