@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<defs>
+<radialGradient id="stain"><stop offset="0" stop-color="#8a6a3d" stop-opacity="0.75"/><stop offset="0.7" stop-color="#a9875a" stop-opacity="0.45"/><stop offset="1" stop-color="#c9b18a" stop-opacity="0"/></radialGradient>
+<radialGradient id="scorch"><stop offset="0" stop-color="#1c1917" stop-opacity="0.85"/><stop offset="0.6" stop-color="#57534e" stop-opacity="0.4"/><stop offset="1" stop-color="#78716c" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="640" height="480" fill="#efe6d6"/><rect y="420" width="640" height="60" fill="#c9b79c"/><polyline points="280,90 310,130 295,175 330,220 315,265 350,305" fill="none" stroke="#3b3631" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+
+<rect x="12" y="12" rx="6" width="216" height="26" fill="#000" opacity="0.45"/>
+<text x="20" y="30" font-family="Arial, sans-serif" font-size="14" fill="#fff">Sample photo · Wall crack</text>
+</svg>

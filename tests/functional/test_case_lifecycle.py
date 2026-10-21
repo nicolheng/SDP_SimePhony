@@ -171,9 +171,7 @@ def world(monkeypatch):
     monkeypatch.setattr(booking, "get_available_slots", w.get_available_slots)
     monkeypatch.setattr(booking, "assign_technician", w.assign_technician)
     # similar_defect would otherwise read data/simephony.db through backend/tools.py
-    monkeypatch.setattr(similar_defect, "USE_REAL_DB", False)
-    monkeypatch.setattr(similar_defect, "real_find_similar_cases",
-                        lambda **kw: {"past_case_count": 0, "cases": []})
+    monkeypatch.setattr(similar_defect, "find_similar_cases", lambda **kw: [])
     return w
 
 

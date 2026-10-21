@@ -10,7 +10,7 @@ import { InspectionBriefView } from "@/components/inspection-brief";
 import { PhotoThumb } from "@/components/photo";
 import { Panel } from "@/components/sdp-ui";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
-import { developerSignOff, signoffDeadline } from "@/lib/api";
+import { developerSignOff } from "@/lib/api";
 import { CATEGORY_LABEL, getTechnician, getUnit, SDP_STAFF, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 
@@ -118,7 +118,7 @@ export function SdpCaseDetail() {
                 Check the repair by {workerLabel(c.technicianId)}, then approve it.
               </p>
               <p className="mt-2 text-sm text-zinc-500">
-                Buyer: {c.signoff?.buyer ? `signed ${fmtDateTime(c.signoff.buyer.at)}` : `waiting · due ${fmtDateTime(signoffDeadline(c))}${c.signoffReminderAt ? " · reminder sent" : ""}`}
+                Buyer: {c.signoff?.buyer ? `signed ${fmtDateTime(c.signoff.buyer.at)}` : "signs after your approval (then has 14 days)"}
               </p>
               {c.signoffOverdueAt && (
                 <p className="mt-3 rounded-lg bg-red-50 p-2.5 text-base text-red-800">
@@ -132,7 +132,7 @@ export function SdpCaseDetail() {
                   setBusy(true);
                   try {
                     await developerSignOff(c.id);
-                    toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved; waiting for the buyer");
+                    toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved: buyer asked to sign off");
                   } catch (err) {
                     toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
                   } finally {
@@ -146,6 +146,32 @@ export function SdpCaseDetail() {
             </Panel>
           )}
           {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${SDP_STAFF.name} (${SDP_STAFF.title})`} large />}
+          {!!c.assignments?.length && (
+            <Panel title="Assignment history">
+              <ul className="space-y-2.5">
+                {[...c.assignments].reverse().map((a, i) => (
+                  <li key={i} className="flex items-start justify-between gap-3 text-base">
+                    <div>
+                      <p className="font-medium">{workerLabel(a.technicianId)}</p>
+                      {a.reason && <p className="text-sm text-zinc-600">{a.reason}</p>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span
+                        className={
+                          a.outcome === "ACCEPTED"
+                            ? "rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-medium text-emerald-700"
+                            : "rounded-full bg-amber-50 px-2 py-0.5 text-sm font-medium text-amber-800"
+                        }
+                      >
+                        {a.outcome === "ACCEPTED" ? "Accepted" : "Declined / handed over"}
+                      </span>
+                      <p className="mt-0.5 text-sm text-zinc-500">{fmtDateTime(a.at)}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
           {c.similar.length > 0 && (
             <Panel title="Related cases (SimilarDefectAgent)">
               <SimilarList c={c} />

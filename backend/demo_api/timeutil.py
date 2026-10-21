@@ -1,4 +1,5 @@
 """Timestamps: stored and returned as UTC ISO strings ("2026-10-19T01:00:00.000Z"); shown in Malaysia time."""
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 MYT = timezone(timedelta(hours=8))
@@ -10,6 +11,12 @@ def parse(value: str) -> datetime:
 
 def iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
+
+def demo_now(conn: sqlite3.Connection) -> str:
+    """The demo clock: real time plus the days skipped with "Skip days" (app_meta.clock_offset_days)."""
+    row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
+    return add_days(iso(datetime.now(timezone.utc)), float(row[0]) if row else 0.0)
 
 
 def norm(value: str | None) -> str | None:

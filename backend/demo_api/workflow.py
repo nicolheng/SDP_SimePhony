@@ -3,13 +3,13 @@ import base64
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 import db
 
 from . import agents, config
-from .timeutil import add_days, days_between, fmt_datetime, iso, norm, parse
+from .analytics import cluster_confidence
+from .timeutil import add_days, days_between, demo_now, fmt_datetime, norm, parse
 
 UPLOADS_DIR = db.ROOT / "uploads"
 
@@ -26,10 +26,9 @@ class Ctx:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        # Real Malaysia-time clock (stored as UTC), plus however many days the demo has skipped ahead.
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
         self.offset_days = float(row["value"]) if row else 0.0
-        self.now = add_days(iso(datetime.now(timezone.utc)), self.offset_days)
+        self.now = demo_now(conn)
         self.units = {r["unit_id"]: dict(r) for r in conn.execute("SELECT * FROM units")}
         self.workers = [
             {**dict(r), "skills": json.loads(r["skills"]), "blocks": json.loads(r["blocks"]), "kind": r["kind"] or "technician"}
@@ -58,7 +57,8 @@ class Ctx:
         if self._bookings is None:
             self._bookings = [
                 {"technician_id": r["technician_id"], "case_id": r["case_id"], "kind": r["kind"], "start": parse(r["start_at"]), "end": parse(r["end_at"])}
-                for r in self.conn.execute("SELECT * FROM slots WHERE case_id IS NOT NULL")
+                # Finished jobs (visit_done / repair_done) are records only; they don't block anyone's time.
+                for r in self.conn.execute("SELECT * FROM slots WHERE case_id IS NOT NULL AND kind NOT GLOB '*_done'")
             ]
         return self._bookings
 
@@ -78,7 +78,7 @@ def load_case(ctx: Ctx, case_id: str) -> dict:
     if not row:
         raise WorkflowError(f"Case {case_id} not found.")
     c = dict(row)
-    for k in ("created_at", "closed_at", "verdict_at", "repaired_at", "buyer_signed_at", "developer_signed_at", "signoff_reminder_at", "auto_closed_at", "signoff_overdue_at", "handed_over_at", "handover_prev_slot"):
+    for k in ("created_at", "closed_at", "verdict_at", "repaired_at", "buyer_signed_at", "developer_signed_at", "signoff_reminder_at", "auto_closed_at", "signoff_overdue_at", "handed_over_at", "handover_prev_slot", "preferred_visit_at"):
         c[k] = norm(c.get(k))
     return c
 
@@ -89,13 +89,22 @@ SAVED_COLUMNS = [
     "developer_signed", "buyer_signed", "buyer_signed_at", "buyer_signoff_note", "developer_signed_at", "developer_signed_by",
     "verification_status", "inspection_outcome", "closed_at", "inspector_id", "support_id", "repair_hours",
     "signoff_reminder_at", "auto_closed_at", "signoff_overdue_at", "booking_status",
-    "handed_over_from", "handover_reason", "handed_over_at", "handover_prev_slot",
+    "handed_over_from", "handover_reason", "handed_over_at", "handover_prev_slot", "assignment_attempts", "preferred_visit_at",
 ]
 
 
 def assign(c: dict, worker_id: str) -> None:
     """Give the case's next job to a worker; they still have to accept it."""
-    c.update(technician_id=worker_id, booking_status="PENDING", handed_over_from=None, handover_reason=None, handed_over_at=None, handover_prev_slot=None)
+    c.update(technician_id=worker_id, booking_status="PENDING", handed_over_from=None, handover_reason=None, handed_over_at=None, handover_prev_slot=None,
+             assignment_attempts=(c.get("assignment_attempts") or 0) + 1)
+
+
+def log_assignment(ctx: Ctx, case_id: str, worker_id: str, outcome: str, reason: str | None = None, slot_id: str | None = None) -> None:
+    """assignment_history: every accept (ACCEPTED) and every decline or hand-over (REJECTED, with the reason)."""
+    ctx.conn.execute(
+        "INSERT INTO assignment_history (assignment_id, case_id, technician_id, slot_id, outcome, rejected_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (db.next_record_id(ctx.conn, "assignment_history"), case_id, worker_id, slot_id, outcome, reason, ctx.now),
+    )
 
 
 def save_case(ctx: Ctx, c: dict) -> None:
@@ -161,8 +170,29 @@ def book(ctx: Ctx, case_id: str, worker_id: str, start: str, kind: str) -> None:
     ctx.invalidate()
 
 
-def release(ctx: Ctx, case_id: str, kind: str) -> None:
-    ctx.conn.execute("UPDATE slots SET case_id = NULL, kind = NULL WHERE case_id = ? AND kind = ?", (case_id, kind))
+# The slots table holds bookings only. Available times come from config.SLOT_TIMES (agents.upcoming_slots).
+
+
+def _drop_slots(ctx: Ctx, slot_ids: list[str]) -> None:
+    for slot_id in slot_ids:
+        # assignment_history keeps the technician, outcome and time; only its link to the removed booking is cleared.
+        ctx.conn.execute("UPDATE assignment_history SET slot_id = NULL WHERE slot_id = ?", (slot_id,))
+        ctx.conn.execute("DELETE FROM slots WHERE slot_id = ?", (slot_id,))
+    ctx.invalidate()
+
+
+def cancel_booking(ctx: Ctx, case_id: str, kind: str, worker_id: str | None = None) -> None:
+    """A booking that won't happen (hand-over, rebooking): delete it so the time is free again."""
+    sql, args = "SELECT slot_id FROM slots WHERE case_id = ? AND kind = ?", [case_id, kind]
+    if worker_id:
+        sql, args = sql + " AND technician_id = ?", args + [worker_id]
+    _drop_slots(ctx, [r["slot_id"] for r in ctx.conn.execute(sql, args)])
+
+
+def finish_booking(ctx: Ctx, case_id: str, kind: str) -> None:
+    """The job is done: keep its booking as the record (kind visit_done / repair_done). Finished bookings don't
+    block the technician, so time left over from a job finished early is free again."""
+    ctx.conn.execute("UPDATE slots SET kind = ? WHERE case_id = ? AND kind = ?", (f"{kind}_done", case_id, kind))
     ctx.invalidate()
 
 
@@ -259,7 +289,7 @@ def _continue_new_case(ctx: Ctx, c: dict, slot: str | None) -> None:
          if sim["refs"] else "No related cases: treated as a new defect")
     t = agents.triage(ctx, c, slot)
     assign(c, t["technician_id"])
-    c.update(triage_reason=t["reason"], status="VISIT_SCHEDULED")
+    c.update(triage_reason=t["reason"], status="VISIT_SCHEDULED", preferred_visit_at=norm(slot) if slot else None)
     save_case(ctx, c)
     book(ctx, c["case_id"], t["technician_id"], t["slot"], "visit")
     event(ctx, c["case_id"], "case.assigned", f"Assigned to {ctx.worker(t['technician_id'])['name']}", technician_id=t["technician_id"])
@@ -278,7 +308,7 @@ def book_repair(ctx: Ctx, case_id: str, start: str) -> None:
         raise WorkflowError("That repair time is no longer available. Please choose another.")
     worker_id = c["support_id"] if c.get("support_id") in option["workerIds"] else option["workerIds"][0]
     plan = config.REPAIR_PLAN.get(c["category"], config.REPAIR_PLAN["other"])
-    release(ctx, case_id, "repair")
+    cancel_booking(ctx, case_id, "repair")
     for s in option["slots"]:
         book(ctx, case_id, worker_id, s, "repair")
     c["inspector_id"] = c.get("inspector_id") or c.get("technician_id")
@@ -302,6 +332,8 @@ def submit_verification(ctx: Ctx, case_id: str, result: str, note: str, photo: s
         raise WorkflowError("Unknown result.")
     if result == "NOT_FIXED" and not photo:
         raise WorkflowError("Please add a new photo showing the problem.")
+    if result == "FIXED" and not c.get("developer_signed_at"):
+        raise WorkflowError("The developer has to approve the repair before you can sign off.")
     v = latest_verification(ctx, case_id)
     add_photo(ctx, case_id, photo, "reopen" if result == "NOT_FIXED" else "verification")
     if v:
@@ -337,7 +369,10 @@ def developer_signoff(ctx: Ctx, case_id: str) -> None:
     c.update(developer_signed=1, developer_signed_at=ctx.now, developer_signed_by=by)
     save_case(ctx, c)
     event(ctx, case_id, "signoff.completed", f"Developer signed off ({by})")
-    _close_if_both_signed(ctx, c)
+    if c.get("buyer_signed_at"):
+        _close_if_both_signed(ctx, c)
+    else:
+        notify_buyer(ctx, c, "ready_signoff", deadline=fmt_datetime(signoff_deadline(c)))
 
 
 def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> None:
@@ -348,6 +383,14 @@ def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> 
         raise WorkflowError("A new photo is required to reopen.")
     add_photo(ctx, case_id, photo, "reopen")
     _reopen(ctx, c, description or "Problem came back")
+
+
+def _cluster_confidence(related: list[dict]) -> float:
+    """Same score the SDP Analytics page shows for this block + stack + category cluster."""
+    per_unit: dict[str, int] = {}
+    for x in related:
+        per_unit[x["unit_id"]] = per_unit.get(x["unit_id"], 0) + 1
+    return cluster_confidence(len(per_unit), sum(1 for n in per_unit.values() if n > 1), sum(x["reopen_count"] or 0 for x in related))
 
 
 def _reopen(ctx: Ctx, c: dict, description: str) -> None:
@@ -376,7 +419,7 @@ def _reopen(ctx: Ctx, c: dict, description: str) -> None:
                detected_at, status, recommended_action, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
             (si_id, (c["sub_category"] or "").replace("_", " ").capitalize() or config.CATEGORY_LABEL.get(c["category"]), c["category"], unit["block"], unit["stack"],
              json.dumps([x["case_id"] for x in related]), len(related), sum(1 for x in related if (x["reopen_count"] or 0) > 0),
-             min(0.95, 0.55 + len(related) * 0.06), ctx.now,
+             _cluster_confidence(related), ctx.now,
              f"Extra inspection of {c['unit_id']} and the unit above; check the shared riser for stack {unit['block']}-{unit['stack']}.", approval_id),
         )
         c["status"] = "ESCALATION_PENDING"
@@ -409,7 +452,7 @@ def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str |
     if outcome not in ("VALID", "INVALID") or not note.strip():
         raise WorkflowError("Choose Valid or Invalid and add a note.")
     add_photo(ctx, case_id, photo, "verdict")
-    release(ctx, case_id, "visit")
+    finish_booking(ctx, case_id, "visit")
     c.update(inspection_outcome="VALID_DEFECT" if outcome == "VALID" else "NOT_A_DEFECT", verdict_note=note.strip(), verdict_at=ctx.now, inspector_id=c["technician_id"])
     event(ctx, case_id, "verdict.recorded", f'Technician marked {outcome}: "{note.strip()}"')
     if outcome == "VALID":
@@ -431,7 +474,7 @@ def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     if not note.strip():
         raise WorkflowError("Add a repair note.")
     add_photo(ctx, case_id, photo, "repair")
-    release(ctx, case_id, "repair")
+    finish_booking(ctx, case_id, "repair")
     c.update(status="REPAIRED", repair_note=note.strip(), repaired_at=ctx.now, buyer_signed=0, developer_signed=0, buyer_signed_at=None,
              buyer_signoff_note=None, developer_signed_at=None, developer_signed_by=None, signoff_reminder_at=None, auto_closed_at=None,
              signoff_overdue_at=None, verification_status="pending")
@@ -467,11 +510,14 @@ def _my_job(ctx: Ctx, case_id: str, worker_id: str) -> tuple[dict, str, list[str
 
 
 def accept_job(ctx: Ctx, case_id: str, worker_id: str) -> None:
-    c, _, starts = _my_job(ctx, case_id, worker_id)
+    c, kind, starts = _my_job(ctx, case_id, worker_id)
     if c.get("booking_status") != "PENDING":
         raise WorkflowError("You've already accepted this job.")
     c["booking_status"] = "CONFIRMED"
     save_case(ctx, c)
+    slot = ctx.conn.execute("SELECT slot_id FROM slots WHERE case_id = ? AND kind = ? AND technician_id = ? ORDER BY start_at LIMIT 1",
+                            (case_id, kind, worker_id)).fetchone()
+    log_assignment(ctx, case_id, worker_id, "ACCEPTED", slot_id=slot["slot_id"] if slot else None)
     job = JOB_NAME[c["status"]]
     event(ctx, case_id, "booking.confirmed", f"{ctx.worker_label(worker_id)} accepted the {job}", technician_id=worker_id)
     notify_buyer(ctx, c, "confirmed", job=job, slot=fmt_datetime(starts[0]) if starts else "the booked time")
@@ -490,14 +536,13 @@ def hand_over(ctx: Ctx, case_id: str, worker_id: str, reason: str) -> dict:
     opt = options[0]
     declined = c.get("booking_status") == "PENDING"
     new_id = opt["technicianId"]
-    ctx.conn.execute("UPDATE slots SET case_id = NULL, kind = NULL WHERE case_id = ? AND kind = ? AND technician_id = ?", (case_id, kind, worker_id))
-    ctx.invalidate()
+    log_assignment(ctx, case_id, worker_id, "REJECTED", reason)
+    cancel_booking(ctx, case_id, kind, worker_id)
     for s in opt["slots"]:
         book(ctx, case_id, new_id, s, kind)
     if c["status"] == "EXTRA_INSPECTION" and c.get("support_id") and not opt["sameTime"]:
         # Joint inspection: the subcontractor moves to the new time too.
-        ctx.conn.execute("UPDATE slots SET case_id = NULL, kind = NULL WHERE case_id = ? AND kind = 'visit' AND technician_id = ?", (case_id, c["support_id"]))
-        ctx.invalidate()
+        cancel_booking(ctx, case_id, "visit", c["support_id"])
         book(ctx, case_id, c["support_id"], opt["start"], "visit")
         notify_tech(ctx, c, "Joint inspection moved", f"{c['unit_id']}: now {fmt_datetime(opt['start'])} with {ctx.worker(new_id)['name']}.", worker_id=c["support_id"])
     old = starts[0] if starts else None
@@ -563,12 +608,16 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
 
 
 def signoff_deadline(c: dict) -> str:
-    return add_days(c.get("repaired_at") or c.get("verdict_at") or c["created_at"], config.SIGNOFF_PERIOD_DAYS)
+    """The buyer signs after the developer, so their period starts at the developer's sign-off."""
+    start = c.get("developer_signed_at") or c.get("repaired_at") or c.get("verdict_at") or c["created_at"]
+    return add_days(start, config.SIGNOFF_PERIOD_DAYS)
 
 
 def sweep_signoffs(ctx: Ctx) -> None:
-    """Sign-off period: in-app reminder 3 days before the deadline, then auto-close (high urgency: flag to SDP instead)."""
-    ids = [r["case_id"] for r in ctx.conn.execute("SELECT case_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL")]
+    """Buyer sign-off period (starts once the developer has signed): in-app reminder 3 days before the deadline,
+    then auto-close (high urgency: flag to SDP instead)."""
+    ids = [r["case_id"] for r in ctx.conn.execute(
+        "SELECT case_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL AND developer_signed_at IS NOT NULL")]
     for case_id in ids:
         c = load_case(ctx, case_id)
         deadline = signoff_deadline(c)

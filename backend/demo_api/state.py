@@ -1,13 +1,16 @@
 """Read the whole database into the shape the web app uses (frontend/src/lib/types.ts DemoState)."""
 import json
 import re
+from pathlib import Path
 
 from . import agents, config
-from .timeutil import norm
-from .workflow import UPLOADS_DIR, Ctx
+from .analytics import OPEN, build_analytics
+from .timeutil import local_day, norm, parse
+from .workflow import UPLOADS_DIR, Ctx, signoff_deadline
 
-OPEN = {"SUBMITTED", "INFO_NEEDED", "ASSIGNED", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION"}
 PHOTO_KINDS = {"original", "reopen", "verdict", "repair", "verification"}
+# Seeded cases have no real photos; their sample_<category>_<kind>.jpg rows are drawn by backend/seed/make_sample_photos.py.
+SAMPLE_PHOTOS_DIR = config.ROOT / "data" / "sample_photos"
 
 
 def _json(v, fallback):
@@ -52,6 +55,16 @@ def _event_message(type_: str, p: dict, ctx: Ctx) -> str:
     return detail or type_
 
 
+def _last_repair(case_slots: list[dict]) -> list[str]:
+    """Start times of the most recent finished repair (one day, one worker), for cases whose repair is done."""
+    done = [s for s in case_slots if s["kind"] == "repair_done"]
+    if not done:
+        return []
+    last = max(done, key=lambda s: parse(s["start_at"]))
+    day = local_day(last["start_at"])
+    return sorted(norm(s["start_at"]) for s in done if s["technician_id"] == last["technician_id"] and local_day(s["start_at"]) == day)
+
+
 def build_state(ctx: Ctx, base_url: str) -> dict:
     conn = ctx.conn
     rows = lambda sql: [dict(r) for r in conn.execute(sql)]  # noqa: E731
@@ -68,9 +81,15 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
     briefs = {r["case_id"]: r for r in rows("SELECT * FROM inspection_briefs")}
     unit_of = {r["case_id"]: r["unit_id"] for r in rows("SELECT case_id, unit_id FROM cases")}
     links = group(rows("SELECT * FROM case_links ORDER BY created_at"), "case_id")
+    assignments = group(rows("SELECT * FROM assignment_history ORDER BY created_at, assignment_id"), "case_id")
 
     def photo_url(path: str) -> str | None:
-        return f"{base_url}/uploads/{path}" if path and (UPLOADS_DIR / path).is_file() else None
+        if not path:
+            return None
+        if (UPLOADS_DIR / path).is_file():
+            return f"{base_url}/uploads/{path}"
+        sample = Path(path).with_suffix(".svg").name
+        return f"{base_url}/samples/{sample}" if (SAMPLE_PHOTOS_DIR / sample).is_file() else None
 
     cases = []
     for r in rows("SELECT * FROM cases ORDER BY created_at"):
@@ -78,9 +97,11 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
         status = r["status"]
         category = _category(r["category"])
         case_slots = slots.get(cid, [])
-        slot_of = lambda kind: norm(next((s["start_at"] for s in reversed(case_slots) if s["kind"] == kind), None))  # noqa: E731
+        # Current bookings first; finished ones (visit_done / repair_done) are the record of when the job happened.
+        slot_of = lambda kind: norm(next((s["start_at"] for s in reversed(case_slots) if s["kind"] == kind), None)  # noqa: E731
+                                    or next((s["start_at"] for s in reversed(case_slots) if s["kind"] == f"{kind}_done"), None))
         # Repairs span several 2-hour blocks: the booking starts at the earliest one.
-        repair_starts = sorted(norm(s["start_at"]) for s in case_slots if s["kind"] == "repair")
+        repair_starts = sorted(norm(s["start_at"]) for s in case_slots if s["kind"] == "repair") or _last_repair(case_slots)
         v = (verifs.get(cid) or [None])[-1]
         outcome = r["inspection_outcome"]
         verdict = "VALID" if outcome == "VALID_DEFECT" else "INVALID" if outcome == "NOT_A_DEFECT" or status == "INVALID" else "VALID" if outcome else None
@@ -104,6 +125,11 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
                          "previousSlot": norm(r.get("handover_prev_slot"))} if r.get("handed_over_from") else None,
             "repairHours": r.get("repair_hours") or (config.REPAIR_PLAN.get(category, config.REPAIR_PLAN["other"])["hours"] if repair_starts else None),
             "visitSlot": slot_of("visit"),
+            "preferredVisitAt": norm(r.get("preferred_visit_at")),
+            "assignments": [
+                {"technicianId": a["technician_id"], "outcome": a["outcome"], "reason": a["rejected_reason"], "at": norm(a["created_at"])}
+                for a in assignments.get(cid, [])
+            ],
             "repairSlot": repair_starts[0] if repair_starts else None,
             "photos": [
                 {"url": photo_url(p["path"]), "kind": p["kind"] if p["kind"] in PHOTO_KINDS else "original", "at": norm(p["created_at"])}
@@ -123,6 +149,9 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
                 "developer": {"at": norm(r["developer_signed_at"]), "by": r["developer_signed_by"] or "SDP"} if r["developer_signed_at"] else None,
             } if (r["buyer_signed_at"] or r["developer_signed_at"]) else None,
             "signoffReminderAt": norm(r.get("signoff_reminder_at")),
+            "signoffDeadline": signoff_deadline({**r, "created_at": norm(r["created_at"]), "repaired_at": norm(r["repaired_at"]),
+                                                 "verdict_at": norm(r["verdict_at"]), "developer_signed_at": norm(r["developer_signed_at"])})
+            if status == "PENDING_SIGNOFF" else None,
             "autoClosedAt": norm(r.get("auto_closed_at")),
             "signoffOverdueAt": norm(r.get("signoff_overdue_at")),
             "triageReason": r["triage_reason"],
@@ -191,7 +220,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
         "outbox": outbox,
         "approvals": [
             {"id": a["approval_id"], "caseId": a["case_id"], "systemicIssueId": issue_for.get(a["approval_id"], ""), "reasons": _json(a["reasons"], []),
-             "status": a["status"] if a["status"] in ("pending", "approved", "rejected") else "pending", "createdAt": norm(a["created_at"]), "decidedAt": norm(a["decided_at"])}
+             "status": a["status"] if a["status"] in ("pending", "approved", "rejected") else "pending", "createdAt": norm(a["created_at"]), "decidedAt": norm(a["decided_at"]),
+             "decidedBy": a["decided_by"]}
             for a in approvals_rows
         ],
         "systemicIssues": [
@@ -204,7 +234,7 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             for i in issue_rows
         ],
         "bookings": [
-            {"slot": norm(s["start_at"]), "technicianId": s["technician_id"], "caseId": s["case_id"], "kind": s["kind"] or "visit"}
+            {"slot": norm(s["start_at"]), "technicianId": s["technician_id"], "caseId": s["case_id"], "kind": (s["kind"] or "visit").removesuffix("_done")}
             for s in rows("SELECT * FROM slots WHERE case_id IS NOT NULL")
         ],
         "workers": [
@@ -212,4 +242,29 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             for w in ctx.workers
         ],
         "seq": {"case": 0, "event": 0, "si": 0},
+        "reference": reference(ctx),
+        "analytics": build_analytics(ctx, issue_rows),
+    }
+
+
+def reference(ctx: Ctx) -> dict:
+    """Lookup data the screens show: units and buyers from the database, rules and settings from rules.yaml / config.py."""
+    return {
+        "project": config.PROJECT_NAME,
+        "units": [{"id": u["unit_id"], "block": u["block"], "floor": u["floor"], "stack": u["stack"], "contractor": u["contractor"]} for u in ctx.units.values()],
+        "buyers": [{"id": b["buyer_id"], "name": b["name"], "email": b["email"], "unitId": b["unit_id"]}
+                   for b in ctx.conn.execute("SELECT buyer_id, name, email, unit_id FROM buyers")],
+        "sdpStaff": {"name": config.SDP_STAFF_NAME, "title": config.SDP_STAFF_TITLE, "email": config.SDP_STAFF_EMAIL},
+        "rules": {
+            "gracePeriodDays": config.GRACE_PERIOD_DAYS,
+            "signoffPeriodDays": config.SIGNOFF_PERIOD_DAYS,
+            "signoffReminderDaysBefore": config.SIGNOFF_REMINDER_DAYS_BEFORE,
+            "occurrenceThreshold": config.OCCURRENCE_THRESHOLD,
+            "stackClusterThreshold": config.STACK_CLUSTER_THRESHOLD,
+            "categoryToSkill": config.CATEGORY_TO_SKILL,
+        },
+        "categoryLabel": config.CATEGORY_LABEL,
+        "repairPlan": config.REPAIR_PLAN,
+        "slotTimes": config.SLOT_TIMES,
+        "slotHours": config.SLOT_HOURS,
     }

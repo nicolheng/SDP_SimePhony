@@ -45,9 +45,19 @@ export function MobileHeader({ title, back, right, badge }: { title: string; bac
 }
 
 /** Underlined tabs that scroll sideways (Enquiries screen). */
-export function UnderlineTabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; count?: number }[]; value: T; onChange: (id: T) => void }) {
+export function UnderlineTabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  center,
+}: {
+  tabs: { id: T; label: string; count?: number }[];
+  value: T;
+  onChange: (id: T) => void;
+  center?: boolean;
+}) {
   return (
-    <div className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto border-b border-zinc-200 px-4">
+    <div className={cn("no-scrollbar -mx-4 flex gap-1 overflow-x-auto border-b border-zinc-200 px-4", center && "justify-center gap-4")}>
       {tabs.map((t) => (
         <button
           key={t.id}

@@ -7,7 +7,7 @@ import { PhotoThumb } from "@/components/photo";
 import { PageTitle, Panel } from "@/components/sdp-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { decideApproval } from "@/lib/api";
-import { getUnit } from "@/lib/constants";
+import { FLOORS, getUnit } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
 import type { Approval, Case, SystemicIssue } from "@/lib/types";
@@ -70,7 +70,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
         })
         .map((x) => x.unitId),
     );
-    return Array.from({ length: 15 }, (_, i) => 15 - i).map((floor) => ({ floor, id: `${unit.block}-${floor}-${unit.stack}` })).map((u) => ({ ...u, hit: ids.has(u.id) }));
+    return Array.from({ length: FLOORS }, (_, i) => FLOORS - i).map((floor) => ({ floor, id: `${unit.block}-${floor}-${unit.stack}` })).map((u) => ({ ...u, hit: ids.has(u.id) }));
   }, [cases, c.category, unit.block, unit.stack]);
   const original = c.photos.find((p) => p.kind === "original");
   const reopen = [...c.photos].reverse().find((p) => p.kind === "reopen");

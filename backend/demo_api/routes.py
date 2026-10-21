@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 import db
 
 from . import agents, workflow
-from .migrate import migrate
+from .migrate import reset_demo
 from .state import build_state
 from .workflow import Ctx, WorkflowError
 
@@ -199,8 +199,6 @@ def rain(request: Request):
 
 @router.post("/demo/reset")
 def reset(request: Request):
-    """Copy seed.db over simephony.db, re-apply migrations, return the fresh state."""
-    db.reset_db()
-    with db.get_conn() as conn:
-        migrate(conn)
+    """Copy seed.db over simephony.db, delete uploaded photos, re-apply migrations, return the fresh state."""
+    reset_demo()
     return _run(request)

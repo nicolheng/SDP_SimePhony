@@ -135,6 +135,10 @@ export interface Case {
   /** Estimated repair duration, set when the repair is booked. */
   repairHours?: number;
   visitSlot?: string; // ISO start
+  /** The inspection time the buyer picked when reporting (the booked visit can differ). */
+  preferredVisitAt?: string;
+  /** Every accept and every decline / hand-over (assignment_history). */
+  assignments?: { technicianId: string; outcome: "ACCEPTED" | "REJECTED"; reason: string | null; at: string }[];
   repairSlot?: string;
   photos: Photo[];
   reopenCount: number;
@@ -147,6 +151,8 @@ export interface Case {
   verificationGuide?: VerificationGuide;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
+  /** When the buyer must sign off by (pending sign-off only; computed by the backend). */
+  signoffDeadline?: string;
   /** In-app sign-off reminder sent (3 days before the deadline). */
   signoffReminderAt?: string;
   /** Closed automatically because the buyer didn't sign off in time. */
@@ -196,6 +202,7 @@ export interface Approval {
   status: "pending" | "approved" | "rejected";
   createdAt: string;
   decidedAt?: string;
+  decidedBy?: string | null;
 }
 
 export interface SystemicIssue {
@@ -236,4 +243,70 @@ export interface DemoState {
   systemicIssues: SystemicIssue[];
   bookings: Booking[];
   seq: { case: number; event: number; si: number };
+  /** Lookup data from the database (units, buyers) and rules.yaml / backend config. Absent in the offline fallback. */
+  reference?: Reference;
+  /** SDP console figures computed by the backend (backend/demo_api/analytics.py). Absent in the offline fallback. */
+  analytics?: Analytics;
+}
+
+export interface DetectedIssue {
+  key: string;
+  block: string;
+  stack: string;
+  category: Category;
+  caseIds: string[];
+  units: string[];
+  reopened: number;
+  openCases: number;
+  confidence: number;
+  headline: string;
+  /** The escalated systemic issue record, once the RecurrenceAgent has raised one. */
+  recordId: string | null;
+}
+
+export interface Analytics {
+  kpis: { total: number; open: number; closed: number; reopened: number; reopenRate: number; avgDaysToClose: number; highOpen: number };
+  byCategory: { key: Category; name: string; count: number }[];
+  byBlock: { name: string; open: number; total: number }[];
+  monthly: { month: string; count: number }[];
+  topRecurring: { unitId: string; category: Category; count: number; reopens: number; open: boolean; score: number }[];
+  detected: DetectedIssue[];
+  /** Clusters below this confidence go on the watchlist instead of being called systemic. */
+  systemicConfidence: number;
+  insight: string;
+  /** Per unit and category (count includes reopens), for the stack heatmap. */
+  unitStats: { unitId: string; category: Category; count: number; open: boolean }[];
+}
+
+export interface Buyer {
+  id: string;
+  name: string;
+  email: string;
+  unitId: string;
+}
+
+export interface RepairPlan {
+  trade: string;
+  by: Technician["kind"];
+  skills: string[];
+  hours: number;
+}
+
+export interface Reference {
+  project: string;
+  units: Unit[];
+  buyers: Buyer[];
+  sdpStaff: { name: string; title: string; email: string };
+  rules: {
+    gracePeriodDays: number;
+    signoffPeriodDays: number;
+    signoffReminderDaysBefore: number;
+    occurrenceThreshold: number;
+    stackClusterThreshold: number;
+    categoryToSkill: Partial<Record<Category, string[]>> & Record<string, string[]>;
+  };
+  categoryLabel: Record<Category, string>;
+  repairPlan: Record<Category, RepairPlan>;
+  slotTimes: string[];
+  slotHours: number;
 }

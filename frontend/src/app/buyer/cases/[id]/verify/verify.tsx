@@ -33,7 +33,7 @@ export function VerifyRepair() {
     setBusy(true);
     try {
       await submitVerification(c!.id, result, note.trim(), photo);
-      toast.success(result === "FIXED" ? "Signed off. Waiting for developer sign-off if not done yet." : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
+      toast.success(result === "FIXED" ? "Signed off: case closed" : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
       router.push(`/buyer/cases/${c!.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
@@ -41,7 +41,7 @@ export function VerifyRepair() {
     }
   }
 
-  if (c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer)
+  if (c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer || !c.signoff?.developer)
     return (
       <div>
         <MobileHeader title="Check & Sign Off" back={`/buyer/cases/${c.id}`} />
@@ -120,7 +120,7 @@ export function VerifyRepair() {
         <h2 className="px-1 text-sm font-semibold text-zinc-900">4. Your result</h2>
         <label className="flex gap-3 rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-700">
           <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 size-4 accent-[var(--brand)]" />
-          I have checked the repair and confirm the defect is fixed. The case closes once the developer has also signed off.
+          I have checked the repair and confirm the defect is fixed. The developer has already approved it, so the case closes when I sign off.
         </label>
 
         <div className="space-y-2">

@@ -37,7 +37,7 @@ SUBMITTED → INFO_NEEDED → ASSIGNED → VISIT_SCHEDULED → VALID / INVALID
 ## 2. Tools (`backend/tools.py`) and the MCP server
 
 `backend/tools.py` holds the business rules and is the one place that changes a case. It follows the
-web app's model (`backend/demo_api`): the **demo clock** (`app_meta.now`, moved by "skip days"),
+web app's model (`backend/demo_api`): the **demo clock** (real time plus `app_meta.clock_offset_days`, moved by "skip days"),
 visits/repairs on fixed **Malaysia-time 2-hour blocks** (09:00, 11:00, 14:00, 16:00; no Sundays;
 14-day window), bookings stored as rows in `slots`, visits by **in-house technicians**, repairs per
 `demo_api/config.py` `REPAIR_PLAN` (duration, and subcontractors for specialist trades).

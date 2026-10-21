@@ -4,21 +4,22 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { HBars, Kpi, PageTitle, Panel, StackHeatmap } from "@/components/sdp-ui";
-import { byBlock, byCategory, type DetectedIssue, detectSystemicIssues, kpis, stackHeatmap, SYSTEMIC_CONFIDENCE, topRecurring } from "@/lib/analytics";
+import { stackHeatmap, useAnalytics } from "@/lib/analytics";
 import { BLOCKS, CATEGORY_LABEL, RULES } from "@/lib/constants";
 import { useDemo } from "@/lib/store";
-import type { Category } from "@/lib/types";
+import type { Category, DetectedIssue, SystemicIssue } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const selectCls = "h-10 rounded-lg border border-zinc-300 bg-white px-3 text-base outline-none focus:border-brand";
 
-function IssueStatus({ d }: { d: DetectedIssue }) {
-  if (!d.record) return <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-sm font-medium text-zinc-700">Detected · not escalated yet</span>;
-  const pending = d.record.approvalStatus === "pending";
+function IssueStatus({ d, records }: { d: DetectedIssue; records: SystemicIssue[] }) {
+  const record = records.find((r) => r.id === d.recordId);
+  if (!record) return <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-sm font-medium text-zinc-700">Detected · not escalated yet</span>;
+  const pending = record.approvalStatus === "pending";
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-medium", pending ? "bg-violet-100 text-violet-800" : "bg-emerald-50 text-emerald-800")}>
       {pending ? <ShieldAlert className="size-4" /> : <ShieldCheck className="size-4" />}
-      {d.record.id} · {pending ? "awaiting SDP approval" : d.record.status.replace("_", " ")}
+      {record.id} · {pending ? "awaiting SDP approval" : record.status.replace("_", " ")}
     </span>
   );
 }
@@ -27,9 +28,11 @@ export default function Analytics() {
   const cases = useDemo((s) => s.cases);
   const records = useDemo((s) => s.systemicIssues);
   const router = useRouter();
-  const detected = useMemo(() => detectSystemicIssues(cases, records), [cases, records]);
-  const issues = detected.filter((d) => d.confidence >= SYSTEMIC_CONFIDENCE);
-  const watchlist = detected.filter((d) => d.confidence < SYSTEMIC_CONFIDENCE);
+  const a = useAnalytics();
+  const detected = useMemo(() => a?.detected ?? [], [a]);
+  const threshold = a?.systemicConfidence ?? 1;
+  const issues = detected.filter((d) => d.confidence >= threshold);
+  const watchlist = detected.filter((d) => d.confidence < threshold);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [block, setBlock] = useState("A");
@@ -40,11 +43,19 @@ export default function Analytics() {
   const viewBlock = issueMode ? selected.block : block;
   const viewCategory = issueMode ? selected.category : category;
   // Cheap (150 cells), so it is simply recomputed on each render.
-  const heat = stackHeatmap(cases, viewBlock, viewCategory, issueMode ? new Set(selected.units) : undefined);
-  const k = useMemo(() => kpis(cases), [cases]);
-  const cats = useMemo(() => byCategory(cases), [cases]);
-  const blocks = useMemo(() => byBlock(cases), [cases]);
-  const top = useMemo(() => topRecurring(cases, 6), [cases]);
+  const heat = stackHeatmap(a?.unitStats ?? [], viewBlock, viewCategory, issueMode ? new Set(selected.units) : undefined);
+
+  if (!a)
+    return (
+      <div className="mx-auto max-w-7xl">
+        <PageTitle title="Analytics" sub="Systemic issue detection: recurring defects that share a cause" />
+        <p className="rounded-2xl bg-white p-6 text-base text-zinc-600 ring-1 ring-zinc-200">Analytics are calculated by the backend. Start it to see them.</p>
+      </div>
+    );
+  const k = a.kpis;
+  const cats = a.byCategory;
+  const blocks = a.byBlock;
+  const top = a.topRecurring;
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -53,9 +64,9 @@ export default function Analytics() {
       {/* How the detection works, with live numbers */}
       <ol className="mb-6 grid gap-3 sm:grid-cols-4">
         {[
-          { n: cases.length, label: "Defect cases", sub: "18 months + live" },
+          { n: k.total, label: "Defect cases", sub: "Seeded history + live" },
           { n: `${RULES.stackClusterThreshold}+ units`, label: "Cluster rule", sub: "Same block, stack & category" },
-          { n: issues.length, label: "Systemic issues detected", sub: `${issues.filter((d) => d.record).length} escalated · ${watchlist.length} on watchlist` },
+          { n: issues.length, label: "Systemic issues detected", sub: `${issues.filter((d) => d.recordId).length} escalated · ${watchlist.length} on watchlist` },
           { n: selected ? `${selected.block}-${selected.stack}` : "—", label: "Shown on heatmap", sub: selected ? CATEGORY_LABEL[selected.category] : "No cluster" },
         ].map((x, i) => (
           <li key={x.label} className="relative rounded-2xl bg-white p-5 shadow-sm ring-1 ring-zinc-200/70">
@@ -99,7 +110,7 @@ export default function Analytics() {
                       <span className="text-sm tabular-nums text-zinc-600">{Math.round(d.confidence * 100)}% confidence</span>
                     </div>
                     <div className="mt-3">
-                      <IssueStatus d={d} />
+                      <IssueStatus d={d} records={records} />
                     </div>
                   </button>
                 </li>
@@ -108,7 +119,7 @@ export default function Analytics() {
           )}
           {watchlist.length > 0 && (
             <div className="mt-5">
-              <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Watchlist · below {Math.round(SYSTEMIC_CONFIDENCE * 100)}% confidence</p>
+              <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Watchlist · below {Math.round(threshold * 100)}% confidence</p>
               <ul className="mt-2 space-y-1">
                 {watchlist.map((d) => (
                   <li key={d.key}>

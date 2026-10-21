@@ -111,8 +111,9 @@ export function canReopen(c: Case, now: string) {
   return c.status === "CLOSED" && !c.historical && !!c.closedAt && daysBetween(c.closedAt, now) <= RULES.gracePeriodDays;
 }
 
-/** When the buyer must sign off by: the repair date + the sign-off period. */
+/** When the buyer must sign off by: the developer's sign-off (the buyer signs after them) + the sign-off period. */
 export function signoffDeadline(c: Case) {
-  const start = c.repairedAt ?? c.verdict?.at ?? c.createdAt;
+  if (c.signoffDeadline) return c.signoffDeadline;
+  const start = c.signoff?.developer?.at ?? c.repairedAt ?? c.verdict?.at ?? c.createdAt;
   return addDays(start, RULES.signoffPeriodDays);
 }

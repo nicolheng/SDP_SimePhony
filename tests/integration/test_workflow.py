@@ -114,7 +114,9 @@ def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_pa
         "verification_result": {"protocol": "old guide"}, "verification_status": "verified",
         "triage_result": {"urgency": "HIGH"},
     })
-    fake_llm.responses = [INTAKE_JSON]
+    # intake, similar_defect, triage: triage is scripted so the shared fake LLM's keyword fallback
+    # ("water leak" -> "high urgency") doesn't decide the urgency for this test
+    fake_llm.responses = [INTAKE_JSON, '{"cluster_reason": "No earlier cases."}', "normal"]
     final = _run(state)
     assert final["recurrence_result"]["action"] == "NEW_CASE"
     # intake's vision call got the reopen photo, not the old case photo

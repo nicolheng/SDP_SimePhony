@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-# Never committed to git (a deliberately blurry photo for case 5). Remove from here once someone adds it.
-KNOWN_MISSING = {"tests/data/test_cases/images/blur.jpg"}
+# Photos expected to be missing from git (none right now).
+KNOWN_MISSING: set[str] = set()
 
 
 def test_every_case_photo_in_cases_json_exists():

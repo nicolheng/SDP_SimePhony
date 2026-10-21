@@ -3,6 +3,7 @@
 // refreshes every few seconds so other open roles/tabs see changes. If the API can't be reached, the built-in demo
 // data is shown read-only so the screens still render.
 import { useSyncExternalStore } from "react";
+import { applyReference } from "./constants";
 import { buildSeed } from "./seed";
 import type { DemoState } from "./types";
 
@@ -29,6 +30,7 @@ export function getState(): DemoState {
 }
 
 export function setState(next: DemoState) {
+  applyReference(next.reference, next.workers);
   state = next;
   apiError = null;
   status = "ready";

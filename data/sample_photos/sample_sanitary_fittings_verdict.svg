@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<defs>
+<radialGradient id="stain"><stop offset="0" stop-color="#8a6a3d" stop-opacity="0.75"/><stop offset="0.7" stop-color="#a9875a" stop-opacity="0.45"/><stop offset="1" stop-color="#c9b18a" stop-opacity="0"/></radialGradient>
+<radialGradient id="scorch"><stop offset="0" stop-color="#1c1917" stop-opacity="0.85"/><stop offset="0.6" stop-color="#57534e" stop-opacity="0.4"/><stop offset="1" stop-color="#78716c" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="640" height="480" fill="#eceae5"/><rect y="420" width="640" height="60" fill="#cfcac0"/><rect x="160" y="80" width="340" height="90" rx="20" fill="#fafafa" stroke="#c7c3bb" stroke-width="3"/><rect x="315" y="170" width="30" height="80" fill="#b9bcbf"/><path d="M330 250 v30 h60 v-25" fill="none" stroke="#b9bcbf" stroke-width="22"/><ellipse cx="330" cy="310" rx="6" ry="10" fill="#6c9bb5"/><ellipse cx="330" cy="350" rx="6" ry="10" fill="#6c9bb5"/><ellipse cx="330" cy="440" rx="100" ry="22" fill="#9fb8c4"/>
+<ellipse cx="330" cy="235" rx="200" ry="160" fill="none" stroke="#e11d48" stroke-width="5" stroke-dasharray="18 10"/><g transform="translate(470 330)"><rect width="120" height="80" rx="10" fill="#1f2937"/><rect x="12" y="12" width="96" height="34" rx="4" fill="#a7f3d0"/><text x="60" y="36" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#065f46">CHECK</text></g>
+<rect x="12" y="12" rx="6" width="272" height="26" fill="#000" opacity="0.45"/>
+<text x="20" y="30" font-family="Arial, sans-serif" font-size="14" fill="#fff">Sample photo · Sanitary fittings</text>
+</svg>

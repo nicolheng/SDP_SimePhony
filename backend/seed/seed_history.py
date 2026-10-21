@@ -348,7 +348,7 @@ def seed_history():
             if status in ("REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION", "CLOSED"):
                 t += timedelta(days=3)
                 events_to_insert.append((case_id, "repair.done", json.dumps({"note": "Repairs completed by technician."}), t.isoformat()))
-                photos_to_insert.append((case_id, f"sample_{category}_repair.jpg", "verdict", t.isoformat()))
+                photos_to_insert.append((case_id, f"sample_{category}_repair.jpg", "repair", t.isoformat()))
                 events_to_insert.append((case_id, "verification.requested", json.dumps({"protocol": f"{category}_protocol"}), (t + timedelta(minutes=10)).isoformat()))
                 buyer_messages_to_insert.append((case_id, "Repair Completed", "The repair is done. Please follow the verification guide to confirm.", t.isoformat()))
 
@@ -361,7 +361,7 @@ def seed_history():
                     f"Standard {category} verification procedure",
                     verification_result,
                     verification_note,
-                    f"verification_{case_id}.jpg",
+                    None,  # photo_path: verification photos live in case_photos
                     (t - timedelta(days=1)).isoformat(), # created_at
                     t.isoformat() if verification_result in ("FIXED", "NOT_FIXED") else None, # completed_at
                 ))
@@ -996,6 +996,10 @@ def seed_history():
         dst_c.commit()
         dst_c.close()
         src_c.close()
+        # Same as "Reset demo": add the web app's columns, clock and subcontractors, or the API fails on the copy.
+        from demo_api.migrate import migrate  # noqa: E402
+        with db.get_conn(LIVE_DB_PATH) as live:
+            migrate(live)
         print("seed_history.py completed successfully!")
 
     finally:

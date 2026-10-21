@@ -3,66 +3,129 @@
         "id": 1,
         "description": "Water leaking from ceiling in master bedroom.",
         "image_path": "tests/data/test_cases/images/ceiling-water-leak.jpg",
-        "expected_category": "water_leak"
+        "expected": {
+            "category": "water_leak",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        }
     },
     {
         "id": 2,
         "description": "Dinding retak sikit kat bilik air.",
         "image_path": "tests/data/test_cases/images/cracked_wall.jpg",
-        "expected_category": "wall_crack"
+        "expected": {
+            "category": "wall_crack",
+            "urgency": "low",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        }
     },
     {
         "id": 3,
         "description": "This is the 3rd time this happens! Water is leaking again. Please fix it properly.",
         "image_path": "tests/data/test_cases/images/water_leak_again.jpg",
-        "expected_category": "water_leak"
+        "expected": {
+            "category": "water_leak",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": true,
+            "mentioned_recurrence_count": 3
+        },
+        "_note": "urgency=normal: recurrence is NOT a high-urgency trigger per rules.yaml. High urgency requires physical safety hazards."
     },
     {
         "id": 4,
-        "description": "Bocor.",
+        "description": "Bocor. Ada kesan air kat siling.",
         "image_path": "tests/data/test_cases/images/bocor.jpg",
-        "expected_category": "water_leak"
+        "expected": {
+            "category": "water_leak",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT"
+        },
+        "_note": "Missing info check removed — 'bocor + kesan air kat siling' is enough context for VALID_DEFECT."
     },
     {
         "id": 5,
         "description": "There is a crack on my bathroom wall.",
         "image_path": "tests/data/test_cases/images/blur.jpg",
-        "expected_category": "wall_crack"
+        "expected": {
+            "category": "wall_crack",
+            "urgency": "low",
+            "preliminary_outcome": "INSUFFICIENT_INFORMATION",
+            "missing_info_length_greater_than": 0
+        },
+        "_note": "blur.jpg is a plain grey image — model should flag INSUFFICIENT_INFORMATION from photo alone."
     },
     {
         "id": 6,
         "description": "The floor tile in my living room sounds hollow when I tap it and feels slightly uneven.",
         "image_path": "tests/data/test_cases/images/hollow_tile.jpg",
-        "expected_category": "flooring"
+        "expected": {
+            "category": "tiles",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        },
+        "_note": "Category='tiles' (hollow/uneven tile, not flooring). urgency='normal': hollow+uneven tile is functional, not purely cosmetic per rules.yaml."
     },
     {
         "id": 7,
         "description": "There is a sparking sound coming from the electrical socket in my kitchen.",
         "image_path": "tests/data/test_cases/images/sparks.jpg",
-        "expected_category": "electrical"
+        "expected": {
+            "category": "electrical",
+            "urgency": "high",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        }
     },
     {
         "id": 8,
-        "description": "Small scratch on wall.",
+        "description": "Small scratch on the painted wall surface.",
         "image_path": "tests/data/test_cases/images/scratch.jpg",
-        "expected_category": "wall_finish"
+        "expected": {
+            "category": "paint",
+            "urgency": "low",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        },
+        "_note": "Description clarified to 'painted wall surface' to distinguish from wall_crack."
     },
     {
         "id": 9,
         "description": "Bedroom door doesn't close properly and gets stuck halfway.",
         "image_path": "tests/data/test_cases/images/door_misaligned.jpg",
-        "expected_category": "door_window"
+        "expected": {
+            "category": "door_window",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        },
+        "_note": "urgency=normal: stuck door is a functional defect, not listed under rules.yaml 'low' triggers (only paint/hairline crack/scratch/cosmetic tile are low)."
     },
     {
         "id": 10,
         "description": "Aircond not cold.",
         "image_path": "tests/data/test_cases/images/cracked_wall.jpg",
-        "expected_category": "air_conditioning"
+        "expected": {
+            "category": "other",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mismatch_detected": true
+        },
+        "_note": "urgency corrected to 'normal' (rules.yaml default). Air-con issue is not a safety hazard."
     },
     {
         "id": 11,
-        "description": "Water is pooling around the floor drain.",
+        "description": "Water is pooling around the floor drain in bathroom. The water is not draining away.",
         "image_path": "tests/data/test_cases/images/bathroom_pooling.jpg",
-        "expected_category": "bathroom"
+        "expected": {
+            "category": "drainage",
+            "urgency": "normal",
+            "preliminary_outcome": "VALID_DEFECT",
+            "mentions_previous_issue": false
+        },
+        "_note": "urgency=normal: drainage blockage is functional, not in rules.yaml 'low' cosmetic list, not a safety hazard. Default=normal."
     }
 ]

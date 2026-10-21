@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<defs>
+<radialGradient id="stain"><stop offset="0" stop-color="#8a6a3d" stop-opacity="0.75"/><stop offset="0.7" stop-color="#a9875a" stop-opacity="0.45"/><stop offset="1" stop-color="#c9b18a" stop-opacity="0"/></radialGradient>
+<radialGradient id="scorch"><stop offset="0" stop-color="#1c1917" stop-opacity="0.85"/><stop offset="0.6" stop-color="#57534e" stop-opacity="0.4"/><stop offset="1" stop-color="#78716c" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="640" height="480" fill="#eeeae4"/><ellipse cx="320" cy="240" rx="80" ry="70" fill="url(#scorch)"/><rect x="260" y="190" width="120" height="100" rx="10" fill="#fbfaf8" stroke="#b8b2a8" stroke-width="3"/><rect x="295" y="215" width="12" height="26" rx="2" fill="#555"/><rect x="333" y="215" width="12" height="26" rx="2" fill="#555"/><circle cx="320" cy="262" r="8" fill="#555"/>
+
+<rect x="12" y="12" rx="6" width="216" height="26" fill="#000" opacity="0.45"/>
+<text x="20" y="30" font-family="Arial, sans-serif" font-size="14" fill="#fff">Sample photo · Electrical</text>
+</svg>

@@ -1,3 +1,4 @@
+import { PROJECT_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 /** Drawn stand-in for a property photo (condo blocks at dusk). Replace with a real project image. */
@@ -10,7 +11,7 @@ export function BuildingBanner({ className }: { className?: string }) {
       return <rect key={`${x}-${i}`} x={x + 6 + c * 12} y={top + 8 + r * 14} width="7" height="8" rx="1" fill={lit ? "#fde68a" : "#dbe4ee"} opacity={lit ? 1 : 0.85} />;
     });
   return (
-    <svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMid slice" className={cn("block h-full w-full", className)} role="img" aria-label="Residensi Harmoni">
+    <svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMid slice" className={cn("block h-full w-full", className)} role="img" aria-label={PROJECT_NAME}>
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#f8c9a3" />

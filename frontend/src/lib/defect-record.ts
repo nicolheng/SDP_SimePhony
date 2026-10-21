@@ -1,6 +1,6 @@
 // Digital defect record: one approval history with role-based sign-off, shared by the on-screen card and the PDF.
 import { fmtHours } from "./agents";
-import { CATEGORY_LABEL, DEMO_BUYER, getUnit, PROJECT_NAME, REPAIR_PLAN, RULES, SDP_STAFF, TZ, workerLabel } from "./constants";
+import { CATEGORY_LABEL, DEMO_BUYER, getBuyer, getUnit, PROJECT_NAME, REPAIR_PLAN, RULES, SDP_STAFF, TZ, workerLabel } from "./constants";
 import { fmtDateTime } from "./dates";
 import { STATUS_META } from "./status";
 import type { Approval, Case } from "./types";
@@ -39,7 +39,8 @@ export function defectId(c: Pick<Case, "id" | "createdAt">) {
   return `DF-${yearOf(c.createdAt)}-${c.id.startsWith("H-") ? `H${n.padStart(4, "0")}` : n.padStart(5, "0")}`;
 }
 
-export const buyerName = (c: Pick<Case, "buyerId" | "unitId">) => (c.buyerId === DEMO_BUYER.id ? DEMO_BUYER.name : `Owner of ${c.unitId}`);
+/** The buyer's name from the buyers table (falls back to the unit when unknown). */
+export const buyerName = (c: Pick<Case, "buyerId" | "unitId">) => getBuyer(c.buyerId)?.name ?? (c.buyerId === DEMO_BUYER.id ? DEMO_BUYER.name : `Owner of ${c.unitId}`);
 
 /** The record (with its approval history) is shown once the case reaches the sign-off stage. */
 export const recordAvailable = (c: Case) => c.status === "PENDING_SIGNOFF" || !!c.signoff || !!c.autoClosedAt;
@@ -87,7 +88,7 @@ export function buildDefectRecord(c: Case, approvals: Approval[]): DefectRecord 
       desc: "SDP decision on a recurring or clustered defect",
       state: approval.status === "pending" ? "pending" : "done",
       badge: approval.status === "approved" ? "Approved" : approval.status === "rejected" ? "Rejected" : "Pending",
-      who: approval.status === "pending" ? undefined : `${SDP_STAFF.name}, ${SDP_STAFF.title}`,
+      who: approval.status === "pending" ? undefined : (approval.decidedBy ?? `${SDP_STAFF.name}, ${SDP_STAFF.title}`),
       at: approval.decidedAt,
       detail: [approval.reasons.join(" "), c.supportId ? `Joint inspection with ${workerLabel(c.supportId)}` : ""].filter(Boolean).join(" · "),
     });
