@@ -229,8 +229,9 @@ def test_every_category_step_is_safe():
 
 
 def test_outcome_fixed():
+    # Sign-off order is technician -> SDP -> buyer: the buyer's FIXED is the last one and closes the case.
     out = verification_result_node({"verification_outcome": "FIXED", "current_status": "PENDING_SIGNOFF"})
-    assert out["current_status"] == "PENDING_SIGNOFF"
+    assert out["current_status"] == "CLOSED"
     assert out["verification_status"] == "verified"
     assert out["verification_result"]["next_event"] is None
 
@@ -387,3 +388,17 @@ def test_guide_without_case_id_is_not_saved_but_still_built(state, fake_llm):
     r = verification_node(state)["verification_result"]
     assert r["verification_id"] is None and "case_id" in r["save_error"]
     assert "Look at the patched area" in r["protocol"]
+
+
+# --- rules.yaml check steps the buyer can safely and actually do ---
+def test_rules_yaml_electrical_has_the_stop_rule():
+    from agents.simephony.rules import load_rules
+    steps = " ".join(load_rules()["verification_protocols"]["electrical"]).lower()
+    assert "sparks" in steps and "stop" in steps and "do not touch anything" in steps
+
+
+def test_rules_yaml_never_sends_the_buyer_into_another_unit():
+    from agents.simephony.rules import load_rules
+    for category, steps in load_rules()["verification_protocols"].items():
+        for step in steps:
+            assert "unit above" not in step.lower(), (category, step)

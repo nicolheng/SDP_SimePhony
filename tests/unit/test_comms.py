@@ -85,16 +85,44 @@ def test_invalid_message_follows_contract(fake_llm):
     assert "condensation" in fake_llm.calls[0][-1]["content"].lower()   # tech reason reaches the prompt
 
 
-def test_assigned_message_names_booked_technician(fake_llm):
+def test_assigned_message_never_names_technician_id(fake_llm):
+    # Live qwen wrote "assigned to Technician T-01": IDs mean nothing to the buyer.
     state = {"unit_id": "A-12-08", "case_id": "C-3", "current_status": "ASSIGNED",
              "intake_result": {"category": "plumbing"},
-             "booking_result": {"assigned_technician": "T-PLUMB-1"}}
+             "booking_result": {"assigned_technician": "T-PLUMB-1", "technician_name": "Hafiz Osman"}}
     comms_node(state)
-    assert "T-PLUMB-1" in fake_llm.calls[0][-1]["content"]
+    prompt = fake_llm.calls[0][-1]["content"]
+    assert "T-PLUMB-1" not in prompt
+    assert "requested a technician visit" in prompt and "once the technician confirms" in prompt
+
+
+@pytest.mark.parametrize("draft", [
+    "Subject: Your Case Has Been Reopened\n\n\nWe have reopened your case.\n\nThank you for your patience.",
+    "Dear Resident,\n\nWe have reopened your case.\n\nThank you for your patience.",
+    "Hello Resident,\nWe have reopened your case.\n\nThank you for your patience.",
+    "Hi Aisyah,\n\nWe have reopened your case.\n\nThank you for your patience.",
+])
+def test_greeting_and_subject_lines_are_removed(fake_llm, draft):
+    fake_llm.responses = [draft]
+    _, body = _send({"current_status": "REOPENED", "case_id": "C-1"})
+    assert body == "We have reopened your case.\n\nThank you for your patience."
+
+
+def test_greeting_word_inside_a_sentence_is_kept(fake_llm):
+    fake_llm.responses = ["Hi there is an update: we have reopened your case and will call you."]
+    _, body = _send({"current_status": "REOPENED", "case_id": "C-1"})
+    assert body.startswith("Hi there is an update")
+
+
+def test_system_prompt_forbids_greeting_subject_and_technical_detail(fake_llm):
+    _send({"current_status": "REOPENED", "case_id": "C-1"})
+    system = fake_llm.calls[0][0]["content"].lower()
+    assert "no greeting" in system and "subject line" in system and "measurements" in system
 
 
 # --- Final review fix wave ---
 from agents.simephony.comms import NEUTRAL_TEMPLATES
+BOOK_STEP = "Please choose a repair time in the app."
 from agents.simephony.guardrails import scan_for_liability
 
 PROTOCOL = (
@@ -121,7 +149,7 @@ def test_rewrite_still_dangerous_uses_neutral_template(fake_llm):
     fake_llm.responses = ["We admit fault and will refund you.", "This repair is permanent and will not come back."]
     out, body = _send({"current_status": "VALID", "case_id": "C-1", "intake_result": {"category": "plumbing"}})
     assert len(fake_llm.calls) == 2
-    assert body == NEUTRAL_TEMPLATES["VALID"]
+    assert body == f"{NEUTRAL_TEMPLATES['VALID']}\n\n{BOOK_STEP}"
     assert scan_for_liability(body) == (False, [])
     assert out["comms_result"]["message"] == body
 
@@ -159,9 +187,11 @@ def test_pending_signoff_protocol_survives_neutral_fallback(fake_llm):
 
 def test_buyer_confirmed_fixed_does_not_resend_guide(fake_llm):
     fake_llm.responses = ["Thank you for confirming the repair."]
-    _, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1", "verification_status": "verified",
+    _, body = _send({"current_status": "CLOSED", "case_id": "C-1", "verification_status": "verified",
                      "verification_result": {"protocol": PROTOCOL}})
     assert PROTOCOL not in body
+    assert body.endswith("Your case is now closed.")
+    assert "final sign-off" not in fake_llm.calls[0][-1]["content"]
 
 
 def test_unsafe_llm_intro_replaced_by_template(fake_llm):
@@ -217,7 +247,7 @@ def test_rewrite_call_failure_uses_template(fake_llm):
         raise RuntimeError("timeout")
     fake_llm.client.chat.completions.create.side_effect = create
     _, body = _send({"current_status": "VALID", "case_id": "C-1"})
-    assert body == NEUTRAL_TEMPLATES["VALID"]
+    assert body == f"{NEUTRAL_TEMPLATES['VALID']}\n\n{BOOK_STEP}"
 
 
 def test_liability_trap_scenario_4_1_end_to_end(fake_llm):
@@ -248,7 +278,7 @@ def test_closing_only_on_invalid(fake_llm):
 def test_unsafe_step_replaced_by_template_for_every_status(fake_llm, status):
     fake_llm.responses = ["Please remove the cover of the electrical panel and check the wiring."]
     _, body = _send({"current_status": status, "case_id": "C-1"})
-    assert body == NEUTRAL_TEMPLATES[status]
+    assert body.split("\n\n")[0] == NEUTRAL_TEMPLATES[status]  # VALID adds its fixed booking step
     assert scan_for_unsafe_steps(body) == []
 
 
@@ -264,12 +294,32 @@ def test_empty_llm_reply_uses_fallback(fake_llm):
     assert body == "Thank you for your report."
 
 
-def test_valid_prompt_contains_category_and_note(fake_llm):
+def test_valid_prompt_asks_buyer_to_book_without_technical_note(fake_llm):
+    # Live qwen said "a repair has been scheduled" and repeated "1 square meter" from the note.
     fake_llm.responses = ["Your defect is confirmed."]
     _send({"current_status": "VALID", "case_id": "C-1", "intake_result": {"category": "wall_crack"},
-           "verdict_note": "Hairline crack confirmed."})
+           "verdict_note": "Hairline crack 1.2 mm wide over 40 cm, needs epoxy injection.",
+           "repair_estimate": {"hours": 4}})
     prompt = fake_llm.calls[0][-1]["content"]
-    assert "wall_crack" in prompt and "Hairline crack confirmed." in prompt
+    assert "wall_crack" in prompt
+    assert "Do not mention booking, scheduling or timing" in prompt
+    assert "Hairline crack" not in prompt and "epoxy" not in prompt
+
+
+def test_valid_booking_step_is_fixed_text_after_the_guardrail(fake_llm):
+    # Live qwen wrote "will begin the repair shortly" before asking the buyer to book: the next step
+    # (hours + book in the app) is fixed text, never model wording.
+    fake_llm.responses = ["Our technician has confirmed the defect in your bedroom ceiling."]
+    _, body = _send({"current_status": "VALID", "case_id": "C-1", "intake_result": {"category": "water_leak"},
+                     "repair_estimate": {"hours": 8}})
+    assert body == ("Our technician has confirmed the defect in your bedroom ceiling.\n\n"
+                    "The repair will take about 8 hours. Please choose a repair time in the app.")
+
+
+def test_valid_without_estimate_still_asks_to_book(fake_llm):
+    fake_llm.responses = ["Our technician has confirmed the defect."]
+    _, body = _send({"current_status": "VALID", "case_id": "C-1"})
+    assert body.endswith("\n\nPlease choose a repair time in the app.")
 
 
 OLD_NOTE = "Resealed the pipe joint above the wardrobe."
@@ -313,14 +363,21 @@ def test_old_rejected_reopen_result_ignored_for_other_events(fake_llm):
     fake_llm.responses = ["Your defect is confirmed."]
     _, body = _send({"current_status": "VALID", "case_id": "C-1", "event": "verdict.recorded",
                      "recurrence_result": {"action": "REJECTED", "code": "no_photo"}})
-    assert body == "Your defect is confirmed."
+    assert body == f"Your defect is confirmed.\n\n{BOOK_STEP}"
 
 
 def test_verified_fallback_does_not_mention_steps(fake_llm):
     fake_llm.responses = ["Please remove the cover of the electrical panel."]
-    _, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1", "verification_status": "verified",
+    _, body = _send({"current_status": "CLOSED", "case_id": "C-1", "verification_status": "verified",
                      "verification_result": {"protocol": PROTOCOL}})
-    assert body == NEUTRAL_TEMPLATES["PENDING_SIGNOFF_VERIFIED"]
+    assert body == "Thank you for confirming the repair.\n\nYour case is now closed."
+
+
+def test_closed_note_is_fixed_text(fake_llm):
+    # Live qwen thanked the buyer but never said the case was closed.
+    fake_llm.responses = ["Thank you for confirming the water leak repair is fixed!"]
+    _, body = _send({"current_status": "CLOSED", "case_id": "C-1", "intake_result": {"category": "water_leak"}})
+    assert body == "Thank you for confirming the water leak repair is fixed!\n\nYour case is now closed."
     assert "steps" not in body
 
 
@@ -376,7 +433,7 @@ from agents.simephony.comms import email_subject
     ({"current_status": "VALID"}, "Defect confirmed: please book a repair"),
     ({"current_status": "INVALID"}, "Inspection result"),
     ({"current_status": "PENDING_SIGNOFF", "verification_result": {"protocol": "Look."}}, "Please check the repair and sign off"),
-    ({"current_status": "PENDING_SIGNOFF", "verification_status": "verified"}, "Thank you for confirming"),
+    ({"current_status": "CLOSED", "verification_status": "verified"}, "Your case is closed"),
     ({"current_status": "REOPENED"}, "Case reopened"),
     ({"current_status": "ESCALATION_PENDING", "event": "case.reopened", "recurrence_result": {"action": "ESCALATED"}},
      "Your case is being reviewed"),

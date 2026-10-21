@@ -61,7 +61,7 @@ def test_route_event_mapping():
     assert route_event({"event": "case.reopened"}) == "recurrence"
 
 
-@pytest.mark.parametrize("event", ["verdict.recorded", "inspection.approved", "typo.event"])
+@pytest.mark.parametrize("event", ["signoff.completed", "inspection.approved", "typo.event"])
 def test_unknown_event_ends_without_running_agents(fake_llm, no_side_effects, event):
     assert route_event({"event": event}) == "unhandled_event"
     final = _run({**_reopen_state(5), "event": event, "current_status": "VALID"})
@@ -168,7 +168,7 @@ def _signoff_state(outcome, status="PENDING_SIGNOFF"):
 def test_verification_submitted_fixed_reaches_comms(fake_llm, no_side_effects):
     fake_llm.responses = ["Thank you for confirming the repair."]
     final = _run(_signoff_state("FIXED"))
-    assert final["current_status"] == "PENDING_SIGNOFF"
+    assert final["current_status"] == "CLOSED"
     assert final["verification_status"] == "verified"
     assert final["comms_result"]["message"]
     no_side_effects.assert_called_once()
@@ -318,4 +318,31 @@ def test_booking_rejected_event_rebooks_and_tells_buyer(fake_llm, no_side_effect
     assert final["current_status"] == "ASSIGNED"
     assert booking_db.assigned[-1]["case_id"] == "C-1"
     assert fake_llm.calls and "intake" not in str(fake_llm.calls[0])  # no intake/triage re-run
+    no_side_effects.assert_called_once()
+
+
+# --- verdict.recorded: technician's verdict -> repair time estimate (VALID) -> buyer update ---
+def test_valid_verdict_estimates_repair_time_then_tells_buyer(fake_llm, no_side_effects):
+    import json as _json
+    fake_llm.responses = [_json.dumps({"area": "medium", "parts_to_replace": True, "multiple_spots": False,
+                                       "needs_drying_or_curing": False}),
+                          "Our technician confirmed the defect. Please book a repair."]
+    state = {"event": "verdict.recorded", "case_id": "C-1", "unit_id": "A-12-08", "current_status": "VALID",
+             "intake_result": {"category": "water_leak"}, "verdict_note": "Joint leaking; replace the elbow.",
+             "comms_result": {}}
+    assert route_event(state) == "repair_estimate"
+    final = _run(state)
+    assert final["repair_estimate"]["hours"] == 8  # water leak 4 h + parts to replace -> 3 blocks -> a day
+    # the estimate reaches the buyer as fixed text, with the booking step
+    assert final["comms_result"]["message"].endswith(
+        "The repair will take about 8 hours. Please choose a repair time in the app.")
+    no_side_effects.assert_called_once()
+
+
+def test_invalid_verdict_skips_estimate_and_tells_buyer(fake_llm, no_side_effects):
+    fake_llm.responses = ["Our technician found this is not a developer defect."]
+    final = _run({"event": "verdict.recorded", "case_id": "C-1", "current_status": "INVALID",
+                  "intake_result": {"category": "water_leak"}, "verdict_note": "Condensation.", "comms_result": {}})
+    assert final["repair_estimate"]["skipped"]
+    assert len(fake_llm.calls) == 1
     no_side_effects.assert_called_once()

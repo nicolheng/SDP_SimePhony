@@ -257,7 +257,9 @@ def verification_result_node(state: dict) -> dict:
         return state
     result["next_event"] = None
     if outcome == "FIXED":
-        state["current_status"] = "PENDING_SIGNOFF"
+        # Sign-off order is technician -> SDP -> buyer (tools.record_verification refuses FIXED before the
+        # SDP sign-off), so the buyer's FIXED is the last sign-off and closes the case.
+        state["current_status"] = "CLOSED"
         state["verification_status"] = "verified"
     elif outcome == "NOT_FIXED":
         # CONTRACTS: NOT_FIXED needs a new photo and reopens the case; RecurrenceAgent checks escalation next.

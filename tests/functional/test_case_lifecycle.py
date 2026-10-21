@@ -72,7 +72,7 @@ REPAIR_NOTE = "Resealed the pipe joint above the shower and replaced the stained
 
 MSG_ASSIGNED = "A technician has been assigned to your water leak case. We will share the visit slot soon."
 MSG_REPAIR_INTRO = "The technician has completed the repair. Please check it using the steps below before signing off."
-MSG_THANKS = "Thank you for checking the repair. Your case now waits for final sign-off."
+MSG_THANKS = "Thank you for checking the repair."
 MSG_REOPENED = "Your case has been reopened. We will arrange a technician visit."
 MSG_ESCALATED = "Your case has been referred to our team for a further inspection."
 MSG_VALID = "Our technician confirmed the defect still needs work. We will arrange another repair visit."
@@ -207,11 +207,11 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert mail["subject"] == "[C-0001] Please check the repair and sign off"
     assert guide in mail["body"]
 
-    # 3. buyer submits FIXED -> still waiting for sign-off, no guide re-sent
+    # 3. buyer submits FIXED (SDP signed first) -> the last sign-off closes the case, no guide re-sent
     s = _step(fake_llm, s, "verification.submitted", [MSG_THANKS], verification_outcome="FIXED")
-    assert s["current_status"] == "PENDING_SIGNOFF"
+    assert s["current_status"] == "CLOSED"
     assert s["verification_status"] == "verified"
-    assert _emails(world)[-1]["body"] == MSG_THANKS
+    assert _emails(world)[-1]["body"] == f"{MSG_THANKS}\n\nYour case is now closed."
 
     # 4. both parties sign -> CLOSED (outside world); buyer reopens within grace
     s = _step(fake_llm, {**s, "current_status": "CLOSED", "closed_at": _days_ago(5)},
@@ -236,7 +236,7 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     mails = _emails(world)
     assert [m["subject"] for m in mails] == [
         "[C-0001] We've received your report", "[C-0001] Please check the repair and sign off",
-        "[C-0001] Thank you for confirming", "[C-0001] Case reopened", "[C-0001] Your case is being reviewed",
+        "[C-0001] Your case is closed", "[C-0001] Case reopened", "[C-0001] Your case is being reviewed",
     ]
     assert {m["to"] for m in mails} == {BUYER}
     assert {m["case_id"] for m in mails} == {CASE}
@@ -354,7 +354,7 @@ def test_technician_rejection_reassigns(fake_llm, world, tmp_path):
     assert s["tried_technicians"] == ["T-PLUMB-1"]
     assert s["reassignment_count"] == 1
     assert s["current_status"] == "ASSIGNED"
-    assert "T-PLUMB-2" in _user_text(fake_llm.calls[-1])  # comms names the new technician
+    assert "T-PLUMB" not in _user_text(fake_llm.calls[-1])  # buyer never sees technician IDs
     assert len(_emails(world)) == 1
     _assert_emails_safe(world)
 
