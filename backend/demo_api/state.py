@@ -9,7 +9,8 @@ from .timeutil import local_day, norm, parse
 from .workflow import UPLOADS_DIR, Ctx, signoff_deadline
 
 PHOTO_KINDS = {"original", "reopen", "verdict", "repair", "verification"}
-# Seeded cases have no real photos; their sample_<category>_<kind>.jpg rows are drawn by backend/seed/make_sample_photos.py.
+# Seeded cases point to sample_<category>_<kind>.jpg in data/sample_photos: a real photo where one exists, otherwise the
+# SVG drawn by backend/seed/make_sample_photos.py.
 SAMPLE_PHOTOS_DIR = config.ROOT / "data" / "sample_photos"
 
 
@@ -88,8 +89,11 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             return None
         if (UPLOADS_DIR / path).is_file():
             return f"{base_url}/uploads/{path}"
-        sample = Path(path).with_suffix(".svg").name
-        return f"{base_url}/samples/{sample}" if (SAMPLE_PHOTOS_DIR / sample).is_file() else None
+        # A real sample photo (.jpg) if there is one, else the drawn stand-in (.svg).
+        for sample in (Path(path).name, Path(path).with_suffix(".svg").name):
+            if (SAMPLE_PHOTOS_DIR / sample).is_file():
+                return f"{base_url}/samples/{sample}"
+        return None
 
     cases = []
     for r in rows("SELECT * FROM cases ORDER BY created_at"):

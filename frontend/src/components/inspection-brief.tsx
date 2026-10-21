@@ -16,7 +16,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
   return (
     <div className="space-y-4 text-sm">
       <p className="flex items-center gap-1.5 text-[11px] font-medium text-violet-700">
-        <Bot className="size-3.5" /> InitialInspectionAgent · generated {fmtDate(b.generatedAt)}
+        <Bot className="size-3.5" /> Initial Inspection Agent · generated {fmtDate(b.generatedAt)}
       </p>
 
       <div>

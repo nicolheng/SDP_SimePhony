@@ -192,7 +192,7 @@ export function CaseDetail() {
                   <Clock className="size-4 shrink-0" />
                   {c.signoffOverdueAt
                     ? "The sign-off period has passed. Our team will contact you; you can still sign off below."
-                    : `Please sign off by ${fmtDateTime(deadline)} (${signoffDaysLeft} day(s) left). ${
+                    : `Please sign off by ${fmtDate(deadline)} (${signoffDaysLeft} day(s) left). ${
                         c.urgency === "high" ? "After that our team will follow up." : "After that the case closes automatically."
                       }`}
                 </p>
@@ -325,7 +325,7 @@ export function CaseDetail() {
                 </ul>
               </Section>
             )}
-            <PreviousReports c={c} />
+            <PreviousReports c={c} buyer />
           </>
         )}
 

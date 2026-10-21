@@ -11,7 +11,7 @@ import sqlite3
 import tools
 
 from . import agents, config
-from .timeutil import add_days, demo_now, fmt_datetime, norm, parse
+from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
 signoff_deadline = tools.signoff_deadline
@@ -209,7 +209,7 @@ def developer_signoff(ctx: Ctx, case_id: str) -> None:
     if r["status"] == "CLOSED":
         notify_buyer(ctx, case_id, "closed")
     else:
-        notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_datetime(signoff_deadline(load_case(ctx, case_id))))
+        notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(signoff_deadline(load_case(ctx, case_id))))
 
 
 def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> None:

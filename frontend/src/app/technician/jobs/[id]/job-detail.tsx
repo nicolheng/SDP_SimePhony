@@ -10,6 +10,7 @@ import { buyerName, recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { EmptyState, MobileHeader, PrimaryButton, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
+import { SimilarDefects } from "@/components/similar-defects";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
 import { CATEGORY_LABEL, getUnit, workerLabel } from "@/lib/constants";
@@ -223,7 +224,7 @@ export function JobDetail() {
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
                   maxLength={500}
-                  placeholder="The VerificationAgent uses this to build the buyer's sign-off checklist."
+                  placeholder="The Verification Agent uses this to build the buyer's sign-off checklist."
                   className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
                 />
                 <p className="-mt-1 text-right text-xs text-zinc-400">{note.length} / 500</p>
@@ -253,7 +254,7 @@ export function JobDetail() {
                 <Sparkles className="size-4 text-violet-600" /> AI assistance
               </h2>
               <div className="space-y-3">
-                <AgentCard agent="IntakeAgent">
+                <AgentCard agent="Intake Agent">
                   <dl>
                     <Row label="Category">
                       {CATEGORY_LABEL[c.category]} › {c.subCategory}
@@ -265,17 +266,13 @@ export function JobDetail() {
                   </dl>
                 </AgentCard>
                 {c.inspectionBrief && (
-                  <AgentCard agent="InitialInspectionAgent: inspection brief">
+                  <AgentCard agent="Initial Inspection Agent: inspection brief">
                     <InspectionBriefView c={c} interactive={inspecting} />
                   </AgentCard>
                 )}
-                {c.verificationGuide && (
-                  <AgentCard agent="VerificationAgent: checklist sent to the buyer">
-                    <ol className="list-decimal space-y-1 pl-4 text-xs">
-                      {c.verificationGuide.steps.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ol>
+                {c.similar.some((s) => s.unitId !== c.unitId) && (
+                  <AgentCard agent="Similar Defect Agent: same stack">
+                    <SimilarDefects c={c} />
                   </AgentCard>
                 )}
               </div>
@@ -289,7 +286,7 @@ export function JobDetail() {
                   {c.repairedAt && <Row label="Repaired">{fmtDate(c.repairedAt)}</Row>}
                   {c.reopenCount > 0 && <Row label="Reopened">{c.reopenCount}×</Row>}
                 </dl>
-                {c.verdict?.note && <p className="mt-2 text-sm text-zinc-700">&ldquo;{c.verdict.note}&rdquo;</p>}
+                {c.verdict?.note && <p className="mt-2 text-sm text-zinc-700">Inspection: {c.verdict.note}</p>}
                 {c.repairNote && <p className="mt-1 text-sm text-zinc-700">Repair: {c.repairNote}</p>}
                 {evidence.length > 0 && (
                   <div className="mt-3 grid grid-cols-3 gap-2">

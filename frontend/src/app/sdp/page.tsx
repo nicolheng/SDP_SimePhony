@@ -35,7 +35,7 @@ export default function SdpOverview() {
           <ShieldAlert className="size-6 shrink-0" />
           <div className="flex-1">
             <p className="font-semibold">{pending.length} extra inspection request(s) waiting for your decision</p>
-            <p className="text-base text-white/80">The RecurrenceAgent found a recurring or clustered defect. A human decides.</p>
+            <p className="text-base text-white/80">The Recurrence Agent found a recurring or clustered defect. A human decides.</p>
           </div>
           <ArrowRight className="size-5" />
         </Link>

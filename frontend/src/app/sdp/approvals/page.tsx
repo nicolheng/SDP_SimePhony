@@ -22,7 +22,7 @@ export default function Approvals() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageTitle title="Approvals" sub="Extra inspection requests raised by the RecurrenceAgent. The agent recommends; SDP staff decide." />
+      <PageTitle title="Approvals" sub="Extra inspection requests raised by the Recurrence Agent. The agent recommends; SDP staff decide." />
       {pending.length === 0 && (
         <Panel>
           <div className="py-8 text-center">

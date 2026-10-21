@@ -7,7 +7,12 @@ import type { Case, Category, VerificationGuide } from "./types";
 
 export const repairBlocks = (hours: number) => Math.min(SLOT_TIMES.length, Math.max(1, Math.ceil(hours / SLOT_HOURS)));
 
-export const fmtHours = (h: number) => (h >= 8 ? "about 1 day" : `about ${h % 1 ? h.toFixed(1) : h} hour${h === 1 ? "" : "s"}`);
+// ---------- Agent names ----------
+
+/** Display name for an agent id: "InitialInspectionAgent" -> "Initial Inspection Agent". */
+export const agentLabel = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1 $2");
+
+export const fmtHours =(h: number) => (h >= 8 ? "about 1 day" : `about ${h % 1 ? h.toFixed(1) : h} hour${h === 1 ? "" : "s"}`);
 
 // ---------- VerificationAgent ----------
 // Predefined protocol per category, filled with this case's details only. No general advice.
