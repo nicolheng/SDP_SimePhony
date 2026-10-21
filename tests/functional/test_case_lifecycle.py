@@ -42,6 +42,7 @@ import pytest
 
 from agents.simephony import booking, comms, escalation, recurrence, similar_defect
 from agents.simephony.comms import INVALID_CLOSING
+from agents.simephony.verification import IF_FAILS
 from agents.simephony.guardrails import scan_for_liability, scan_for_unsafe_steps
 from agents.simephony.workflow import agent_app
 
@@ -209,7 +210,7 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert s["verification_result"]["needs_technician_input"] is False
     assert "master bathroom ceiling" in guide
     assert "Run the shower for a few minutes" in guide
-    assert "do not sign off. Reopen the case within 30 days with a new photo." in guide
+    assert IF_FAILS in guide  # web app wording: choose "Still not fixed" and add a photo
     mail = _emails(world)[-1]
     assert mail["subject"] == "[C-0001] Please check the repair and sign off"
     assert guide in mail["body"]

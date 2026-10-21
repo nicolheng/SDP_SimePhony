@@ -22,3 +22,13 @@ def check_escalation(case_id: str) -> dict:
 def request_extra_inspection(case_id: str, reasons: list[str]) -> dict:
     """Ask SDP to approve an extra inspection (-> ESCALATION_PENDING, approval row, SDP email)."""
     return tools.request_extra_inspection(case_id, reasons)
+
+
+def get_verification_protocol(category: str) -> dict:
+    """Safe post-repair checks for a category from rules.yaml verification_protocols: {matched, steps}."""
+    return tools.get_verification_protocol(category)
+
+
+def start_verification(case_id: str, guide: dict) -> dict:
+    """Save the buyer's check guide {intro, steps, ifFails} (REPAIRED -> PENDING_SIGNOFF in the DB)."""
+    return tools.start_verification(case_id, guide)

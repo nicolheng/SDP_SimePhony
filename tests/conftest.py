@@ -217,3 +217,18 @@ def escalation_db(monkeypatch):
     monkeypatch.setattr(backend_tools, "check_escalation", fake.check)
     monkeypatch.setattr(recurrence, "request_extra_inspection", fake.request)
     return fake
+
+
+# ---------------------------------------------------------------------------
+# Safety net: tests never write the live data/simephony.db through tools.py
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _no_live_db_writes(request, monkeypatch):
+    """Unless a test asks for `seed_db` (a temp copy), agent calls that write the DB are faked."""
+    if "seed_db" in request.fixturenames:
+        return
+    from agents.simephony import backend_tools, recurrence
+    monkeypatch.setattr(backend_tools, "start_verification",
+                        MagicMock(return_value={"ok": True, "verification_id": "V-STUB", "status": "PENDING_SIGNOFF"}))
+    monkeypatch.setattr(recurrence, "request_extra_inspection",
+                        MagicMock(return_value={"ok": False, "error": "live DB writes are disabled in tests"}))
