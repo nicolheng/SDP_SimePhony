@@ -168,3 +168,52 @@ def recurring_similar_cases():
         {"case_id": "C-001", "unit_id": "A-12-08", "category": "water_leak", "status": "CLOSED", "counts_toward_escalation": True},
         {"case_id": "C-002", "unit_id": "A-12-08", "category": "water_leak", "status": "CLOSED", "counts_toward_escalation": True},
     ]
+
+# ---------------------------------------------------------------------------
+# Temporary copy of data/seed.db for tests that call backend/tools.py (opt-in)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def seed_db(tmp_path, monkeypatch):
+    """Point backend/tools.py at a fresh copy of data/seed.db; the live DB, uploads/ and Gmail are untouched."""
+    import shutil
+    backend = os.path.join(_ROOT, "backend")
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
+    import db
+    import tools
+
+    path = tmp_path / "seed_copy.db"
+    shutil.copyfile(os.path.join(_ROOT, "data", "seed.db"), path)
+    monkeypatch.setattr(db, "DB_PATH", path)
+    monkeypatch.setattr(tools, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setenv("EMAIL_ENABLED", "false")
+    monkeypatch.setenv("EMBEDDINGS_ENABLED", "false")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Fake escalation tools for graph tests that use made-up case ids (no DB)
+# ---------------------------------------------------------------------------
+class FakeEscalationDB:
+    """Stands in for tools.check_escalation: set `earlier` (same-unit cases before this one),
+    `stack_units` (units in the stack with this defect, incl. this one) and `pending` (approval id)."""
+
+    def __init__(self):
+        self.earlier, self.stack_units, self.pending, self.db_reopens = 0, 1, None, 0
+        self.calls: list[str] = []
+        self.request = MagicMock(return_value={"ok": True, "approval_id": "APR-STUB", "issue_id": "SI-STUB"})
+
+    def check(self, case_id):
+        self.calls.append(case_id)
+        reasons = [f"{self.stack_units} units in stack A-08 have the same problem."] if self.stack_units >= 3 else []
+        return {"case_id": case_id, "occurrence_count": self.earlier + 1, "reopen_count": self.db_reopens,
+                "stack_unit_count": self.stack_units, "reasons": reasons, "pending_approval_id": self.pending}
+
+
+@pytest.fixture
+def escalation_db(monkeypatch):
+    from agents.simephony import backend_tools, recurrence
+    fake = FakeEscalationDB()
+    monkeypatch.setattr(backend_tools, "check_escalation", fake.check)
+    monkeypatch.setattr(recurrence, "request_extra_inspection", fake.request)
+    return fake

@@ -23,11 +23,9 @@ def state():
 
 
 @pytest.fixture(autouse=True)
-def stubs():
-    with patch("agents.simephony.escalation.get_stack_cases", return_value=[]) as gs, \
-         patch("agents.simephony.recurrence.request_extra_inspection",
-               return_value={"approval_id": "APR-STUB"}) as ri:
-        yield gs, ri
+def stubs(escalation_db):
+    # (fake tools.check_escalation, fake request_extra_inspection) -- see tests/conftest.py
+    return escalation_db, escalation_db.request
 
 
 def test_first_reopen_within_grace(state, stubs):
@@ -49,19 +47,16 @@ def test_second_reopen_escalates(state, stubs):
     assert out["current_status"] == "ESCALATION_PENDING"
     assert r["action"] == "ESCALATED"
     assert r["approval_id"] == "APR-STUB"
-    assert "3rd occurrence" in r["escalation_reasons"]
+    assert r["escalation_reasons"][0].startswith("Reported 3 times in this unit")
     stubs[1].assert_called_once_with("H-NEW", r["escalation_reasons"])
 
 
 def test_first_reopen_stack_cluster_escalates(state, stubs):
-    stubs[0].return_value = [
-        {"case_id": "H-1", "category": "water_leak", "status": "OPEN"},
-        {"case_id": "H-2", "category": "water_leak", "status": "CLOSED"},
-    ]
+    stubs[0].stack_units = 3  # 2 other units in the stack with the same defect
     out = recurrence_node(state, now=NOW)
     r = out["recurrence_result"]
     assert out["current_status"] == "ESCALATION_PENDING"
-    assert r["escalation_reasons"] == ["stack cluster"]
+    assert r["escalation_reasons"] == ["3 units in stack A-08 have the same problem."]
     assert r["cluster_size"] == 3
     assert r["approval_id"] == "APR-STUB"
 
@@ -187,4 +182,20 @@ def test_escalation_after_failed_check_on_third_occurrence(stubs):
     r = out["recurrence_result"]
     assert out["current_status"] == "ESCALATION_PENDING"
     assert r["action"] == "ESCALATED" and r["occurrence"] == 3 and r["approval_id"] == "APR-STUB"
-    stubs[1].assert_called_once_with("H-NEW", ["3rd occurrence"])
+    stubs[1].assert_called_once()
+    assert stubs[1].call_args.args[1][0].startswith("Reported 3 times in this unit")
+
+
+def test_earlier_cases_plus_reopens_escalate(stubs):
+    stubs[0].earlier = 1  # one earlier case in the unit + this case + 1 reopen = 3rd occurrence
+    out = reopen_escalation_node(_already_reopened(1))
+    assert out["recurrence_result"]["occurrence"] == 3
+    assert out["current_status"] == "ESCALATION_PENDING"
+
+
+def test_refused_request_keeps_case_reopened(stubs):
+    stubs[1].return_value = {"ok": False, "error": "Case H-NEW already has a pending extra-inspection request"}
+    out = reopen_escalation_node(_already_reopened(2))
+    r = out["recurrence_result"]
+    assert out["current_status"] == "REOPENED"
+    assert r["action"] == "REOPENED" and "pending" in r["error"]

@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+from .backend_tools import request_extra_inspection
 from .escalation import check_escalation
 from .rules import load_rules
-from .stub_tools import request_extra_inspection
 
 
 MYT = timezone(timedelta(hours=8))  # grace period counts calendar days in Malaysia time
@@ -16,12 +16,14 @@ def _myt_date(dt: datetime):
 
 def _result(accepted: bool, reason: str, action: str, occurrence: int,
             cluster_size: int = 0, reasons: list | None = None, approval_id: str | None = None,
-            code: str | None = None) -> dict:
+            code: str | None = None, issue_id: str | None = None, error: str | None = None) -> dict:
     return {
         "accepted": accepted, "reason": reason, "occurrence": occurrence,
         "cluster_size": cluster_size, "escalation_reasons": reasons or [],
         "approval_id": approval_id, "action": action,
         "code": code,  # why a reopen was refused, for the buyer reply (comms REOPEN_REJECTED)
+        "issue_id": issue_id,  # systemic issue the extra-inspection request is linked to (e.g. SI-002)
+        "error": error,  # why escalation could not be checked or requested, for the trace
     }
 
 
@@ -63,17 +65,23 @@ def reopen_escalation_node(state: dict) -> dict:
 
 
 def _escalate_or_reopen(state: dict, reason: str) -> dict:
-    occurrence = state.get("reopen_count", 0) + 1
-    category = (state.get("intake_result") or {}).get("category")
-    esc = check_escalation(state["case_id"], state["unit_id"], category, occurrence)
+    esc = check_escalation(state["case_id"], state.get("reopen_count", 0))
+    occurrence = esc["occurrence"]
 
     if esc["escalate"]:
         approval = request_extra_inspection(state["case_id"], esc["reasons"])
-        state["current_status"] = "ESCALATION_PENDING"
-        state["recurrence_result"] = _result(
-            True, "Reopened and escalated for extra inspection", "ESCALATED",
-            occurrence, esc["cluster_size"], esc["reasons"], approval.get("approval_id"))
-    else:
-        state["current_status"] = "REOPENED"
-        state["recurrence_result"] = _result(True, reason, "REOPENED", occurrence, esc["cluster_size"])
+        if approval.get("ok") is not False:
+            state["current_status"] = "ESCALATION_PENDING"
+            state["recurrence_result"] = _result(
+                True, "Reopened and escalated for extra inspection", "ESCALATED", occurrence, esc["cluster_size"],
+                esc["reasons"], approval.get("approval_id"), issue_id=approval.get("issue_id"))
+            return state
+        # tools.py refused (e.g. the case changed status meanwhile): stay reopened, keep why for the trace
+        print(f"[RECURRENCE] Extra inspection for {state['case_id']} refused: {approval.get('error')}")
+        esc = {**esc, "error": approval.get("error")}
+
+    state["current_status"] = "REOPENED"
+    state["recurrence_result"] = _result(
+        True, reason, "REOPENED", occurrence, esc["cluster_size"], esc["reasons"],
+        esc.get("pending_approval_id"), error=esc.get("error"))
     return state

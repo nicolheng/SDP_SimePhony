@@ -24,9 +24,10 @@ def _run(state):
 
 
 @pytest.fixture
-def no_side_effects():
-    with patch("agents.simephony.comms.send_email") as mail,          patch("agents.simephony.escalation.get_stack_cases", return_value=[]),          patch("agents.simephony.recurrence.request_extra_inspection",
-               return_value={"approval_id": "AP-1"}):
+def no_side_effects(escalation_db):
+    # escalation goes through fake tools (tests/conftest.py escalation_db); only the email is patched here
+    escalation_db.request.return_value = {"ok": True, "approval_id": "AP-1"}
+    with patch("agents.simephony.comms.send_email") as mail:
         yield mail
 
 

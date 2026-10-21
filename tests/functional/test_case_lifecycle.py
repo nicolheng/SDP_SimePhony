@@ -14,8 +14,8 @@ Scenario triage (docs/TEST_SCENARIOS.md, checked against CONTRACTS.md §1/§7 an
 |---|---|---|
 | 1.1 New case -> triage -> booking | PARTIAL | Tested: intake -> similar_defect -> triage -> booking -> comms reaches ASSIGNED with a plumbing technician and one buyer email. Blockers: create_case / assign_technician / book_slot / send_email in backend/tools.py raise NotImplementedError, so agents use agents/simephony/stub_tools.py and nothing is written to simephony.db (no `case_status`, `urgency` or `outbox` row to check); stub send_email does not write the outbox; book_slot is never called, so there is no BOOKED / VISIT_SCHEDULED state; triage emits HIGH/NORMAL, not "URGENT". |
 | 1.2 Repair done -> verification -> closure | PARTIAL | Tested: repair.done -> photo check -> PENDING_SIGNOFF with the buyer guide in the email; FIXED keeps PENDING_SIGNOFF. Blocker: no agent ever sets CLOSED. Sign-off needs record_signoff (P3, NotImplementedError); by design vision is advisory and never closes a case. CLOSED + closed_at are simulated here. |
-| 2.1 Reopen -> recurrence loop | PARTIAL | Tested: reopen #1 -> REOPENED (reopen_count 1); reopen #2 -> ESCALATION_PENDING and request_extra_inspection called (D1: occurrence = reopen_count + 1, so the 2nd reopen is the 3rd occurrence; the doc's "reopen_count=3" is out of date). Blockers: agents import the stub request_extra_inspection (the real P4 one in backend/tools.py is not wired), so no approvals row / outbox "Extra Inspection Approval" mail; no "alert the technician" step on the 2nd occurrence exists. |
-| 2.2 Vertical stack cluster | PARTIAL | Tested: on the 1st reopen, get_stack_cases (patched) returning 2 other same-category, non-INVALID cases escalates with reason "stack cluster". Blockers: no `zone_mapping` table (block + stack from `units` is used instead); stub get_stack_cases returns []; no 48-hour window; the check only runs on case.reopened, never on case.created, so three fresh reports never cluster; no "Stack Cluster Detected" log. |
+| 2.1 Reopen -> recurrence loop | PARTIAL | Tested: reopen #1 -> REOPENED (reopen_count 1); reopen #2 -> ESCALATION_PENDING and request_extra_inspection called (D1: occurrence = reopen_count + 1, so the 2nd reopen is the 3rd occurrence; the doc's "reopen_count=3" is out of date). RecurrenceAgent now calls tools.check_escalation + tools.request_extra_inspection (real-DB tests in tests/integration/test_recurrence_tools.py); here they are faked. Blocker: no "alert the technician" step on the 2nd occurrence exists. |
+| 2.2 Vertical stack cluster | PARTIAL | Tested: on the 1st reopen, tools.check_escalation reporting 3 stack units escalates with tools' stack reason (real seed.db: tests/unit/test_escalation.py). Blockers: no `zone_mapping` table (block + stack from `units` is used instead); no 48-hour window; the check only runs on case.reopened, never on case.created, so three fresh reports never cluster; no "Stack Cluster Detected" log. |
 | 3.1 No available slots | PARTIAL | Tested: every technician rejects -> booking loop ends (no infinite loop) at ESCALATION_PENDING with one buyer email. Blockers: no PENDING_SLOT status in CONTRACTS §1 and no "High Demand" / delay notice template; no 7-day look-ahead (get_available_slots is a stub with no date range); no outbox. |
 | 3.2 Expired grace reopen | TESTABLE NOW | Tested: reopen 40 days after close -> NEW_CASE -> prepare_new_case -> full new-case chain on the reopen photo, case_id "C-NEW"; the caller's CLOSED state is untouched. Caveat: "C-NEW" is a fixed placeholder until create_case (P3) issues real ids. |
 | 4.1 Liability trap | TESTABLE NOW | Covered by tests/unit/test_comms.py and tests/integration/test_comms_guardrail_integration.py (scripted liable draft -> rewrite -> neutral template). Here every email of every lifecycle step is also run through scan_for_liability and scan_for_unsafe_steps. Real-model behaviour only under `-m live_llm`. |
@@ -151,23 +151,21 @@ def _assert_emails_safe(world):
 
 
 @pytest.fixture
-def world(monkeypatch):
+def world(monkeypatch, escalation_db):
     """Patch every tool where the agents look it up; nothing touches the DB or the network."""
     w = SimpleNamespace(
         send_email=MagicMock(return_value={"status": "stub_sent"}),
         get_unit=MagicMock(side_effect=lambda unit_id: {
             "unit_id": unit_id, "block": "A", "floor": 12, "stack": "08",
             "contractor": "Contractor X", "buyer": {"buyer_id": "B-0001", "email": BUYER}}),
-        get_stack_cases=MagicMock(return_value=[]),
-        request_extra_inspection=MagicMock(return_value={"approval_id": "APR-1"}),
+        escalation=escalation_db,  # fake tools.check_escalation (tests/conftest.py)
+        request_extra_inspection=escalation_db.request,
         get_available_slots=MagicMock(return_value={"slots": [dict(s) for s in SLOTS]}),
         assign_technician=MagicMock(return_value={"ok": True}),
     )
     monkeypatch.setattr(comms, "send_email", w.send_email)
     monkeypatch.setattr(comms, "get_unit", w.get_unit)
-    monkeypatch.setattr(escalation, "get_unit", w.get_unit)
-    monkeypatch.setattr(escalation, "get_stack_cases", w.get_stack_cases)
-    monkeypatch.setattr(recurrence, "request_extra_inspection", w.request_extra_inspection)
+    escalation_db.request.return_value = {"ok": True, "approval_id": "APR-1", "issue_id": "SI-002"}
     monkeypatch.setattr(booking, "get_available_slots", w.get_available_slots)
     monkeypatch.setattr(booking, "assign_technician", w.assign_technician)
     # similar_defect would otherwise read data/simephony.db through backend/tools.py
@@ -229,7 +227,7 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert s["reopen_count"] == 1
     assert s["recurrence_result"]["action"] == "REOPENED"
     assert s["recurrence_result"]["occurrence"] == 2
-    world.get_stack_cases.assert_called_with("A", "08")
+    assert world.escalation.calls[-1] == CASE  # tools.check_escalation asked about this case
     world.request_extra_inspection.assert_not_called()
 
     # 5. repaired and closed again (outside world); 2nd reopen = 3rd occurrence (D1)
@@ -238,9 +236,9 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert s["current_status"] == "ESCALATION_PENDING"
     assert s["reopen_count"] == 2
     assert s["recurrence_result"]["occurrence"] == 3
-    assert s["recurrence_result"]["escalation_reasons"] == ["3rd occurrence"]
+    assert s["recurrence_result"]["escalation_reasons"][0].startswith("Reported 3 times in this unit")
     assert s["recurrence_result"]["approval_id"] == "APR-1"
-    world.request_extra_inspection.assert_called_once_with(CASE, ["3rd occurrence"])
+    world.request_extra_inspection.assert_called_once_with(CASE, s["recurrence_result"]["escalation_reasons"])
 
     mails = _emails(world)
     assert [m["subject"] for m in mails] == [
@@ -320,7 +318,7 @@ def test_invalid_case_cannot_be_reopened(fake_llm, world, tmp_path):
     assert s["recurrence_result"]["accepted"] is False
     assert s["recurrence_result"]["action"] == "REJECTED"
     assert "INVALID" in s["recurrence_result"]["reason"]
-    world.get_stack_cases.assert_not_called()
+    assert world.escalation.calls == []
     world.request_extra_inspection.assert_not_called()
     assert s["recurrence_result"]["code"] == "invalid_case"
     # rejected reopen: the buyer is told why it can't be reopened and what to do instead
@@ -331,13 +329,9 @@ def test_invalid_case_cannot_be_reopened(fake_llm, world, tmp_path):
 
 
 def test_stack_cluster_escalates_on_first_reopen(fake_llm, world, tmp_path):
-    world.get_stack_cases.return_value = [
-        {"case_id": "C-1101", "category": "water_leak", "status": "CLOSED"},
-        {"case_id": "C-1301", "category": "water_leak", "status": "REOPENED"},
-        {"case_id": "C-1401", "category": "water_leak", "status": "INVALID"},   # not counted
-        {"case_id": "C-1501", "category": "paint", "status": "CLOSED"},         # other category
-        {"case_id": CASE, "category": "water_leak", "status": "CLOSED"},        # this case
-    ]
+    # tools.check_escalation: 3 units in stack A-08 with this defect (INVALID / other categories are
+    # filtered by tools.py itself; covered on a real seed.db in tests/unit/test_escalation.py)
+    world.escalation.stack_units = 3
     closed = _closed_case(fake_llm, world, tmp_path)
 
     s = _step(fake_llm, closed, "case.reopened", [MSG_ESCALATED],
@@ -346,8 +340,9 @@ def test_stack_cluster_escalates_on_first_reopen(fake_llm, world, tmp_path):
     assert s["current_status"] == "ESCALATION_PENDING"
     assert s["reopen_count"] == 1
     assert s["recurrence_result"]["cluster_size"] == 3
-    assert s["recurrence_result"]["escalation_reasons"] == ["stack cluster"]
-    world.request_extra_inspection.assert_called_once_with(CASE, ["stack cluster"])
+    assert s["recurrence_result"]["escalation_reasons"] == ["3 units in stack A-08 have the same problem."]
+    assert s["recurrence_result"]["issue_id"] == "SI-002"
+    world.request_extra_inspection.assert_called_once_with(CASE, s["recurrence_result"]["escalation_reasons"])
     _assert_emails_safe(world)
 
 
