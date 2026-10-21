@@ -41,6 +41,17 @@ function stepTimes(c: Case, events: CaseEvent[]): string[] {
   ];
 }
 
+/** When each case last moved (its latest event, or when it was reported), and the cases sorted newest first. */
+export function useRecentActivity(cases: Case[]) {
+  const events = useDemo((s) => s.events);
+  return useMemo(() => {
+    const last = new Map<string, string>();
+    for (const e of events) if (e.caseId && e.at > (last.get(e.caseId) ?? "")) last.set(e.caseId, e.at);
+    const lastAt = (c: Case) => last.get(c.id) ?? c.createdAt;
+    return { sorted: [...cases].sort((a, b) => lastAt(b).localeCompare(lastAt(a))), lastAt };
+  }, [cases, events]);
+}
+
 /** Vertical progress list, styled after the SDP app's Construction Progress screen. */
 export function CaseProgress({ c }: { c: Case }) {
   const events = useCaseEvents(c.id);

@@ -1227,12 +1227,13 @@ def log_agent_step(case_id: Optional[str], agent: str, message: str, data: Optio
 # Their error messages are shown to people in the web app.
 # =====================================================================
 
-def _log_assignment(conn: sqlite3.Connection, case_id: str, worker_id: str, outcome: str,
+def _log_assignment(conn: sqlite3.Connection, case_id: str, worker_id: str, outcome: str, job: str,
                     reason: Optional[str] = None, slot_id: Optional[str] = None) -> None:
-    """assignment_history: every accept (ACCEPTED) and every decline or hand-over (REJECTED, with the reason)."""
+    """assignment_history: every accept (ACCEPTED) and every decline or hand-over (REJECTED, with the reason),
+    with the job it was for (inspection visit / detailed inspection / repair)."""
     conn.execute(
-        "INSERT INTO assignment_history (assignment_id, case_id, technician_id, slot_id, outcome, rejected_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (db.next_record_id(conn, "assignment_history"), case_id, worker_id, slot_id, outcome, reason, _now(conn)),
+        "INSERT INTO assignment_history (assignment_id, case_id, technician_id, slot_id, outcome, rejected_reason, created_at, job) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (db.next_record_id(conn, "assignment_history"), case_id, worker_id, slot_id, outcome, reason, _now(conn), job),
     )
 
 
@@ -1318,7 +1319,7 @@ def respond_to_assignment(case_id: str, accept: bool, reason: str = "", technici
         if accept:
             if case["booking_status"] != "PENDING":
                 raise ToolError("You've already accepted this job.")
-            _log_assignment(conn, case_id, worker_id, "ACCEPTED", slot_id=booked[0]["slot_id"] if booked else None)
+            _log_assignment(conn, case_id, worker_id, "ACCEPTED", job, slot_id=booked[0]["slot_id"] if booked else None)
             _save(conn, case_id, booking_status="CONFIRMED")
             _emit(conn, case_id, "booking.confirmed", f"{label} accepted the {job}", technician_id=worker_id)
             return {"ok": True, "status": case["status"], "booking_status": "CONFIRMED", "job": job, "start": starts[0] if starts else None,
@@ -1328,7 +1329,7 @@ def respond_to_assignment(case_id: str, accept: bool, reason: str = "", technici
         if not reason:
             raise ToolError("Please give a reason.")
         declined = case["booking_status"] == "PENDING"
-        _log_assignment(conn, case_id, worker_id, "REJECTED", reason)
+        _log_assignment(conn, case_id, worker_id, "REJECTED", job, reason)
         _release_worker(conn, case_id, kind, worker_id)
         _save(conn, case_id, technician_id=None, booking_status="REJECTED", handed_over_from=worker_id, handover_reason=reason,
               handed_over_at=_now(conn), handover_prev_slot=starts[0] if starts else None)

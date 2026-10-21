@@ -2,11 +2,12 @@
 import { CalendarClock, ChevronDown, ChevronRight, ClipboardX } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRecentActivity } from "@/components/case-views";
 import { EmptyState, MobileHeader, primaryButtonClass, SummaryStrip, UnderlineTabs } from "@/components/mobile";
 import { PhotoThumb } from "@/components/photo";
 import { StatusBadge } from "@/components/status-badge";
 import { CATEGORY_LABEL, DEMO_BUYER } from "@/lib/constants";
-import { fmtDate, fmtDateTime } from "@/lib/dates";
+import { fmtDate, fmtDateTime, relative } from "@/lib/dates";
 import { BUYER_TABS, isOpen, STATUS_META } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import type { Case, CaseStatus } from "@/lib/types";
@@ -23,7 +24,10 @@ export default function MyDefects() {
   const cases = useDemo((s) => s.cases);
   const [tab, setTab] = useState<TabId>("all");
   const [status, setStatus] = useState<CaseStatus | "">("");
-  const mine = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id).reverse(), [cases]);
+  // Most recently updated first (latest progress on the case), not by report date.
+  const own = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id), [cases]);
+  const { sorted: mine, lastAt } = useRecentActivity(own);
+  const now = useDemo((s) => s.now);
   const current = mine.filter((c) => !c.historical);
 
   const inTab = (c: Case, id: TabId) => {
@@ -97,8 +101,9 @@ export default function MyDefects() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold">{c.summary}</p>
                       <p className="text-xs text-zinc-500">
-                        {c.id} · {CATEGORY_LABEL[c.category]} · {fmtDate(c.createdAt)}
+                        {c.id} · {CATEGORY_LABEL[c.category]} · Reported {fmtDate(c.createdAt)}
                       </p>
+                      <p className="text-xs text-zinc-500">Updated {relative(lastAt(c), now)}</p>
                       <StatusBadge status={c.status} buyer className="mt-1.5" />
                       {when && (
                         <p className="mt-1 flex items-center gap-1 text-xs text-zinc-600">
