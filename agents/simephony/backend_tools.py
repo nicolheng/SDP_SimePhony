@@ -14,6 +14,21 @@ if _BACKEND not in sys.path:
 import tools  # noqa: E402
 
 
+def save_intake_result(case_id: str, intake: dict) -> dict:
+    """Store the intake JSON on the case (-> SUBMITTED, or INFO_NEEDED with a follow-up question)."""
+    return tools.save_intake_result(case_id, intake)
+
+
+def save_similar_cases(case_id: str, links: list[dict], occurrence_count: int | None = None) -> dict:
+    """Store related cases [{related_case_id, reason, score}] on the case page (replaces earlier links)."""
+    return tools.save_similar_cases(case_id, links, occurrence_count=occurrence_count)
+
+
+def set_triage_result(case_id: str, urgency: str, reason: str) -> dict:
+    """Save triage's urgency on the case before booking (SUBMITTED / REOPENED / INFO_NEEDED)."""
+    return tools.set_triage_result(case_id, urgency, reason)
+
+
 def check_escalation(case_id: str) -> dict:
     """Earlier same-unit cases, stack units, pending approval for a case in the DB."""
     return tools.check_escalation(case_id)
@@ -54,3 +69,13 @@ def assign_technician(case_id: str, technician_id: str, start: str, reason: str,
 def escalate_booking(case_id: str, reason: str) -> dict:
     """Nobody free: booking NEEDS_STAFF, SDP emailed to book manually (case status unchanged)."""
     return tools.escalate_booking(case_id, reason)
+
+
+def category_repair_hours(category: str) -> float:
+    """The category's normal repair duration (web app REPAIR_PLAN), before any case-specific estimate."""
+    return tools._repair_plan(category)["hours"]
+
+
+def set_repair_estimate(case_id: str, hours: int, reason: str) -> dict:
+    """Save the case's repair duration (2, 4 or 8 h) and why; repair slots and booking then use it."""
+    return tools.set_repair_estimate(case_id, hours, reason)

@@ -13,7 +13,8 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 # Paths default to None and resolve to DB_PATH at call time, so tests can point DB_PATH elsewhere.
 def connect(path: Path | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(path or DB_PATH, check_same_thread=False)
+    # timeout = busy wait: an agent and the web app may write at the same moment (default 5 s was short).
+    conn = sqlite3.connect(path or DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

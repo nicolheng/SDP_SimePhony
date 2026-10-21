@@ -29,7 +29,7 @@ AGENT_TOOLS = {
     "get_clock", "get_case", "get_unit", "get_case_history", "get_available_slots", "get_booking_options",
     "get_verification_protocol", "find_similar_cases", "check_escalation", "get_stack_cases", "get_recurring_stats",
     "get_systemic_issues", "get_approval_status", "save_intake_result", "save_similar_cases", "assign_technician",
-    "escalate_booking", "start_verification", "request_extra_inspection", "attach_inspection_brief", "notify_buyer",
+    "escalate_booking", "start_verification", "request_extra_inspection", "set_repair_estimate", "set_triage_result", "attach_inspection_brief", "notify_buyer",
     "notify_technician", "send_email", "log_agent_step",
 }
 HUMAN_ACTIONS = {"create_case", "add_photo", "answer_follow_up", "respond_to_assignment", "book_repair", "record_verdict",

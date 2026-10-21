@@ -78,7 +78,9 @@ written has a `message` (shown on the timeline and SDP trace page). Times are UT
 | `save_intake_result` | case_id, intake (AI Intake JSON) | → `INFO_NEEDED` if follow_up_question, else `SUBMITTED` | IntakeAgent |
 | `save_similar_cases` | case_id, links `[{related_case_id, reason, score?}]`, occurrence_count? | `case_links` shown on the case page | SimilarDefectAgent |
 | `assign_technician` | case_id, technician_id, start, reason, urgency?, support_id? | requests the visit and holds the time, booking `PENDING`: `SUBMITTED`/`REOPENED` → `ASSIGNED`; `EXTRA_INSPECTION` stays, optional subcontractor joins. Refuses technicians who rejected this visit | TriageAgent |
+| `set_triage_result` | case_id, urgency (high / normal / low), reason | `SUBMITTED`/`REOPENED`/`INFO_NEEDED`: saves the urgency triage settled on (a rules.yaml high rule can raise intake's); reason on the timeline | TriageAgent |
 | `escalate_booking` | case_id, reason | nobody free or all rejected: booking `NEEDS_STAFF`, email SDP | TriageAgent |
+| `set_repair_estimate` | case_id, hours (2 / 4 / 8), reason | `VALID` only: saves `repair_hours` + `repair_estimate_reason`; repair options, `get_case` `repair_plan` and `book_repair` use it instead of the category's REPAIR_PLAN hours | RepairEstimateAgent |
 | `start_verification` | case_id, guide `{intro, steps, ifFails}` or list of steps | `REPAIRED` → `PENDING_SIGNOFF` | VerificationAgent |
 | `request_extra_inspection` | case_id, reasons[], recommended_action?, title? | → `ESCALATION_PENDING`, approval, email SDP; **reuses the open systemic issue** for the stack (e.g. SI-002) or creates one | RecurrenceAgent |
 | `attach_inspection_brief` | case_id, brief `{timeline, photoComparison, neighbouringUnits, likelyComponents, checklist}` | needs an approved request; → `EXTRA_INSPECTION` | InitialInspectionAgent |

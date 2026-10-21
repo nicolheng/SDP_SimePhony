@@ -18,7 +18,7 @@ if _ROOT not in sys.path:
 # Configuration
 # ---------------------------------------------------------------------------
 DEFAULT_RESPONSE = "Standard AI response."
-_FN_MODULES = ["comms", "triage", "verification", "booking"]
+_FN_MODULES = ["comms", "triage", "verification", "booking", "repair_estimate"]
 _CLIENT_MODULES = ["intake", "similar_defect", "initial_inspection", "analytics"]
 
 
@@ -269,6 +269,11 @@ def _no_live_db_writes(request, monkeypatch):
     monkeypatch.setattr(backend_tools, "get_booking_options", booking.get_booking_options)
     monkeypatch.setattr(backend_tools, "assign_technician", booking.assign_technician)
     monkeypatch.setattr(backend_tools, "escalate_booking", booking.escalate_booking)
+    monkeypatch.setattr(backend_tools, "set_repair_estimate", MagicMock(return_value={"ok": True, "repair_hours": 4}))
+    monkeypatch.setattr(backend_tools, "save_similar_cases", MagicMock(return_value={"ok": True, "linked": 0}))
+    monkeypatch.setattr(backend_tools, "set_triage_result", MagicMock(return_value={"ok": True, "urgency": "normal"}))
+    monkeypatch.setattr(backend_tools, "save_intake_result",
+                        MagicMock(return_value={"ok": True, "status": "SUBMITTED", "warnings": []}))
     monkeypatch.setattr(backend_tools, "start_verification",
                         MagicMock(return_value={"ok": True, "verification_id": "V-STUB", "status": "PENDING_SIGNOFF"}))
     monkeypatch.setattr(recurrence, "request_extra_inspection",

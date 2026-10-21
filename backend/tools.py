@@ -183,6 +183,16 @@ def _repair_plan(category: Optional[str]) -> dict:
     return config.REPAIR_PLAN.get(category, config.REPAIR_PLAN["other"])
 
 
+def _case_repair_plan(case: dict) -> dict:
+    """The category's repair plan, using the case's own estimate (set_repair_estimate) when it has one."""
+    plan = dict(_repair_plan(case.get("category")))
+    if case.get("repair_hours"):
+        plan["hours"] = case["repair_hours"]
+        if case.get("repair_estimate_reason"):
+            plan["estimate_reason"] = case["repair_estimate_reason"]
+    return plan
+
+
 def _repairers(workers: list[dict], category: Optional[str], block: str) -> list[dict]:
     """Workers for the category's repair plan; the planned kind (subcontractor / technician) first."""
     plan = _repair_plan(category)
@@ -197,7 +207,7 @@ def _repair_blocks(hours: float) -> int:
 def _repair_options(conn: sqlite3.Connection, case: dict) -> list[dict]:
     """Repair start times where a worker is free for the whole job. Jobs stay within one session:
     1 block any time, 2 blocks morning or afternoon, longer from 9am."""
-    plan = _repair_plan(case["category"])
+    plan = _case_repair_plan(case)
     n = _repair_blocks(plan["hours"])
     pool = _repairers(_workers(conn), case["category"], _unit(conn, case["unit_id"])["block"])
     bookings = _bookings(conn, ignore_case=case["case_id"], ignore_kind="repair")
@@ -415,7 +425,7 @@ def get_case(case_id: str) -> dict:
                 (case_id,),
             )
         ]
-        case["repair_plan"] = _repair_plan(case["category"])
+        case["repair_plan"] = _case_repair_plan(case)
     return case
 
 
@@ -484,7 +494,7 @@ def get_booking_options(case_id: str, kind: str = "visit", limit: int = 3) -> di
         if kind == "repair":
             options = _repair_options(conn, case)
             return {"case_id": case_id, "kind": kind, "block": block, "urgency": case["urgency"],
-                    "plan": _repair_plan(case["category"]), "preferred_worker": case.get("support_id"),
+                    "plan": _case_repair_plan(case), "preferred_worker": case.get("support_id"),
                     "options": options[:limit], "no_availability": not options}
 
         excluded = _declined_technicians(conn, case_id)
@@ -867,6 +877,38 @@ def assign_technician(
 
 
 @_returns_errors
+def set_repair_estimate(case_id: str, hours: float, reason: str) -> dict:
+    """RepairEstimateAgent (P2): case-specific repair duration after a VALID verdict, from the
+    technician's note. hours is 2, 4 or 8 (whole 2-hour blocks, at most a day). Repair options, the case
+    page (repair_plan.hours / estimate_reason) and book_repair then use it instead of the category's
+    REPAIR_PLAN hours. Returns {ok, repair_hours}."""
+    if hours not in (2, 4, 8):
+        raise ToolError("hours must be 2, 4 or 8 (whole 2-hour blocks, at most a day)")
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("VALID",), "set a repair estimate")
+        _save(conn, case_id, repair_hours=hours, repair_estimate_reason=reason)
+        _emit(conn, case_id, "agent.step", f"Repair estimated at about {hours:g} hours: {reason}", agent="RepairEstimateAgent")
+    return {"ok": True, "repair_hours": hours}
+
+
+@_returns_errors
+def set_triage_result(case_id: str, urgency: str, reason: str) -> dict:
+    """TriageAgent (P2): save the urgency triage settled on (it can raise intake's urgency when a rules.yaml
+    high rule matches), before the visit is booked; booking and the case page then use it. reason is
+    shown on the timeline. Returns {ok, urgency}."""
+    urgency = (urgency or "").lower()
+    if urgency not in ("high", "normal", "low"):
+        raise ToolError(f"Invalid urgency {urgency!r} (use high / normal / low)")
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("SUBMITTED", "REOPENED", "INFO_NEEDED"), "set the triage result")
+        _save(conn, case_id, urgency=urgency)
+        _emit(conn, case_id, "agent.step", f"Triage: {urgency} urgency. {reason}", agent="TriageAgent")
+    return {"ok": True, "urgency": urgency}
+
+
+@_returns_errors
 def escalate_booking(case_id: str, reason: str) -> dict:
     """TriageAgent: no qualified technician is free (get_booking_options returned no_availability).
     Sets booking_status NEEDS_STAFF (status unchanged), records booking.escalated and emails SDP staff
@@ -1182,7 +1224,7 @@ def book_repair(case_id: str, start: str, technician_id: Optional[str] = None) -
         if technician_id and technician_id not in worker_ids:
             raise ToolError(f"{technician_id} is not free for the whole repair at {fmt_datetime(option['start'])}")
         worker_id = technician_id or (case["support_id"] if case.get("support_id") in worker_ids else worker_ids[0])
-        plan = _repair_plan(case["category"])
+        plan = _case_repair_plan(case)
         _release(conn, case_id, "repair")
         for s in option["slots"]:
             _book(conn, case_id, worker_id, s, "repair")
