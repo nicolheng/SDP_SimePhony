@@ -90,9 +90,9 @@ async def reported_and_triaged(call, unit_id="A-12-08", accept=True):
     assert options["preferred"]["start"] == preferred
     tech = options["preferred"]["technicians"][0]["technician_id"]
     res = ok(await call("assign_technician", case_id=cid, technician_id=tech, start=preferred, reason="Free at the buyer's time"))
-    assert res["status"] == "ASSIGNED" and res["booking_status"] == "PENDING"
+    assert res["status"] == "VISIT_SCHEDULED" and res["booking_status"] == "PENDING"
     if accept:
-        assert ok(tools.respond_to_assignment(cid, True))["status"] == "VISIT_SCHEDULED"
+        assert ok(tools.respond_to_assignment(cid, True))["booking_status"] == "CONFIRMED"
     return cid, preferred, tech
 
 
@@ -100,6 +100,8 @@ async def repaired_and_verifying(call, cid, technician_id=None):
     ok(tools.record_verdict(cid, "VALID", "Active leak from the slab above"))
     option = ok(await call("get_booking_options", case_id=cid, kind="repair"))["options"][0]
     booked = ok(tools.book_repair(cid, option["start"], technician_id))
+    refused(tools.mark_repaired(cid, "x"), "Accept the job")   # the repair worker accepts first
+    ok(tools.respond_to_assignment(cid, True, technician_id=booked["technician_id"]))
     ok(tools.mark_repaired(cid, "Resealed pipe sleeve, replaced ceiling board above wardrobe"))
     steps = ok(await call("get_verification_protocol", category="water_leak"))["steps"]
     ok(await call("start_verification", case_id=cid, guide={"intro": "Your ceiling leak was repaired.", "steps": steps}))
@@ -137,10 +139,11 @@ def test_new_case_intake_follow_up_and_triage_at_preferred_time():
         assert all(a["start"] != preferred for a in options["alternatives"])
         tech = options["preferred"]["technicians"][0]["technician_id"]
         res = ok(await call("assign_technician", case_id=cid, technician_id=tech, start=preferred, reason="Free at the buyer's time"))
-        assert res["status"] == "ASSIGNED"
-        refused(tools.record_verdict(cid, "VALID", "x"), "Cannot record a verdict")
-        assert ok(tools.respond_to_assignment(cid, True))["status"] == "VISIT_SCHEDULED"
-        refused(tools.respond_to_assignment(cid, True), "no visit waiting")
+        assert res["status"] == "VISIT_SCHEDULED" and res["booking_status"] == "PENDING"
+        refused(tools.record_verdict(cid, "VALID", "x"), "Accept the job")
+        refused(tools.respond_to_assignment(cid, True, technician_id="T-99"), "assigned to another technician")
+        assert ok(tools.respond_to_assignment(cid, True, technician_id=tech))["status"] == "VISIT_SCHEDULED"
+        refused(tools.respond_to_assignment(cid, True), "already accepted")
 
         case, state = ui_case(cid)
         assert case["visitSlot"] == preferred and case["technicianId"] == tech
@@ -190,7 +193,7 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
         res = ok(await call("assign_technician", case_id=cid, technician_id=slot["technicians"][0]["technician_id"],
                             start=slot["start"], reason="Extra inspection", support_id="SC-01"))
         assert res["status"] == "EXTRA_INSPECTION" and res["booking_status"] == "PENDING"
-        refused(tools.record_verdict(cid, "VALID", "x"), "isn't confirmed")
+        refused(tools.record_verdict(cid, "VALID", "x"), "Accept the job")
         assert ok(tools.respond_to_assignment(cid, True))["status"] == "EXTRA_INSPECTION"
         case, _ = ui_case(cid)
         assert case["supportId"] == "SC-01" and case["inspectionBrief"]["checklist"] == ["Check riser", "Moisture readings"]
@@ -237,63 +240,81 @@ def test_revisit_after_reopen_below_threshold():
         assert not ok(await call("check_escalation", case_id=cid))["should_escalate"]
         slot = ok(await call("get_booking_options", case_id=cid))["alternatives"][0]
         first = slot["technicians"][0]["technician_id"]
-        assert ok(await call("assign_technician", case_id=cid, technician_id=first, start=slot["start"], reason="Revisit"))["status"] == "ASSIGNED"
+        assert ok(await call("assign_technician", case_id=cid, technician_id=first, start=slot["start"], reason="Revisit"))["status"] == "VISIT_SCHEDULED"
         assert (await call("get_case", case_id=cid))["verdict_at"] is None  # new inspection, new verdict
 
-        # A rejected revisit goes back to REOPENED, not SUBMITTED
-        assert ok(tools.respond_to_assignment(cid, False, "On leave"))["status"] == "REOPENED"
-        slot = ok(await call("get_booking_options", case_id=cid))["alternatives"][0]
-        second = slot["technicians"][0]["technician_id"]
-        assert second != first
-        ok(await call("assign_technician", case_id=cid, technician_id=second, start=slot["start"], reason="Revisit"))
-        assert ok(tools.respond_to_assignment(cid, True))["status"] == "VISIT_SCHEDULED"
+        # The revisit is handed over to a colleague; the case stays VISIT_SCHEDULED
+        res = ok(tools.respond_to_assignment(cid, False, "On leave"))
+        assert res["status"] == "VISIT_SCHEDULED" and res["handover_options"]
+        second = res["handover_options"][0]
+        assert second["technician_id"] != first
+        ok(tools.reassign_job(cid, second["technician_id"], second["start"]))
+        assert ok(tools.respond_to_assignment(cid, True, technician_id=second["technician_id"]))["booking_status"] == "CONFIRMED"
     run(scenario)
 
 
-def test_technician_rejects_then_reassigned_then_all_reject_escalates():
+def test_hand_over_keeps_the_time_then_escalates_when_nobody_is_left():
     async def scenario(client, call):
         cid, preferred, first = await reported_and_triaged(call, accept=False)
         refused(tools.respond_to_assignment(cid, False), "reason")
         res = ok(tools.respond_to_assignment(cid, False, "Emergency elsewhere"))
-        assert res == {"ok": True, "status": "SUBMITTED", "booking_status": "REJECTED", "needs_reassignment": True,
-                       "rejected_technicians": [first]}
+        assert res["status"] == "VISIT_SCHEDULED" and res["booking_status"] == "REJECTED" and res["needs_reassignment"]
+        assert res["rejected_technicians"] == [first] and res["start"] == preferred
         case = await call("get_case", case_id=cid)
-        assert case["technician_id"] is None and not case["bookings"]   # held time released
+        assert case["technician_id"] is None and not case["bookings"]   # their booking is cancelled
+        assert case["handed_over_from"] == first and case["handover_reason"] == "Emergency elsewhere"
 
-        options = ok(await call("get_booking_options", case_id=cid))
-        assert options["excluded_technicians"] == [first]
-        assert all(first not in [t["technician_id"] for t in a["technicians"]] for a in options["alternatives"])
-        refused(await call("assign_technician", case_id=cid, technician_id=first, start=preferred, reason="x"), "already rejected")
+        # A colleague free at the same time comes first; whoever declined is never offered again
+        options = ok(tools.get_reassignment_options(cid))["options"]
+        assert first not in [o["technician_id"] for o in options]
+        best = options[0]
+        assert best["same_time"] == (best["start"] == preferred)
+        refused(tools.reassign_job(cid, first, preferred), "not one of the reassignment options")
+        ok(tools.reassign_job(cid, best["technician_id"], best["start"]))
+        case, _ = ui_case(cid)
+        assert case["technicianId"] == best["technician_id"] and case["bookingStatus"] == "pending"
+        assert case["handover"]["fromId"] == first   # the screens still show who handed it over
 
-        # Every remaining qualified technician rejects -> nobody left -> escalate to SDP
-        qualified = {s["technician_id"] for s in await call("get_available_slots", block="A", skill=options["skills"], limit=500)}
-        for _ in range(len(qualified) - 1):
-            options = ok(await call("get_booking_options", case_id=cid))
-            slot = (options["preferred"] or options["alternatives"][0])
-            ok(await call("assign_technician", case_id=cid, technician_id=slot["technicians"][0]["technician_id"], start=slot["start"], reason="x"))
-            ok(tools.respond_to_assignment(cid, False, "Busy"))
-        options = ok(await call("get_booking_options", case_id=cid))
-        assert options["no_availability"] and set(options["excluded_technicians"]) == qualified
-        assert ok(await call("escalate_booking", case_id=cid, reason="All qualified technicians rejected"))["booking_status"] == "NEEDS_STAFF"
+        # Keep handing over until nobody qualified is left -> escalate to SDP
+        for _ in range(10):
+            res = ok(tools.respond_to_assignment(cid, False, "Busy"))
+            if not res["handover_options"]:
+                break
+            ok(tools.reassign_job(cid, res["handover_options"][0]["technician_id"], res["handover_options"][0]["start"]))
+        assert not res["handover_options"]
+        assert ok(await call("escalate_booking", case_id=cid, reason="All qualified technicians declined"))["booking_status"] == "NEEDS_STAFF"
         history = (await call("get_case", case_id=cid))["assignment_history"]
-        assert [h["outcome"] for h in history] == ["REJECTED"] * len(qualified)
+        assert history and all(h["outcome"] == "REJECTED" for h in history)
 
         _, state = ui_case(cid)
         messages = [e["message"] for e in state["events"] if e["caseId"] == cid]
-        assert any("rejected the visit" in m for m in messages)
+        assert any("declined the inspection visit" in m for m in messages) and any("Handed over to" in m for m in messages)
     run(scenario)
 
 
-def test_acceptance_starts_a_new_round_of_exclusions():
+def test_hand_over_after_accepting_and_new_round_of_exclusions():
     async def scenario(client, call):
-        cid, _, first = await reported_and_triaged(call, accept=False)
-        ok(tools.respond_to_assignment(cid, False, "Busy"))
-        slot = ok(await call("get_booking_options", case_id=cid))["alternatives"][0]
-        ok(await call("assign_technician", case_id=cid, technician_id=slot["technicians"][0]["technician_id"], start=slot["start"], reason="x"))
+        cid, _, first = await reported_and_triaged(call)   # accepted
+        res = ok(tools.respond_to_assignment(cid, False, "Van broke down", technician_id=first))
+        opt = res["handover_options"][0]
+        ok(tools.reassign_job(cid, opt["technician_id"], opt["start"]))
         ok(tools.respond_to_assignment(cid, True))
-        # A later reschedule may use the technician who declined the earlier round
+        # After someone accepts, a later reschedule may use the technician who handed over earlier
         assert ok(await call("get_booking_options", case_id=cid))["excluded_technicians"] == []
+        _, state = ui_case(cid)
+        assert any("can no longer do the inspection visit" in e["message"] for e in state["events"] if e["caseId"] == cid)
     run(scenario)
+
+
+def test_use_connection_joins_the_callers_transaction():
+    unit = tools.get_unit("A-12-08")
+    conn = db.connect()
+    with tools.use_connection(conn):
+        cid = ok(tools.create_case("A-12-08", unit["buyer"]["buyer_id"], "Leak in the kitchen"))["case_id"]
+        assert conn.execute("SELECT 1 FROM cases WHERE case_id = ?", (cid,)).fetchone()   # visible inside the transaction
+    conn.rollback()
+    conn.close()
+    refused(tools.get_case(cid), "not found")   # rolled back with the caller's transaction
 
 
 def test_business_rule_refusals():
@@ -308,12 +329,13 @@ def test_business_rule_refusals():
         refused(await call("assign_technician", case_id=cid, technician_id=tech, start=preferred, reason="x", support_id="SC-01"), "extra inspections only")
 
         # Human actions in the wrong state
-        refused(tools.book_repair(cid, preferred), "Cannot book a repair")
-        refused(tools.mark_repaired(cid, "x"), "Cannot mark repaired")
+        refused(tools.book_repair(cid, preferred), "isn't ready for a repair booking")
+        refused(tools.mark_repaired(cid, "x"), "has no booked repair")
         refused(tools.reopen_case("C-0006", "x", PHOTO), "Only closed cases")   # INVALID
         refused(tools.reopen_case("H-0001", "x", PHOTO), "Only closed cases")   # closed long ago
         refused(tools.create_case("A-12-08", "B-0001", "leak"), "Unknown buyer")
         refused(tools.add_photo(cid, "missing.jpg", "original"), "Photo not found")
+        refused(tools.add_photo(cid, "data:image/gif;base64,R0lGOD", "original"), "JPG, PNG or WebP")
         refused(await call("start_verification", case_id=cid, guide=["x"]), "Cannot start verification")
         refused(await call("get_case", case_id="C-9999"), "not found")
     run(scenario)
