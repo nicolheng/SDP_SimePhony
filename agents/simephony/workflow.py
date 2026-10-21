@@ -12,6 +12,7 @@ from .booking import booking_node
 from .comms import comms_node
 from .verification import verification_node, verification_result_node
 from .recurrence import recurrence_node, reopen_escalation_node
+from .repair_estimate import repair_estimate_node
 from .initial_inspection import initial_inspection_node
 
 # 1. Setup Qwen Client (Points to local Ollama by default)
@@ -38,7 +39,7 @@ class AgentState(TypedDict):
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
     # Event-driven fields
-    event: str # case.created | repair.done | verification.submitted | case.reopened | booking.rejected
+    event: str # case.created | verdict.recorded | repair.done | verification.submitted | case.reopened | booking.rejected
     case_id: str
     verdict_note: str
     repair_note: str
@@ -51,6 +52,7 @@ class AgentState(TypedDict):
     verification_status: str
     verification_result: dict
     recurrence_result: dict
+    repair_estimate: dict # hours + reason after a VALID verdict
 
 # 3. Build the LangGraph
 workflow = StateGraph(AgentState)
@@ -65,6 +67,7 @@ workflow.add_node("verification", verification_node)
 workflow.add_node("verification_result", verification_result_node)
 workflow.add_node("recurrence", recurrence_node)
 workflow.add_node("reopen_escalation", reopen_escalation_node)
+workflow.add_node("repair_estimate", repair_estimate_node)
 workflow.add_node("initial_inspection", initial_inspection_node)
 
 def prepare_new_case(state: dict) -> dict:
@@ -114,6 +117,7 @@ def route_event(state: AgentState) -> str:
         "verification.submitted": "verification_result",
         "case.reopened": "recurrence",
         "booking.rejected": "booking",  # technician turned the visit down in the app: book someone else
+        "verdict.recorded": "repair_estimate",  # VALID: estimate the repair time, then tell the buyer
     }.get(event, "unhandled_event")
 
 
@@ -154,6 +158,7 @@ workflow.add_conditional_edges("verification_result", after_verification_result)
 workflow.add_conditional_edges("recurrence", after_recurrence)
 workflow.add_edge("prepare_new_case", "intake")
 workflow.add_edge("reopen_escalation", "comms")
+workflow.add_edge("repair_estimate", "comms")
 workflow.add_edge("comms", END)
 workflow.add_edge("unhandled_event", END)
 
