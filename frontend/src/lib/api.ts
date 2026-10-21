@@ -113,6 +113,7 @@ export function canReopen(c: Case, now: string) {
 
 /** When the buyer must sign off by: the developer's sign-off (the buyer signs after them) + the sign-off period. */
 export function signoffDeadline(c: Case) {
+  if (c.signoffDeadline) return c.signoffDeadline;
   const start = c.signoff?.developer?.at ?? c.repairedAt ?? c.verdict?.at ?? c.createdAt;
   return addDays(start, RULES.signoffPeriodDays);
 }

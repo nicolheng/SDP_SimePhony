@@ -4,17 +4,19 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { SUBCONTRACTORS, TECHNICIANS } from "@/lib/constants";
 import { setTechnicianId } from "@/lib/session";
+import { useDemo } from "@/lib/store";
 import type { Technician } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMyJobs } from "../use-my-jobs";
 
-const GROUPS: { title: string; note: string; people: Technician[] }[] = [
-  { title: "In-house technicians", note: "Inspection visits and minor repairs", people: TECHNICIANS },
-  { title: "Subcontractors", note: "Specialised repairs under contract; join extra inspections", people: SUBCONTRACTORS },
-];
-
 export default function TechnicianProfile() {
   const { tech, jobs } = useMyJobs();
+  // Read after every state update so the list follows the technicians table.
+  useDemo((s) => s.workers);
+  const groups: { title: string; note: string; people: Technician[] }[] = [
+    { title: "In-house technicians", note: "Inspection visits and minor repairs", people: TECHNICIANS },
+    { title: "Subcontractors", note: "Specialised repairs under contract; join extra inspections", people: SUBCONTRACTORS },
+  ];
   const live = jobs.filter((c) => !c.historical).length;
 
   return (
@@ -37,7 +39,7 @@ export default function TechnicianProfile() {
       </header>
       <div className="px-5 py-4">
         <p className="pb-1 text-sm font-semibold text-zinc-800">Signed in as (demo)</p>
-        {GROUPS.map((g) => (
+        {groups.map((g) => (
           <section key={g.title} className="mb-3">
             <h2 className="border-b border-zinc-200 pb-2 pt-3 text-sm text-zinc-500">
               {g.title} <span className="text-xs text-zinc-400">· {g.note}</span>

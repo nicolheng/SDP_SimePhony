@@ -10,10 +10,11 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402  (after load_dotenv so env paths apply)
-from demo_api.migrate import migrate  # noqa: E402
+from demo_api.migrate import migrate, reset_demo  # noqa: E402
 from demo_api.routes import router as app_router  # noqa: E402
 
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
+SAMPLE_PHOTOS_DIR = UPLOADS_DIR.parent / "data" / "sample_photos"
 
 
 @asynccontextmanager
@@ -39,6 +40,8 @@ app.add_middleware(
 )
 UPLOADS_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+SAMPLE_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/samples", StaticFiles(directory=SAMPLE_PHOTOS_DIR), name="samples")
 app.include_router(app_router)
 
 
@@ -49,7 +52,8 @@ def health():
 
 @app.post("/demo/reset")
 def demo_reset():
-    db.reset_db()
+    """Same as POST /api/demo/reset (kept for older callers), without returning the state."""
+    reset_demo()
     return {"ok": True}
 
 

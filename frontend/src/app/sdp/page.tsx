@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { EventTimeline } from "@/components/case-views";
 import { Kpi, PageTitle, Panel, TrendLine } from "@/components/sdp-ui";
-import { insight, kpis, monthly } from "@/lib/analytics";
+import { useAnalytics } from "@/lib/analytics";
+import { PROJECT_NAME } from "@/lib/constants";
 import { fmtDate } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
 
@@ -13,10 +14,10 @@ export default function SdpOverview() {
   const events = useDemo((s) => s.events);
   const approvals = useDemo((s) => s.approvals);
   const now = useDemo((s) => s.now);
-  const k = useMemo(() => kpis(cases), [cases]);
-  const trend = useMemo(() => monthly(cases, now), [cases, now]);
-  const records = useDemo((s) => s.systemicIssues);
-  const text = useMemo(() => insight(cases, records), [cases, records]);
+  const a = useAnalytics();
+  const k = a?.kpis ?? { total: 0, open: 0, closed: 0, reopened: 0, reopenRate: 0, avgDaysToClose: 0, highOpen: 0 };
+  const trend = a?.monthly ?? [];
+  const text = a?.insight ?? "Analytics are calculated by the backend. Start it to see them.";
   const pending = approvals.filter((a) => a.status === "pending");
   const overdue = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && c.signoffOverdueAt), [cases]);
   const awaitingDev = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && !c.signoff?.developer), [cases]);
@@ -24,7 +25,7 @@ export default function SdpOverview() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <PageTitle title="Overview" sub={`Residensi Harmoni · as of ${fmtDate(now)}`} />
+      <PageTitle title="Overview" sub={`${PROJECT_NAME} · as of ${fmtDate(now)}`} />
 
       {pending.length > 0 && (
         <Link
@@ -72,7 +73,7 @@ export default function SdpOverview() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Kpi label="Open defects" value={k.open} hint={`${k.highOpen} high urgency`} accent />
-        <Kpi label="Closed" value={k.closed} hint="Last 18 months" />
+        <Kpi label="Closed" value={k.closed} hint="All cases to date" />
         <Kpi label="Reopened" value={k.reopened} hint={`${(k.reopenRate * 100).toFixed(1)}% reopen rate`} />
         <Kpi label="Avg days to close" value={k.avgDaysToClose.toFixed(1)} hint="Verified repairs" />
       </div>

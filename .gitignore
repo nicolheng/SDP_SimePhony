@@ -1,4 +1,4 @@
-# Secrets — never commit
+# Secrets 
 .env
 .env.*
 !.env.example
@@ -12,13 +12,16 @@ venv/
 .pytest_cache/
 .adk/
 
-# Live database (seed.db IS committed — it's the clean reset copy)
+# Live database 
 data/simephony.db
 data/simephony.db-wal
 data/simephony.db-shm
+# SQLite side-files of the seed copy 
+data/seed.db-wal
+data/seed.db-shm
 *.db-journal
 
-# Uploaded photos (keep the folder)
+# Uploaded photos 
 uploads/*
 !uploads/.gitkeep
 

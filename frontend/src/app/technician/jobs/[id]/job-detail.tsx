@@ -6,13 +6,13 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { EventTimeline, PreviousReports, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
 import { DefectRecordCard } from "@/components/defect-record";
-import { recordAvailable } from "@/lib/defect-record";
+import { buyerName, recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { EmptyState, MobileHeader, PrimaryButton, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
-import { CATEGORY_LABEL, DEMO_BUYER, getUnit, workerLabel } from "@/lib/constants";
+import { CATEGORY_LABEL, getUnit, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { TECH_EXPLAIN, TECH_TODO } from "@/lib/status";
 import { useTechnicianId } from "@/lib/session";
@@ -152,7 +152,7 @@ export function JobDetail() {
                   <MapPin className="size-4 text-zinc-400" /> {c.unitId} · Block {unit.block}, level {unit.floor} · {c.location || "location not given"}
                 </li>
                 <li className="flex items-center gap-2">
-                  <UserRound className="size-4 text-zinc-400" /> {c.buyerId === DEMO_BUYER.id ? DEMO_BUYER.name : `Owner of ${c.unitId}`}
+                  <UserRound className="size-4 text-zinc-400" /> {buyerName(c)}
                 </li>
               </ul>
               <div className="mt-3 rounded-xl bg-zinc-50 p-3">

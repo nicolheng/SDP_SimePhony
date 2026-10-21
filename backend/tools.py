@@ -3,7 +3,7 @@
 SimePhony business rules and database operations: the one place that changes a case.
 
 Follows the web app's model (backend/demo_api):
-  - time comes from the demo clock (app_meta.now), timestamps are UTC "...000Z"
+  - time comes from the demo clock (real time + app_meta.clock_offset_days), timestamps are UTC "...000Z"
   - visits and repairs start at fixed Malaysia-time blocks (config.SLOT_TIMES, 2 h each, no Sundays,
     14-day window); a booking is a row in `slots` linked to the case
   - visits go to in-house technicians; repairs follow config.REPAIR_PLAN (duration, trade and
@@ -25,7 +25,7 @@ import re
 import smtplib
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
@@ -39,7 +39,7 @@ load_dotenv()
 import db
 from demo_api import config
 from demo_api.migrate import migrate
-from demo_api.timeutil import add_days, days_between, fmt_datetime, iso, local_day, norm, parse, slot_iso
+from demo_api.timeutil import add_days, days_between, demo_now, fmt_datetime, local_day, norm, parse, slot_iso
 
 ROOT = db.ROOT
 UPLOADS_DIR = ROOT / os.getenv("UPLOADS_DIR", "uploads")
@@ -91,9 +91,8 @@ def _connect():
 
 
 def _now(conn: sqlite3.Connection) -> str:
-    """The demo clock (app_meta.now), or real time if it isn't set."""
-    row = conn.execute("SELECT value FROM app_meta WHERE key = 'now'").fetchone()
-    return norm(row["value"]) if row else iso(datetime.now(timezone.utc))
+    """The same demo clock as the web app: real time plus the days skipped with "Skip days"."""
+    return demo_now(conn)
 
 
 def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, message: str,
@@ -161,7 +160,7 @@ def _upcoming_slots(now: str, days: int = config.BOOKING_WINDOW_DAYS) -> list[st
 
 
 def _bookings(conn: sqlite3.Connection, ignore_case: Optional[str] = None, ignore_kind: Optional[str] = None) -> list[dict]:
-    rows = conn.execute("SELECT technician_id, case_id, kind, start_at, end_at FROM slots WHERE case_id IS NOT NULL").fetchall()
+    rows = conn.execute("SELECT technician_id, case_id, kind, start_at, end_at FROM slots WHERE case_id IS NOT NULL AND kind NOT GLOB '*_done'").fetchall()
     return [
         {"technician_id": r["technician_id"], "start": parse(r["start_at"]), "end": parse(r["end_at"])}
         for r in rows
@@ -228,8 +227,20 @@ def _book(conn: sqlite3.Connection, case_id: str, worker_id: str, start: str, ki
     return slot_id
 
 
+def _drop_slots(conn: sqlite3.Connection, slot_ids: list[str]) -> None:
+    for slot_id in slot_ids:
+        conn.execute("UPDATE assignment_history SET slot_id = NULL WHERE slot_id = ?", (slot_id,))
+        conn.execute("DELETE FROM slots WHERE slot_id = ?", (slot_id,))
+
+
 def _release(conn: sqlite3.Connection, case_id: str, kind: str) -> None:
-    conn.execute("UPDATE slots SET case_id = NULL, kind = NULL WHERE case_id = ? AND kind = ?", (case_id, kind))
+    """Cancel a booking that won't happen (reassignment, rebooking). Same rules as demo_api/workflow.cancel_booking."""
+    _drop_slots(conn, [r["slot_id"] for r in conn.execute("SELECT slot_id FROM slots WHERE case_id = ? AND kind = ?", (case_id, kind))])
+
+
+def _finish(conn: sqlite3.Connection, case_id: str, kind: str) -> None:
+    """The job is done: keep the booking as its record (kind visit_done / repair_done); finished bookings don't block anyone."""
+    conn.execute("UPDATE slots SET kind = ? WHERE case_id = ? AND kind = ?", (f"{kind}_done", case_id, kind))
 
 
 def _declined_technicians(conn: sqlite3.Connection, case_id: str) -> list[str]:
@@ -1194,7 +1205,7 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
         if case["booking_status"] in ("PENDING", "REJECTED", "NEEDS_STAFF"):
             raise ToolError(f"Cannot record a verdict: the visit for {case_id} isn't confirmed (booking_status={case['booking_status']})")
         _save_photo(conn, case_id, photo, "verdict")
-        _release(conn, case_id, "visit")
+        _finish(conn, case_id, "visit")
         now = _now(conn)
         fields = {"inspection_outcome": "VALID_DEFECT" if verdict == "VALID" else "NOT_A_DEFECT", "verdict_note": note.strip(),
                   "verdict_at": now, "inspector_id": case["technician_id"], "status": verdict}
@@ -1215,7 +1226,7 @@ def mark_repaired(case_id: str, repair_note: str, photo: Optional[str] = None) -
         case = _get_case(conn, case_id)
         _require_status(case, ("REPAIR_BOOKED",), "mark repaired")
         _save_photo(conn, case_id, photo, "repair")
-        _release(conn, case_id, "repair")
+        _finish(conn, case_id, "repair")
         _save(conn, case_id, status="REPAIRED", repair_note=repair_note.strip(), repaired_at=_now(conn),
               buyer_signed=0, developer_signed=0, buyer_signed_at=None, buyer_signoff_note=None, developer_signed_at=None,
               developer_signed_by=None, signoff_reminder_at=None, auto_closed_at=None, signoff_overdue_at=None,

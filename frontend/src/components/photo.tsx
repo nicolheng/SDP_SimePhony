@@ -63,7 +63,7 @@ export function samplePhoto(variant: "leak" | "leak-worse" | "repaired" = "leak"
   return c.toDataURL("image/jpeg", 0.8);
 }
 
-/** Downscale to keep localStorage small. */
+/** Downscale before uploading so photos stay small. */
 async function toDataUrl(file: File, max = 720): Promise<string> {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));

@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import db  # noqa: E402
 import tools  # noqa: E402
 from demo_api.state import build_state  # noqa: E402
-from demo_api.timeutil import add_days  # noqa: E402
+from demo_api.timeutil import demo_now  # noqa: E402
 from demo_api.workflow import Ctx  # noqa: E402
 from fastmcp import Client  # noqa: E402
 from mcp_server import mcp  # noqa: E402
@@ -197,15 +197,16 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
         booked = await repaired_and_verifying(call, cid)
         assert booked["technician_id"] == "SC-01"
 
-        assert ok(tools.record_verification(cid, "FIXED", "Dry after shower test"))["status"] == "PENDING_SIGNOFF"
-        assert ok(tools.record_signoff(cid, "developer"))["status"] == "CLOSED"
+        # The developer signs off first; the buyer can't sign before them
+        refused(tools.record_verification(cid, "FIXED", "Dry after shower test"), "developer")
+        assert ok(tools.record_signoff(cid, "developer"))["status"] == "PENDING_SIGNOFF"
+        assert ok(tools.record_verification(cid, "FIXED", "Dry after shower test"))["status"] == "CLOSED"
 
         # Reopen within 30 days (demo clock); refused once the clock passes the grace period
         assert ok(tools.reopen_case(cid, "Leaking again", PHOTO))["reopen_count"] == 2
         with db.get_conn() as conn:
-            conn.execute("UPDATE cases SET status = 'CLOSED', closed_at = (SELECT value FROM app_meta WHERE key = 'now') WHERE case_id = ?", (cid,))
-            now = conn.execute("SELECT value FROM app_meta WHERE key = 'now'").fetchone()["value"]
-            conn.execute("UPDATE app_meta SET value = ? WHERE key = 'now'", (add_days(now, 31),))
+            conn.execute("UPDATE cases SET status = 'CLOSED', closed_at = ? WHERE case_id = ?", (demo_now(conn), cid))
+            conn.execute("UPDATE app_meta SET value = CAST(value AS REAL) + 31 WHERE key = 'clock_offset_days'")
         refused(tools.reopen_case(cid, "Again", PHOTO), "within 30 days")
 
         events = [e["type"] for e in await call("get_case_history", case_id=cid)]

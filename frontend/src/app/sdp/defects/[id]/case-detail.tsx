@@ -146,6 +146,32 @@ export function SdpCaseDetail() {
             </Panel>
           )}
           {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${SDP_STAFF.name} (${SDP_STAFF.title})`} large />}
+          {!!c.assignments?.length && (
+            <Panel title="Assignment history">
+              <ul className="space-y-2.5">
+                {[...c.assignments].reverse().map((a, i) => (
+                  <li key={i} className="flex items-start justify-between gap-3 text-base">
+                    <div>
+                      <p className="font-medium">{workerLabel(a.technicianId)}</p>
+                      {a.reason && <p className="text-sm text-zinc-600">{a.reason}</p>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span
+                        className={
+                          a.outcome === "ACCEPTED"
+                            ? "rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-medium text-emerald-700"
+                            : "rounded-full bg-amber-50 px-2 py-0.5 text-sm font-medium text-amber-800"
+                        }
+                      >
+                        {a.outcome === "ACCEPTED" ? "Accepted" : "Declined / handed over"}
+                      </span>
+                      <p className="mt-0.5 text-sm text-zinc-500">{fmtDateTime(a.at)}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
           {c.similar.length > 0 && (
             <Panel title="Related cases (SimilarDefectAgent)">
               <SimilarList c={c} />

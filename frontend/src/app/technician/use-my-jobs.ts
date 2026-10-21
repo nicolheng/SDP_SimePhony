@@ -22,5 +22,7 @@ export function useMyJobs() {
   const techId = useTechnicianId();
   const cases = useDemo((s) => s.cases);
   const jobs = useMemo(() => cases.filter((c) => c.technicianId === techId || c.supportId === techId), [cases, techId]);
-  return { tech: getTechnician(techId)!, jobs };
+  // A worker id that isn't in the technicians table (e.g. removed) still renders, with a placeholder profile.
+  const tech = getTechnician(techId) ?? { id: techId, name: techId, email: "", skills: [], blocks: [], kind: "technician" as const };
+  return { tech, jobs };
 }

@@ -257,6 +257,7 @@ export function CaseDetail() {
             <Section title="Bookings">
               <dl>
                 <Row label={c.status === "EXTRA_INSPECTION" ? "Joint extra inspection" : "Inspection visit"}>{c.visitSlot ? fmtDateTime(c.visitSlot) : "—"}</Row>
+                {c.preferredVisitAt && c.preferredVisitAt !== c.visitSlot && <Row label="You asked for">{fmtDateTime(c.preferredVisitAt)}</Row>}
                 <Row label="Inspected by">{workerName(c.inspectorId ?? (c.repairSlot ? undefined : c.technicianId))}</Row>
                 {c.supportId && <Row label="With subcontractor">{workerName(c.supportId)}</Row>}
                 <Row label="Repair">
