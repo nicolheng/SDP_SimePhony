@@ -87,7 +87,11 @@ def similar_defect_node(state: dict) -> dict:
     state["similar_cases_result"] = {
         "past_case_count": past_case_count,
         "total_occurrences": total_occurrences,
-        "save_error": _save_links(state.get("case_id"), history_data, total_occurrences),
+        "save_error": (None if state.get("decide_only")  # decide_only: the caller saves the links
+                       else _save_links(state.get("case_id"), history_data, total_occurrences)),
+        "related": [{"case_id": c["case_id"], "unit_id": c.get("unit_id"), "reason": c.get("reason") or "Related case",
+                     "score": c.get("score"), "at": c.get("created_at")} for c in history_data],
+        "cluster_reason": ai_reason,
         "ai_analysis": {
             "is_recurring": total_occurrences > 1,
             "recurrence_count": total_occurrences,

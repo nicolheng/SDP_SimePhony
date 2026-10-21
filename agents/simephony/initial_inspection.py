@@ -111,6 +111,9 @@ def initial_inspection_node(state: dict) -> dict:
     # 'checklist' key — NOT a Markdown string.
     # -----------------------------------------------------------------------
     case_id = state.get("case_id")
+    if state.get("decide_only"):  # the caller (the web app) attaches the brief and tells the technician
+        state["initial_inspection_result"] = {**inspection_brief_json, "save_error": None}
+        return state
     try:
         saved = attach_inspection_brief(case_id=case_id, brief=inspection_brief_json)
     except Exception as e:
