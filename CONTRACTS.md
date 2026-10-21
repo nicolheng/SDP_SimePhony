@@ -43,7 +43,8 @@ Write tools return `{ok: false, error}` instead of raising when a rule blocks th
 | Read (MCP) | `get_case`, `get_unit`, `get_case_history`, `get_clock`, `get_available_slots`, `get_booking_options`, `get_verification_protocol`, `find_similar_cases`, `check_escalation`, `get_stack_cases`, `get_recurring_stats`, `get_systemic_issues`, `get_approval_status` |
 | IntakeAgent (MCP) | `save_intake_result` |
 | SimilarDefectAgent (MCP) | `save_similar_cases` |
-| TriageAgent | `assign_technician`, `escalate_booking` (MCP); `get_reassignment_options`, `reassign_job` (direct only) |
+| TriageAgent | `assign_technician`, `escalate_booking`, `set_triage_result` (saves its urgency before booking) (MCP); `get_reassignment_options`, `reassign_job` (direct only) |
+| RepairEstimateAgent (MCP) | `set_repair_estimate` (2 / 4 / 8 h after a VALID verdict; repair slots and `book_repair` use it) |
 | VerificationAgent (MCP) | `start_verification` |
 | RecurrenceAgent (MCP) | `request_extra_inspection` (reuses the open systemic issue for the stack) |
 | InitialInspectionAgent (MCP) | `attach_inspection_brief` |

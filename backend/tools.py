@@ -202,6 +202,16 @@ def _repair_plan(category: Optional[str]) -> dict:
     return config.REPAIR_PLAN.get(category, config.REPAIR_PLAN["other"])
 
 
+def _case_repair_plan(case: dict) -> dict:
+    """The category's repair plan, using the case's own estimate (set_repair_estimate) when it has one."""
+    plan = dict(_repair_plan(case.get("category")))
+    if case.get("repair_hours"):
+        plan["hours"] = case["repair_hours"]
+        if case.get("repair_estimate_reason"):
+            plan["estimate_reason"] = case["repair_estimate_reason"]
+    return plan
+
+
 def _repairers(workers: list[dict], category: Optional[str], block: str) -> list[dict]:
     """Workers for the category's repair plan; the planned kind (subcontractor / technician) first."""
     plan = _repair_plan(category)
@@ -216,7 +226,7 @@ def _repair_blocks(hours: float) -> int:
 def _repair_options(conn: sqlite3.Connection, case: dict, pool: Optional[list[dict]] = None) -> list[dict]:
     """Repair start times where a worker (from the repair plan, or `pool`) is free for the whole job. Jobs stay
     within one session: 1 block any time, 2 blocks morning or afternoon, longer from 9am."""
-    plan = _repair_plan(case["category"])
+    plan = _case_repair_plan(case)
     n = _repair_blocks(plan["hours"])
     if pool is None:
         pool = _repairers(_workers(conn), case["category"], _unit(conn, case["unit_id"])["block"])
@@ -295,7 +305,7 @@ def _job_slots(case: dict, kind: str, start: str) -> list[str]:
     """The 2-hour blocks a job starting at `start` takes: one for a visit, the repair plan's blocks for a repair."""
     if kind != "repair":
         return [start]
-    n = _repair_blocks(_repair_plan(case["category"])["hours"])
+    n = _repair_blocks(_case_repair_plan(case)["hours"])
     day = local_day(start)
     i = next((j for j, t in enumerate(config.SLOT_TIMES) if slot_iso(day, t) == start), 0)
     return [slot_iso(day, t) for t in config.SLOT_TIMES[i:i + n]]
@@ -501,7 +511,7 @@ def get_case(case_id: str) -> dict:
                 (case_id,),
             )
         ]
-        case["repair_plan"] = _repair_plan(case["category"])
+        case["repair_plan"] = _case_repair_plan(case)
     return case
 
 
@@ -570,7 +580,7 @@ def get_booking_options(case_id: str, kind: str = "visit", limit: int = 3) -> di
         if kind == "repair":
             options = _repair_options(conn, case)
             return {"case_id": case_id, "kind": kind, "block": block, "urgency": case["urgency"],
-                    "plan": _repair_plan(case["category"]), "preferred_worker": case.get("support_id"),
+                    "plan": _case_repair_plan(case), "preferred_worker": case.get("support_id"),
                     "options": options[:limit], "no_availability": not options}
 
         excluded = _declined_technicians(conn, case_id)
@@ -954,6 +964,38 @@ def assign_technician(
 
 
 @_returns_errors
+def set_repair_estimate(case_id: str, hours: float, reason: str) -> dict:
+    """RepairEstimateAgent (P2): case-specific repair duration after a VALID verdict, from the
+    technician's note. hours is 2, 4 or 8 (whole 2-hour blocks, at most a day). Repair options, the case
+    page (repair_plan.hours / estimate_reason) and book_repair then use it instead of the category's
+    REPAIR_PLAN hours. Returns {ok, repair_hours}."""
+    if hours not in (2, 4, 8):
+        raise ToolError("hours must be 2, 4 or 8 (whole 2-hour blocks, at most a day)")
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("VALID",), "set a repair estimate")
+        _save(conn, case_id, repair_hours=hours, repair_estimate_reason=reason)
+        _emit(conn, case_id, "agent.step", f"Repair estimated at about {hours:g} hours: {reason}", agent="RepairEstimateAgent")
+    return {"ok": True, "repair_hours": hours}
+
+
+@_returns_errors
+def set_triage_result(case_id: str, urgency: str, reason: str) -> dict:
+    """TriageAgent (P2): save the urgency triage settled on (it can raise intake's urgency when a rules.yaml
+    high rule matches), before the visit is booked; booking and the case page then use it. reason is
+    shown on the timeline. Returns {ok, urgency}."""
+    urgency = (urgency or "").lower()
+    if urgency not in ("high", "normal", "low"):
+        raise ToolError(f"Invalid urgency {urgency!r} (use high / normal / low)")
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("SUBMITTED", "REOPENED", "INFO_NEEDED"), "set the triage result")
+        _save(conn, case_id, urgency=urgency)
+        _emit(conn, case_id, "agent.step", f"Triage: {urgency} urgency. {reason}", agent="TriageAgent")
+    return {"ok": True, "urgency": urgency}
+
+
+@_returns_errors
 def get_reassignment_options(case_id: str) -> dict:
     """TriageAgent: after a technician hands a job over (respond_to_assignment with accept=false), the
     colleagues who can take it: at the same time if they're free (same_time=true), otherwise their next free
@@ -1044,10 +1086,13 @@ def start_verification(case_id: str, guide: dict | list[str] | str) -> dict:
 
 
 @_returns_errors
-def request_extra_inspection(case_id: str, reasons: list[str], recommended_action: Optional[str] = None, title: Optional[str] = None) -> dict:
+def request_extra_inspection(case_id: str, reasons: list[str], recommended_action: Optional[str] = None,
+                             title: Optional[str] = None, keep_status: bool = False) -> dict:
     """RecurrenceAgent: ask SDP staff to approve an extra inspection (-> ESCALATION_PENDING) and email
     them. Links the case to the open systemic issue for the same category/block/stack if there is one
     (e.g. SI-002), otherwise creates one. Call check_escalation first; reasons come from it.
+    keep_status=True (a new report on its 3rd occurrence / in a stack cluster): the case keeps its status so
+    its booked inspection visit goes ahead; if SDP approves, that visit becomes the detailed inspection.
     Returns {ok, approval_id, issue_id, reused_issue, email_status}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
@@ -1096,7 +1141,8 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
                  recommended_action or f"Extra inspection of {case['unit_id']} and the unit above; check the shared riser for stack {unit['block']}-{unit['stack']}.",
                  approval_id),
             )
-        _save(conn, case_id, status="ESCALATION_PENDING")
+        if not keep_status:
+            _save(conn, case_id, status="ESCALATION_PENDING")
         _emit(conn, case_id, "recurrence.detected", " ".join(reasons), agent="RecurrenceAgent")
         _emit(conn, case_id, "inspection.requested", f"Extra inspection requested ({issue_id}); waiting for SDP approval",
               agent="RecurrenceAgent", approval_id=approval_id, issue_id=issue_id)
@@ -1358,7 +1404,7 @@ def book_repair(case_id: str, start: str, technician_id: Optional[str] = None) -
         if technician_id and technician_id not in worker_ids:
             raise ToolError(f"{technician_id} is not free for the whole repair at {fmt_datetime(option['start'])}")
         worker_id = technician_id or (case["support_id"] if case.get("support_id") in worker_ids else worker_ids[0])
-        plan = _repair_plan(case["category"])
+        plan = _case_repair_plan(case)
         _release(conn, case_id, "repair")
         for s in option["slots"]:
             _book(conn, case_id, worker_id, s, "repair")
@@ -1503,8 +1549,10 @@ def reopen_case(case_id: str, description: str, photo: str) -> dict:
 @_returns_errors
 def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] = None) -> dict:
     """SDP staff decision on an extra-inspection request. Approved: inspection.approved; InitialInspectionAgent
-    then attaches the brief and the visit is booked; systemic issue -> under_inspection. Rejected: case back
-    to VALID for a normal repair booking; systemic issue -> monitoring. Returns {ok, status, case_id}."""
+    then attaches the brief and the visit is booked; systemic issue -> under_inspection. Rejected: an
+    ESCALATION_PENDING case goes back to VALID for a normal repair booking; a case that kept its status (a new
+    report escalated with keep_status) carries on as it was; systemic issue -> monitoring.
+    Returns {ok, status, case_id}."""
     status = "approved" if approve else "rejected"
     with _connect() as conn:
         a = conn.execute("SELECT * FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
@@ -1516,9 +1564,11 @@ def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] =
         conn.execute("UPDATE systemic_issues SET status = ? WHERE approval_id = ?", ("under_inspection" if approve else "monitoring", approval_id))
         if approve:
             _emit(conn, case_id, "inspection.approved", f"SDP approved extra inspection ({approval_id})")
-        else:
+        elif _get_case(conn, case_id)["status"] == "ESCALATION_PENDING":
             _save(conn, case_id, status="VALID")
             _emit(conn, case_id, "inspection.rejected", "SDP rejected extra inspection: normal repair booking")
+        else:
+            _emit(conn, case_id, "inspection.rejected", "SDP rejected extra inspection: the case carries on as booked")
     return {"ok": True, "status": status, "case_id": case_id}
 
 

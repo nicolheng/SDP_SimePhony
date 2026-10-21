@@ -165,7 +165,8 @@ def answer_follow_up(ctx: Ctx, case_id: str, answer: str, slot: str | None) -> N
 
 def _continue_new_case(ctx: Ctx, case_id: str) -> None:
     """SimilarDefectAgent then TriageAgent: link related cases and book the inspection visit, at the buyer's
-    chosen time (kept in preferred_visit_at) if a technician is free then."""
+    chosen time (kept in preferred_visit_at) if a technician is free then. On the 3rd occurrence in the unit
+    or a stack cluster, SDP is also asked for an extra inspection; the visit still goes ahead (keep_status)."""
     c = load_case(ctx, case_id)
     sim = agents.similar(ctx, c)
     _tool(ctx, tools.save_similar_cases, case_id, [{"related_case_id": r["case_id"], "reason": r["reason"]} for r in sim["refs"]], sim["occurrence"])
@@ -176,6 +177,10 @@ def _continue_new_case(ctx: Ctx, case_id: str) -> None:
     t = agents.triage(ctx, c, _bookable(ctx, c["preferred_visit_at"]))
     _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
     step(ctx, case_id, "TriageAgent", t["reason"])
+    esc = _tool(ctx, tools.check_escalation, case_id)
+    if esc["should_escalate"] and not esc.get("pending_approval_id"):
+        _tool(ctx, tools.request_extra_inspection, case_id, esc["reasons"], keep_status=True)
+        step(ctx, case_id, "RecurrenceAgent", f"Repeat defect on a new report: extra inspection requested; visit kept. {' '.join(esc['reasons'])}")
     notify_buyer(ctx, case_id, "received", slot=fmt_datetime(t["slot"]))
     notify_tech(ctx, case_id, "New inspection visit: please accept",
                 f"{c['unit_id']}: {c['summary']}. Inspection visit {fmt_datetime(t['slot'])}. Accept it in the app, or hand it over if you can't make it.")
@@ -288,7 +293,8 @@ def hand_over(ctx: Ctx, case_id: str, worker_id: str, reason: str) -> dict:
 def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
     case_id = _tool(ctx, tools.decide_approval, approval_id, approve)["case_id"]
     if not approve:
-        notify_buyer(ctx, case_id, "valid", note="Our team will repair this as a normal case")
+        if load_case(ctx, case_id)["status"] == "VALID":  # a new report's request leaves its visit as booked
+            notify_buyer(ctx, case_id, "valid", note="Our team will repair this as a normal case")
         return
     c = load_case(ctx, case_id)
     brief = agents.initial_inspection(ctx, c, c.get("verdict_note"), latest_verification(ctx, case_id))

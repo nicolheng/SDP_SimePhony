@@ -12,6 +12,7 @@ CASE_COLUMNS = {
     "inspector_id": "TEXT",          # technician who did the inspection visit (kept after the repair is reassigned)
     "support_id": "TEXT",            # subcontractor joining an approved extra inspection
     "repair_hours": "REAL",          # estimated repair duration when booked
+    "repair_estimate_reason": "TEXT",  # why RepairEstimateAgent set repair_hours (tools.set_repair_estimate)
     "signoff_reminder_at": "TEXT",   # in-app sign-off reminder sent
     "auto_closed_at": "TEXT",        # closed automatically after the sign-off period
     "signoff_overdue_at": "TEXT",    # high urgency past the sign-off period: flagged to SDP

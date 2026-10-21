@@ -24,9 +24,11 @@ def _run(state):
 
 
 @pytest.fixture
-def no_side_effects():
-    with patch("agents.simephony.comms.send_email") as mail,          patch("agents.simephony.escalation.get_stack_cases", return_value=[]),          patch("agents.simephony.recurrence.request_extra_inspection",
-               return_value={"approval_id": "AP-1"}):
+def no_side_effects(escalation_db):
+    # escalation goes through fake tools (tests/conftest.py escalation_db); only the email is patched here
+    escalation_db.request.return_value = {"ok": True, "approval_id": "AP-1"}
+    with patch("agents.simephony.backend_tools.notify_buyer",
+               return_value={"ok": True, "message_id": "BM-1", "email_status": "logged, not sent"}) as mail:
         yield mail
 
 
@@ -59,7 +61,7 @@ def test_route_event_mapping():
     assert route_event({"event": "case.reopened"}) == "recurrence"
 
 
-@pytest.mark.parametrize("event", ["verdict.recorded", "inspection.approved", "typo.event"])
+@pytest.mark.parametrize("event", ["signoff.completed", "typo.event"])
 def test_unknown_event_ends_without_running_agents(fake_llm, no_side_effects, event):
     assert route_event({"event": event}) == "unhandled_event"
     final = _run({**_reopen_state(5), "event": event, "current_status": "VALID"})
@@ -91,12 +93,26 @@ def test_repair_done_unclear_skips_comms(fake_llm, tmp_path, no_side_effects):
     no_side_effects.assert_not_called()
 
 
-def test_case_reopened_routes_to_recurrence(fake_llm, no_side_effects):
+TRIAGE_KEEP = '{"urgency": "normal", "rule": "none"}'
+
+
+def test_case_reopened_below_threshold_books_a_revisit(fake_llm, no_side_effects, booking_db):
+    # xiaowen's flow: not escalated -> TriageAgent books a revisit, buyer told "Case reopened"
+    fake_llm.responses = [TRIAGE_KEEP, "Your case has been reopened and a technician will revisit."]
     final = _run(_reopen_state(10))
     assert final["recurrence_result"]["action"] == "REOPENED"
     assert final["reopen_count"] == 1
-    assert final["current_status"] == "REOPENED"
-    assert final["comms_result"]["message"]
+    assert booking_db.assigned and booking_db.assigned[-1]["case_id"] == "C-1"
+    assert final["current_status"] == "VISIT_SCHEDULED"
+    assert final["comms_result"]["title"] == "Case reopened"
+    assert "revisit" in fake_llm.calls[-1][-1]["content"]
+
+
+def test_reopened_revisit_with_nobody_free_tells_buyer_we_are_arranging(fake_llm, no_side_effects, booking_db):
+    booking_db.options = []
+    final = _run(_reopen_state(10))
+    assert final["current_status"] == "REOPENED" and booking_db.escalated
+    assert final["comms_result"]["title"] == "We're arranging your visit"
 
 
 def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_path):
@@ -114,7 +130,9 @@ def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_pa
         "verification_result": {"protocol": "old guide"}, "verification_status": "verified",
         "triage_result": {"urgency": "HIGH"},
     })
-    fake_llm.responses = [INTAKE_JSON]
+    # intake, similar_defect, triage: triage is scripted so the shared fake LLM's keyword fallback
+    # ("water leak" -> "high urgency") doesn't decide the urgency for this test
+    fake_llm.responses = [INTAKE_JSON, '{"cluster_reason": "No earlier cases."}', "normal"]
     final = _run(state)
     assert final["recurrence_result"]["action"] == "NEW_CASE"
     # intake's vision call got the reopen photo, not the old case photo
@@ -125,12 +143,14 @@ def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_pa
     assert final["reopen_count"] == 0
     assert final["intake_result"]["category"] == "water_leak"
     assert final["triage_result"]["urgency"] != "HIGH"
-    # T-PLUMB-2 rejects (stub), then T-PLUMB-3 is booked; the stale T-PLUMB-3 was not excluded
-    assert final["booking_result"]["assigned_technician"] == "T-PLUMB-3"
-    assert final["tried_technicians"] == ["T-PLUMB-2"]
+    # stale booking state from the old case is cleared; "C-NEW" isn't in the DB yet (the web app's
+    # create_case issues the real id), so nothing is booked or sent for it
+    assert final["tried_technicians"] == []
+    assert "not in the DB" in final["booking_result"]["error"]
     assert final["verification_result"] == {}
-    assert final["current_status"] == "ASSIGNED"
-    assert final["comms_result"]["message"]
+    assert final["current_status"] == "SUBMITTED"
+    assert final["comms_result"]["delivery"] == "no_case"
+    no_side_effects.assert_not_called()
 
 
 def test_past_grace_new_case_uses_buyers_reopen_description(fake_llm, no_side_effects):
@@ -162,7 +182,7 @@ def _signoff_state(outcome, status="PENDING_SIGNOFF"):
 def test_verification_submitted_fixed_reaches_comms(fake_llm, no_side_effects):
     fake_llm.responses = ["Thank you for confirming the repair."]
     final = _run(_signoff_state("FIXED"))
-    assert final["current_status"] == "PENDING_SIGNOFF"
+    assert final["current_status"] == "CLOSED"
     assert final["verification_status"] == "verified"
     assert final["comms_result"]["message"]
     no_side_effects.assert_called_once()
@@ -198,13 +218,16 @@ def test_repair_done_on_invalid_case_ends_without_email(fake_llm, tmp_path, no_s
     no_side_effects.assert_not_called()
 
 
-def test_repair_done_resolved_email_contains_guide(fake_llm, tmp_path, no_side_effects):
+def test_repair_done_saves_guide_but_buyer_waits_for_sdp(fake_llm, tmp_path, no_side_effects):
+    # Sign-off order technician -> SDP -> buyer: the guide is saved now, sent at developer.signed
     photo = tmp_path / "repair.jpg"
     photo.write_bytes(b"fakejpg")
-    fake_llm.responses = [VISION_OK, "Look at the ceiling for stains.", "Please check your repair below."]
+    fake_llm.responses = [VISION_OK, "Look at the ceiling for stains.", "The repair has been completed."]
     final = _run(_repair_state(str(photo)))
     body = no_side_effects.call_args.kwargs["body"]
-    assert final["verification_result"]["protocol"] in body
+    assert final["verification_result"]["protocol"]
+    assert final["verification_result"]["protocol"] not in body
+    assert no_side_effects.call_args.kwargs["title"] == "Repair done"
 
 
 def test_default_event_runs_new_case_chain(fake_llm, no_side_effects):
@@ -218,7 +241,7 @@ def test_default_event_runs_new_case_chain(fake_llm, no_side_effects):
 
 # --- Original manual demo script (needs the real Ollama model); no longer runs on import ---
 def run_live_demo():
-    image_path = "tests/test_cases/images/test_wall_break.jpeg"
+    image_path = "tests/data/test_cases/images/test_wall_break.jpeg"
 
     if not os.path.exists(image_path):
         print(f" Error: Please check if '{image_path}' exists!")
@@ -269,3 +292,131 @@ def run_live_demo():
 
 if __name__ == "__main__":
     run_live_demo()
+
+
+# --- PR C: NOT_FIXED reopens the case and runs the escalation check ---
+def _not_fixed_state(reopen_count):
+    return {**_signoff_state("NOT_FIXED"), "reopen_photo_path": IMAGE, "reopen_count": reopen_count}
+
+
+def test_not_fixed_reopens_books_a_revisit_and_emails_buyer(fake_llm, no_side_effects, booking_db):
+    fake_llm.responses = [TRIAGE_KEEP, "Your case has been reopened."]
+    final = _run(_not_fixed_state(0))
+    assert final["reopen_count"] == 1
+    assert final["recurrence_result"]["action"] == "REOPENED"
+    assert booking_db.assigned and final["current_status"] == "VISIT_SCHEDULED"
+    assert final["comms_result"]["title"] == "Case reopened"
+    no_side_effects.assert_called_once()
+
+
+def test_not_fixed_on_third_occurrence_escalates(fake_llm, no_side_effects):
+    fake_llm.responses = ["We are arranging a more detailed inspection."]
+    with patch("agents.simephony.recurrence.request_extra_inspection", return_value={"approval_id": "AP-9"}) as ri:
+        final = _run(_not_fixed_state(1))
+    assert final["current_status"] == "ESCALATION_PENDING"
+    assert final["recurrence_result"]["approval_id"] == "AP-9"
+    ri.assert_called_once()
+    assert final.get("booking_result", {}).get("assigned_technician") is None  # escalated: no revisit booked
+
+
+def test_not_fixed_without_photo_ends_without_email(fake_llm, no_side_effects):
+    final = _run(_signoff_state("NOT_FIXED"))
+    assert final["current_status"] == "PENDING_SIGNOFF"
+    assert "photo" in final["verification_result"]["rejected_reason"]
+    no_side_effects.assert_not_called()
+
+
+# --- booking.rejected: a technician turned the visit down in the app; book someone else ---
+def test_handover_event_reassigns_and_tells_buyer(fake_llm, no_side_effects, booking_db):
+    fake_llm.responses = ["Your technician for this visit has changed."]
+    state = {"event": "booking.rejected", "case_id": "C-1", "unit_id": "A-12-08", "current_status": "VISIT_SCHEDULED",
+             "intake_result": {"category": "water_leak"}, "user_description": "Ceiling leak",
+             "triage_result": {"assigned_skill": "plumbing", "urgency": "normal"}, "comms_result": {}}
+    assert route_event(state) == "booking"
+    final = _run(state)
+    assert final["current_status"] == "VISIT_SCHEDULED"
+    assert booking_db.reassigned[-1]["case_id"] == "C-1" and booking_db.assigned == []
+    assert final["comms_result"]["title"] == "Your technician has changed"
+    assert fake_llm.calls and "intake" not in str(fake_llm.calls[0])  # no intake/triage re-run
+    no_side_effects.assert_called_once()
+
+
+# --- verdict.recorded: technician's verdict -> repair time estimate (VALID) -> buyer update ---
+def test_valid_verdict_estimates_repair_time_then_tells_buyer(fake_llm, no_side_effects):
+    import json as _json
+    fake_llm.responses = [_json.dumps({"area": "medium", "parts_to_replace": True, "multiple_spots": False,
+                                       "needs_drying_or_curing": False}),
+                          "Our technician confirmed the defect. Please book a repair."]
+    state = {"event": "verdict.recorded", "case_id": "C-1", "unit_id": "A-12-08", "current_status": "VALID",
+             "intake_result": {"category": "water_leak"}, "verdict_note": "Joint leaking; replace the elbow.",
+             "comms_result": {}}
+    assert route_event(state) == "repair_estimate"
+    final = _run(state)
+    assert final["repair_estimate"]["hours"] == 8  # water leak 4 h + parts to replace -> 3 blocks -> a day
+    # the estimate reaches the buyer as fixed text, with the booking step
+    assert final["comms_result"]["message"].endswith(
+        "The repair will take about 8 hours. Please choose a repair time in the app.")
+    no_side_effects.assert_called_once()
+
+
+def test_invalid_verdict_skips_estimate_and_tells_buyer(fake_llm, no_side_effects):
+    fake_llm.responses = ["Our technician found this is not a developer defect."]
+    final = _run({"event": "verdict.recorded", "case_id": "C-1", "current_status": "INVALID",
+                  "intake_result": {"category": "water_leak"}, "verdict_note": "Condensation.", "comms_result": {}})
+    assert final["repair_estimate"]["skipped"]
+    assert len(fake_llm.calls) == 1
+    no_side_effects.assert_called_once()
+
+
+
+def test_developer_signed_routes_to_signoff_ready_then_comms(fake_llm, no_side_effects, monkeypatch):
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "get_signoff_info", lambda case_id: {
+        "ok": True, "status": "PENDING_SIGNOFF", "developer_signed": True, "deadline_local": "Mon, 2 Nov, 5:00 pm",
+        "guide": {"intro": "Intro.", "steps": ["Step one."], "ifFails": "If it fails, reopen."}})
+    fake_llm.responses = ["The developer has approved the repair."]
+    state = {"event": "developer.signed", "case_id": "C-1", "current_status": "PENDING_SIGNOFF",
+             "intake_result": {"category": "water_leak"}, "comms_result": {}}
+    assert route_event(state) == "signoff_ready"
+    final = _run(state)
+    assert final["comms_result"]["title"] == "Please check the repair and sign off"
+    assert final["comms_result"]["message"].endswith("Intro.\nStep one.\nIf it fails, reopen.")
+
+
+
+# --- SDP approved the extra inspection: brief for the technician, detailed inspection booked, buyer told ---
+BRIEF_JSON = ('{"timeline": [{"at": "2026-10", "text": "3rd leak"}], "photoComparison": "Same stain.", '
+              '"neighbouringUnits": [], "likelyComponents": ["Riser joint"], '
+              '"checklist": ["Check the riser", "Test the membrane", "Photograph the ceiling void"]}')
+
+
+def _approved_state():
+    return {"event": "inspection.approved", "case_id": "C-1", "unit_id": "A-12-08", "current_status": "ESCALATION_PENDING",
+            "intake_result": {"category": "water_leak", "urgency": "normal"}, "comms_result": {}}
+
+
+def test_inspection_approved_attaches_brief_books_and_tells_buyer(fake_llm, no_side_effects, booking_db, monkeypatch):
+    from agents.simephony import backend_tools
+    attached = []
+    monkeypatch.setattr(backend_tools, "attach_inspection_brief",
+                        lambda case_id, brief: attached.append((case_id, brief)) or {"ok": True, "status": "EXTRA_INSPECTION"})
+    booking_db.status = "EXTRA_INSPECTION"
+    fake_llm.responses = [BRIEF_JSON, "A detailed inspection of your case has been arranged."]
+    state = _approved_state()
+    assert route_event(state) == "initial_inspection"
+    final = _run(state)
+    assert attached and attached[0][0] == "C-1" and len(attached[0][1]["checklist"]) == 3
+    assert booking_db.assigned and final["current_status"] == "EXTRA_INSPECTION"
+    assert final["comms_result"]["title"] == "Detailed inspection scheduled"
+    assert final["comms_result"]["message"].endswith("Inspection time: Thu 22 Oct, 9:00 am.")
+
+
+def test_brief_refused_ends_without_booking_or_email(fake_llm, no_side_effects, booking_db, monkeypatch):
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "attach_inspection_brief",
+                        lambda case_id, brief: {"ok": False, "error": "Case C-1 has no approved extra-inspection request"})
+    fake_llm.responses = [BRIEF_JSON]
+    final = _run(_approved_state())
+    assert "approved" in final["initial_inspection_result"]["save_error"]
+    assert booking_db.assigned == []
+    no_side_effects.assert_not_called()

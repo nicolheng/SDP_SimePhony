@@ -8,7 +8,16 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'backend')))
 
 # All imports come directly from backend/tools.py.
-from tools import attach_inspection_brief, send_email
+from . import backend_tools
+
+
+# Through backend_tools (so tests can fake the DB writes); module-level names kept for P1's tests.
+def attach_inspection_brief(case_id: str, brief: dict) -> dict:
+    return backend_tools.attach_inspection_brief(case_id, brief)
+
+
+def send_email(to: str, subject: str, body: str, case_id: str | None = None) -> dict:
+    return backend_tools.send_email(to, subject, body, case_id)
 
 from .llm_client import client, MODEL_TEXT
 
@@ -101,12 +110,19 @@ def initial_inspection_node(state: dict) -> dict:
     # attach_inspection_brief (backend/tools.py) expects a JSON dict with a
     # 'checklist' key — NOT a Markdown string.
     # -----------------------------------------------------------------------
-    case_id = state.get("case_id", "TEST-001")
+    case_id = state.get("case_id")
     try:
-        attach_inspection_brief(case_id=case_id, brief=inspection_brief_json)
-        print("✅ Successfully attached brief to database.")
+        saved = attach_inspection_brief(case_id=case_id, brief=inspection_brief_json)
     except Exception as e:
-        print(f"⚠️ Failed to attach inspection brief (expected if DB locked/missing): {e}")
+        saved = {"ok": False, "error": str(e)}
+    save_error = saved.get("error") if isinstance(saved, dict) and saved.get("ok") is False else None
+    if save_error:
+        # e.g. no approved request: the case is not moved to EXTRA_INSPECTION, so nothing is booked
+        print(f"⚠️ [INSPECTION] brief for {case_id} not attached: {save_error}")
+    else:
+        print("✅ Successfully attached brief to database.")
+        state["current_status"] = "EXTRA_INSPECTION"
+    state["initial_inspection_result"] = {**inspection_brief_json, "save_error": save_error}
 
     # -----------------------------------------------------------------------
     # Email notification via the real send_email in backend/tools.py.
