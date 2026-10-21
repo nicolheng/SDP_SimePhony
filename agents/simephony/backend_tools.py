@@ -32,3 +32,9 @@ def get_verification_protocol(category: str) -> dict:
 def start_verification(case_id: str, guide: dict) -> dict:
     """Save the buyer's check guide {intro, steps, ifFails} (REPAIRED -> PENDING_SIGNOFF in the DB)."""
     return tools.start_verification(case_id, guide)
+
+
+def notify_buyer(case_id: str, title: str, body: str) -> dict:
+    """Post the update to the buyer's in-app inbox and email it (subject "[case_id] title", outbox logged).
+    The buyer is found from the case. Returns {ok, message_id, email_status}."""
+    return tools.notify_buyer(case_id, title, body)

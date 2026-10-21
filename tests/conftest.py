@@ -232,3 +232,5 @@ def _no_live_db_writes(request, monkeypatch):
                         MagicMock(return_value={"ok": True, "verification_id": "V-STUB", "status": "PENDING_SIGNOFF"}))
     monkeypatch.setattr(recurrence, "request_extra_inspection",
                         MagicMock(return_value={"ok": False, "error": "live DB writes are disabled in tests"}))
+    monkeypatch.setattr(backend_tools, "notify_buyer",
+                        MagicMock(return_value={"ok": True, "message_id": "BM-STUB", "email_status": "logged, not sent"}))

@@ -189,7 +189,8 @@ def test_all_technicians_reject_ends_in_escalation_and_comms():
     with patch("agents.simephony.booking.get_available_slots", return_value=slots), \
          patch("agents.simephony.booking.assign_technician", return_value={"ok": False}), \
          patch("agents.simephony.intake.intake_node", side_effect=lambda s: s), \
-         patch("agents.simephony.comms.send_email") as mail:
+         patch("agents.simephony.backend_tools.notify_buyer",
+               return_value={"ok": True, "message_id": "BM-1", "email_status": "logged, not sent"}) as mail:
         final = None
         for ev in agent_app.stream(state, stream_mode="values", config={"recursion_limit": 40}):
             final = ev

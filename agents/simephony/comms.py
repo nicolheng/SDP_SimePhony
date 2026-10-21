@@ -1,5 +1,5 @@
 from .llm_client import get_client, get_models
-from .stub_tools import send_email, get_unit
+from . import backend_tools
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 
 INVALID_CLOSING = "If the problem gets worse or changes, please submit a new report."
@@ -85,12 +85,21 @@ SUBJECTS = {
 _SUBJECT_DEFAULT = "Update on your case"
 
 
-def email_subject(state: dict) -> str:
-    """Plain subject for this update, prefixed with the case number when there is a real one."""
+def email_title(state: dict) -> str:
+    """Plain title for this update (the in-app message title; tools.notify_buyer adds the case number
+    to the email subject itself)."""
     key = "REOPEN_REJECTED" if _reopen_action(state) == "REJECTED" else _template_key(state)
-    subject = SUBJECTS.get(key, _SUBJECT_DEFAULT)
-    case_id = state.get("case_id")
-    return f"[{case_id}] {subject}" if case_id and case_id != "C-NEW" else subject
+    return SUBJECTS.get(key, _SUBJECT_DEFAULT)
+
+
+def _has_real_case_id(case_id: str | None) -> bool:
+    return bool(case_id) and case_id != "C-NEW"  # "C-NEW" = not created in the DB yet
+
+
+def email_subject(state: dict) -> str:
+    """The email subject the buyer sees: "[case_id] title" (as tools.notify_buyer sends it)."""
+    title, case_id = email_title(state), state.get("case_id")
+    return f"[{case_id}] {title}" if _has_real_case_id(case_id) else title
 
 
 def _fallback(state: dict, key: str) -> str:
@@ -104,14 +113,26 @@ def _fallback(state: dict, key: str) -> str:
     return text
 
 
-def _send(state: dict, to: str | None, status: str, message: str, case_id: str) -> dict:
-    if to:
-        send_email(to=to, subject=email_subject(state), body=message, case_id=case_id)
-        delivery = "sent"
+def _send(state: dict, status: str, message: str, case_id: str | None) -> dict:
+    """Deliver through tools.notify_buyer: the buyer's in-app inbox plus an email (always logged to the
+    outbox). The buyer is found from the case in the DB. Failures are recorded, never raised."""
+    title = email_title(state)
+    result = {"status": status, "message": message, "title": title, "message_id": None, "error": None}
+    if not _has_real_case_id(case_id):
+        print(f"[COMMS] Case {case_id!r} is not in the DB yet; update not sent")
+        result["delivery"] = "no_case"
     else:
-        print(f"[COMMS] No buyer email for case {case_id}; update not sent")
-        delivery = "no_recipient"
-    state["comms_result"] = {"status": status, "message": message, "delivery": delivery}
+        try:
+            sent = backend_tools.notify_buyer(case_id=case_id, title=title, body=message)
+        except Exception as e:
+            sent = {"ok": False, "error": str(e)}
+        if sent.get("ok") is False:
+            print(f"[COMMS] Update for {case_id} not sent: {sent.get('error')}")
+            result.update(delivery="failed", error=sent.get("error"))
+        else:
+            # email_status None = no buyer email on file: the in-app message still lands
+            result.update(delivery=sent.get("email_status") or "in_app_only", message_id=sent.get("message_id"))
+    state["comms_result"] = result
     return state
 
 
@@ -121,8 +142,7 @@ def comms_node(state: dict) -> dict:
     _, text_model = get_models()
     
     # 1. Retrieve dynamic data from state
-    unit_id = state.get("unit_id", "A-12-08")
-    case_id = state.get("case_id", "C-NEW")
+    case_id = state.get("case_id")
     status = state.get("current_status", "UNKNOWN")
     category = state.get("intake_result", {}).get("category", "defect")
     tech = state.get("booking_result", {}).get("assigned_technician", "a technician")
@@ -130,14 +150,10 @@ def comms_node(state: dict) -> dict:
     # The verdict note only explains a VALID / INVALID verdict; other updates never repeat old notes.
     verdict_note = state.get("verdict_note") or "No specific technical details provided."
 
-    # 2. Dynamic Recipient Lookup (no address: the update is recorded but not sent)
-    unit_info = get_unit(unit_id) or {}
-    buyer_email = (unit_info.get("buyer") or {}).get("email")
-
     # A rejected reopen gets a fixed reply naming what to do, without the LLM.
     if _reopen_action(state) == "REJECTED":
         code = state["recurrence_result"].get("code")
-        return _send(state, buyer_email, status, REOPEN_REJECTED.get(code, _NEUTRAL_DEFAULT), case_id)
+        return _send(state, status, REOPEN_REJECTED.get(code, _NEUTRAL_DEFAULT), case_id)
 
     template_key = _template_key(state)
 
@@ -208,4 +224,4 @@ def comms_node(state: dict) -> dict:
         message = f"{message}\n\n{state['verification_result']['protocol']}"
 
     # 5. Dynamic Sending
-    return _send(state, buyer_email, status, message, case_id)
+    return _send(state, status, message, case_id)

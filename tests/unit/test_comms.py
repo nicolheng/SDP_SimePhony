@@ -4,36 +4,25 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from agents.simephony.comms import comms_node
 
-def test_dynamic_recipient():
-    state = {
-        "unit_id": "A-12-08",
-        "case_id": "C-123",
-        "current_status": "ASSIGNED",
-        "intake_result": {"category": "plumbing"},
-        "triage_result": {"assigned_technician": "T-PLUMB-1"},
-    }
-    with patch("agents.simephony.comms.get_unit") as mock_get_unit, \
-         patch("agents.simephony.comms.send_email") as mock_send_email:
-        mock_get_unit.return_value = {"buyer": {"email": "real_resident@example.com"}}
-        comms_node(state)
-        mock_get_unit.assert_called_once_with("A-12-08")
-        _, kwargs = mock_send_email.call_args
-        assert kwargs["to"] == "real_resident@example.com"
+NOTIFY = "agents.simephony.backend_tools.notify_buyer"
+SENT_OK = {"ok": True, "message_id": "BM-1", "email_status": "logged, not sent"}
 
-def test_dynamic_case_id():
+
+def test_update_goes_to_this_case_through_notify_buyer():
     state = {
         "unit_id": "A-12-08",
         "case_id": "C-999",
         "current_status": "ASSIGNED",
         "intake_result": {"category": "plumbing"},
-        "triage_result": {"assigned_technician": "T-PLUMB-1"},
     }
-    with patch("agents.simephony.comms.get_unit") as mock_get_unit, \
-         patch("agents.simephony.comms.send_email") as mock_send_email:
-        mock_get_unit.return_value = {"buyer": {"email": "test@test.com"}}
-        comms_node(state)
-        _, kwargs = mock_send_email.call_args
-        assert kwargs["case_id"] == "C-999"
+    with patch(NOTIFY, return_value=SENT_OK) as notify:
+        out = comms_node(state)
+    kwargs = notify.call_args.kwargs
+    assert kwargs["case_id"] == "C-999"  # tools.py finds this case's buyer itself
+    assert kwargs["title"] == "We've received your report"
+    assert kwargs["body"] == out["comms_result"]["message"]
+    assert out["comms_result"]["delivery"] == "logged, not sent"
+    assert out["comms_result"]["message_id"] == "BM-1"
 
 @pytest.mark.live_llm
 def test_technical_translation():
@@ -45,9 +34,7 @@ def test_technical_translation():
         "triage_result": {"assigned_technician": "T-PLUMB-1"},
         "verdict_note": "Replaced leaking 15mm copper pipe elbow, pressure tested 5 bar, no leaks detected."
     }
-    with patch("agents.simephony.comms.get_unit") as mock_get_unit, \
-         patch("agents.simephony.comms.send_email") as mock_send_email:
-        mock_get_unit.return_value = {"buyer": {"email": "test@test.com"}}
+    if True:  # notify_buyer is faked by the live-DB guard (tests/conftest.py)
         result = comms_node(state)
         message = result["comms_result"]["message"]
         assert "15mm copper pipe elbow" not in message.lower()
@@ -64,9 +51,7 @@ def test_guardrail_still_active(fake_llm):
         "triage_result": {"assigned_technician": "T-CIVIL-1"},
         "verdict_note": "We admit the concrete was poor quality, but it is within tolerance."
     }
-    with patch("agents.simephony.comms.get_unit") as mock_get_unit, \
-         patch("agents.simephony.comms.send_email") as mock_send_email:
-        mock_get_unit.return_value = {"buyer": {"email": "test@test.com"}}
+    if True:  # notify_buyer is faked by the live-DB guard (tests/conftest.py)
         result = comms_node(state)
         message = result["comms_result"]["message"].lower()
         assert "admit" not in message
@@ -83,7 +68,7 @@ def test_comms_handles_valid_status():
         "intake_result": {"category": "plumbing"},
         "triage_result": {"assigned_technician": "T-PLUMB-1"}
     }
-    with patch("agents.simephony.comms.get_unit"), patch("agents.simephony.comms.send_email"):
+    if True:  # notify_buyer is faked by the live-DB guard (tests/conftest.py)
         result = comms_node(state)
         assert "comms_result" in result
         message = result["comms_result"]["message"].lower()
@@ -120,10 +105,9 @@ PROTOCOL = (
 
 
 def _send(state):
-    with patch("agents.simephony.comms.get_unit", return_value={"buyer": {"email": "b@x.com"}}), \
-         patch("agents.simephony.comms.send_email") as mail:
+    with patch(NOTIFY, return_value=SENT_OK) as notify:
         out = comms_node(state)
-    return out, mail.call_args.kwargs["body"]
+    return out, notify.call_args.kwargs["body"]
 
 
 def test_mid_body_thanks_not_truncated(fake_llm):
@@ -347,15 +331,30 @@ def test_pending_signoff_without_guide_does_not_promise_steps(fake_llm):
     assert "below" not in body
 
 
-@pytest.mark.parametrize("unit", [{}, {"buyer": {}}, {"buyer": None}, None])
-def test_missing_buyer_email_is_not_sent_to_placeholder(fake_llm, unit):
+@pytest.mark.parametrize("case_id", [None, "C-NEW"])
+def test_case_not_in_db_yet_is_not_sent(fake_llm, case_id):
     fake_llm.responses = ["A technician has been assigned."]
-    with patch("agents.simephony.comms.get_unit", return_value=unit), \
-         patch("agents.simephony.comms.send_email") as mail:
-        out = comms_node({"current_status": "ASSIGNED", "case_id": "C-1"})
-    mail.assert_not_called()
-    assert out["comms_result"]["delivery"] == "no_recipient"
+    state = {"current_status": "ASSIGNED"} if case_id is None else {"current_status": "ASSIGNED", "case_id": case_id}
+    with patch(NOTIFY) as notify:
+        out = comms_node(state)
+    notify.assert_not_called()
+    assert out["comms_result"]["delivery"] == "no_case"
     assert out["comms_result"]["message"] == "A technician has been assigned."
+
+
+def test_tools_refusal_is_recorded(fake_llm):
+    fake_llm.responses = ["A technician has been assigned."]
+    with patch(NOTIFY, return_value={"ok": False, "error": "Case 'C-1' not found"}):
+        out = comms_node({"current_status": "ASSIGNED", "case_id": "C-1"})
+    assert out["comms_result"]["delivery"] == "failed"
+    assert "not found" in out["comms_result"]["error"]
+
+
+def test_buyer_without_email_still_gets_in_app_message(fake_llm):
+    fake_llm.responses = ["A technician has been assigned."]
+    with patch(NOTIFY, return_value={"ok": True, "message_id": "BM-2", "email_status": None}):
+        out = comms_node({"current_status": "ASSIGNED", "case_id": "C-1"})
+    assert out["comms_result"]["delivery"] == "in_app_only"
 
 
 def test_system_prompt_treats_notes_as_data(fake_llm):
@@ -397,11 +396,10 @@ def test_email_subject_has_no_placeholder_case_id():
 
 def test_sent_email_uses_plain_subject(fake_llm):
     fake_llm.responses = ["Your defect is confirmed."]
-    with patch("agents.simephony.comms.get_unit", return_value={"buyer": {"email": "b@x.com"}}), \
-         patch("agents.simephony.comms.send_email") as mail:
+    with patch(NOTIFY, return_value=SENT_OK) as notify:
         comms_node({"current_status": "VALID", "case_id": "C-7"})
-    assert mail.call_args.kwargs["subject"] == "[C-7] Defect confirmed: please book a repair"
-    assert "VALID" not in mail.call_args.kwargs["subject"]
+    assert notify.call_args.kwargs["title"] == "Defect confirmed: please book a repair"  # tools adds "[C-7] "
+    assert "VALID" not in notify.call_args.kwargs["title"]
 
 
 def test_short_message_with_thanks_keeps_its_content(fake_llm):

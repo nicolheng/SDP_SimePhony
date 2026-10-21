@@ -40,7 +40,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agents.simephony import booking, comms, escalation, recurrence, similar_defect
+from agents.simephony import backend_tools, booking, comms, escalation, recurrence, similar_defect
 from agents.simephony.comms import INVALID_CLOSING
 from agents.simephony.verification import IF_FAILS
 from agents.simephony.guardrails import scan_for_liability, scan_for_unsafe_steps
@@ -142,7 +142,7 @@ def _b64(path: str) -> str:
 
 
 def _emails(world) -> list[dict]:
-    return [c.kwargs for c in world.send_email.call_args_list]
+    return world.sent  # what tools.notify_buyer would have emailed
 
 
 def _assert_emails_safe(world):
@@ -155,17 +155,17 @@ def _assert_emails_safe(world):
 def world(monkeypatch, escalation_db):
     """Patch every tool where the agents look it up; nothing touches the DB or the network."""
     w = SimpleNamespace(
-        send_email=MagicMock(return_value={"status": "stub_sent"}),
-        get_unit=MagicMock(side_effect=lambda unit_id: {
-            "unit_id": unit_id, "block": "A", "floor": 12, "stack": "08",
-            "contractor": "Contractor X", "buyer": {"buyer_id": "B-0001", "email": BUYER}}),
+        sent=[],
         escalation=escalation_db,  # fake tools.check_escalation (tests/conftest.py)
         request_extra_inspection=escalation_db.request,
         get_available_slots=MagicMock(return_value={"slots": [dict(s) for s in SLOTS]}),
         assign_technician=MagicMock(return_value={"ok": True}),
     )
-    monkeypatch.setattr(comms, "send_email", w.send_email)
-    monkeypatch.setattr(comms, "get_unit", w.get_unit)
+
+    def notify_buyer(case_id, title, body):  # same subject / recipient as the real tools.notify_buyer
+        w.sent.append({"to": BUYER, "subject": f"[{case_id}] {title}", "body": body, "case_id": case_id})
+        return {"ok": True, "message_id": f"BM-{len(w.sent)}", "email_status": "logged, not sent"}
+    monkeypatch.setattr(backend_tools, "notify_buyer", notify_buyer)
     escalation_db.request.return_value = {"ok": True, "approval_id": "APR-1", "issue_id": "SI-002"}
     monkeypatch.setattr(booking, "get_available_slots", w.get_available_slots)
     monkeypatch.setattr(booking, "assign_technician", w.assign_technician)
@@ -286,6 +286,7 @@ def test_reopen_after_grace_starts_new_case(fake_llm, world, tmp_path):
     closed["closed_at"] = _days_ago(40)
     reopen_photo = _photo(tmp_path, "reopen-late.jpg")
     calls_before = len(fake_llm.calls)
+    emails_before = len(_emails(world))
 
     s = _step(fake_llm, closed, "case.reopened", CREATED, reopen_photo_path=reopen_photo)
 
@@ -298,7 +299,9 @@ def test_reopen_after_grace_starts_new_case(fake_llm, world, tmp_path):
     assert s["verification_result"] == {}
     intake_call = fake_llm.calls[calls_before]
     assert _b64(reopen_photo) in _image_urls(intake_call)[0]  # new intake reads the reopen photo
-    assert _emails(world)[-1]["case_id"] == "C-NEW"
+    # "C-NEW" isn't in the DB yet (the web app's create_case issues the real id), so nothing is sent
+    assert len(_emails(world)) == emails_before
+    assert s["comms_result"]["delivery"] == "no_case"
     world.request_extra_inspection.assert_not_called()
     # the old case is untouched
     assert closed["case_id"] == CASE

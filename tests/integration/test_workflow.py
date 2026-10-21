@@ -27,7 +27,8 @@ def _run(state):
 def no_side_effects(escalation_db):
     # escalation goes through fake tools (tests/conftest.py escalation_db); only the email is patched here
     escalation_db.request.return_value = {"ok": True, "approval_id": "AP-1"}
-    with patch("agents.simephony.comms.send_email") as mail:
+    with patch("agents.simephony.backend_tools.notify_buyer",
+               return_value={"ok": True, "message_id": "BM-1", "email_status": "logged, not sent"}) as mail:
         yield mail
 
 
