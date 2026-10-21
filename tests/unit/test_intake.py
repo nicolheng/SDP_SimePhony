@@ -107,7 +107,8 @@ class TestCategoryCompliance:
     def test_accepts_valid_category(self, monkeypatch, category):
         _patch_llm(monkeypatch, {"category": category, "missing_info": [],
                                   "urgency": "normal", "preliminary_outcome": "VALID_DEFECT"})
-        result = intake_node(_base_state())
+        # neutral text: a defect named in the description would correct the model's 'other'
+        result = intake_node(_base_state(user_description="Please check this, see photo."))
         assert result["intake_result"]["category"] == category
 
     @pytest.mark.parametrize("bad_cat", FORBIDDEN_CATEGORIES)
@@ -183,6 +184,21 @@ class TestUrgencyCompliance:
         result = intake_node(_base_state(user_description="Small paint scratch on wall"))
         assert result["intake_result"]["urgency"] == "low"
 
+    @pytest.mark.parametrize("desc, category", [
+        ("The floor tile in my living room sounds hollow when I tap it", "tiles"),  # live batch case 6
+        ("Aircond not cold.", "other"),                                            # live batch case 10
+    ])
+    def test_llm_low_without_a_low_rule_becomes_normal(self, monkeypatch, desc, category):
+        _patch_llm(monkeypatch, {"category": category, "urgency": "low",
+                                  "missing_info": [], "preliminary_outcome": "VALID_DEFECT"})
+        assert intake_node(_base_state(user_description=desc))["intake_result"]["urgency"] == "normal"
+
+    def test_paint_category_counts_as_cosmetic_low(self, monkeypatch):
+        _patch_llm(monkeypatch, {"category": "paint", "urgency": "low",
+                                  "missing_info": [], "preliminary_outcome": "VALID_DEFECT"})
+        result = intake_node(_base_state(user_description="Paint peeling near the door frame"))
+        assert result["intake_result"]["urgency"] == "low"
+
     def test_llm_normal_urgency_propagated(self, monkeypatch):
         _patch_llm(monkeypatch, {"category": "tiles", "urgency": "normal",
                                   "missing_info": [], "preliminary_outcome": "VALID_DEFECT"})
@@ -252,7 +268,10 @@ class TestResilience:
         monkeypatch.setattr("agents.simephony.intake.client", mock_client)
         result = intake_node(_base_state())
         assert "intake_result" in result
-        # Falls back to 'other' category on JSON parse failure
+        # JSON parse failure: the category comes from the words ("dripping" -> water_leak) ...
+        assert result["intake_result"]["category"] == "water_leak"
+        # ... and is 'other' when the words name no defect
+        result = intake_node(_base_state(user_description="Please check this, see photo."))
         assert result["intake_result"]["category"] == "other"
 
     def test_state_is_mutated_in_place(self, monkeypatch):
@@ -269,3 +288,88 @@ class TestResilience:
         result = intake_node(_base_state())
         assert result["intake_result"]["preliminary_outcome"] == "NOT_A_DEFECT"
 
+
+
+# ---------------------------------------------------------------------------
+# Live-run fixes (21 Oct): Manglish reports, missing location, saving the result
+# ---------------------------------------------------------------------------
+from agents.simephony.intake import intake_node as _intake_node
+
+
+def _model_says(fake_llm, **fields):
+    base = {"category": "other", "sub_category": "", "location_in_unit": None, "summary": "Ceiling issue",
+            "urgency": "normal", "mentions_previous_issue": False, "mentioned_recurrence_count": None,
+            "missing_info": [], "follow_up_question": "", "preliminary_outcome": "VALID_DEFECT",
+            "mismatch_detected": False}
+    fake_llm.responses = [json.dumps({**base, **fields})]
+
+
+@pytest.mark.parametrize("desc, category", [
+    ("Ceiling bocor lagi in the bedroom, this is the third time!", "water_leak"),  # live qwen said 'other'
+    ("Dinding retak dekat tingkap bilik tidur", "wall_crack"),
+    ("Longkang tersumbat, air tak turun in the bathroom", "drainage"),
+    ("Jubin bilik air kopak", "tiles"),
+    ("Pintu bilik tak boleh tutup", "door_window"),
+])
+def test_model_other_is_corrected_from_manglish_keywords(fake_llm, desc, category):
+    _model_says(fake_llm)
+    assert _intake_node({"user_description": desc})["intake_result"]["category"] == category
+
+
+def test_aircond_report_stays_other(fake_llm):
+    _model_says(fake_llm)
+    assert _intake_node({"user_description": "Aircond bocor air"})["intake_result"]["category"] == "other"
+
+
+def test_prompt_explains_mixed_malay_english(fake_llm):
+    _model_says(fake_llm, category="water_leak")
+    _intake_node({"user_description": "Siling bocor"})
+    system = fake_llm.calls[0][0]["content"]
+    assert "Malay" in system and "siling" in system
+
+
+@pytest.mark.parametrize("desc, location", [
+    ("Ceiling bocor lagi in the bedroom, this is the third time!", "bedroom ceiling"),
+    ("Siling bilik air bocor", "bathroom ceiling"),
+    ("Dapur sink leaking", "kitchen"),
+    ("Water dripping from the master bedroom ceiling", "master bedroom ceiling"),
+])
+def test_missing_location_is_taken_from_the_description(fake_llm, desc, location):
+    _model_says(fake_llm, category="water_leak", location_in_unit=None)
+    assert _intake_node({"user_description": desc})["intake_result"]["location_in_unit"] == location
+
+
+def test_model_location_is_kept(fake_llm):
+    _model_says(fake_llm, category="water_leak", location_in_unit="above the wardrobe")
+    out = _intake_node({"user_description": "Ceiling bocor in the bedroom"})
+    assert out["intake_result"]["location_in_unit"] == "above the wardrobe"
+
+
+def test_result_is_saved_to_the_case(fake_llm, monkeypatch):
+    from agents.simephony import backend_tools
+    save = MagicMock(return_value={"ok": True, "status": "SUBMITTED", "warnings": []})
+    monkeypatch.setattr(backend_tools, "save_intake_result", save)
+    _model_says(fake_llm, category="water_leak", location_in_unit="bedroom ceiling")
+    out = _intake_node({"case_id": "C-0016", "user_description": "Ceiling bocor"})
+    save.assert_called_once_with("C-0016", out["intake_result"])
+    assert out["intake_save"] == {"ok": True, "error": None}
+
+
+@pytest.mark.parametrize("case_id", [None, "C-NEW"])
+def test_no_save_without_a_case_in_the_db(fake_llm, monkeypatch, case_id):
+    from agents.simephony import backend_tools
+    save = MagicMock()
+    monkeypatch.setattr(backend_tools, "save_intake_result", save)
+    _model_says(fake_llm, category="water_leak")
+    out = _intake_node({"case_id": case_id, "user_description": "Ceiling bocor"})
+    save.assert_not_called()
+    assert out["intake_save"]["ok"] is False
+
+
+def test_save_refusal_is_recorded_not_raised(fake_llm, monkeypatch):
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "save_intake_result",
+                        lambda c, i: {"ok": False, "error": "Cannot save intake result: case C-1 is ASSIGNED"})
+    _model_says(fake_llm, category="water_leak")
+    out = _intake_node({"case_id": "C-1", "user_description": "Ceiling bocor"})
+    assert "ASSIGNED" in out["intake_save"]["error"]

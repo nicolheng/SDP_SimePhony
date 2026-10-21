@@ -16,6 +16,24 @@ from .llm_client import client, MODEL_TEXT
 _OCCURRENCE_THRESHOLD = 3
 
 
+def _save_links(case_id: str | None, history: list[dict], occurrences: int) -> str | None:
+    """Store the related cases on the case (shown on the case page) via tools.save_similar_cases.
+    INVALID cases are linked but not counted. Returns the error, or None."""
+    from . import backend_tools
+    if not case_id or case_id == "C-NEW":
+        return "No case in the DB to link against"
+    links = [{"related_case_id": c["case_id"], "reason": c.get("reason") or "Related case", "score": c.get("score")}
+             for c in history]
+    try:
+        saved = backend_tools.save_similar_cases(case_id, links, occurrence_count=occurrences)
+    except Exception as e:
+        saved = {"ok": False, "error": str(e)}
+    if saved.get("ok") is False:
+        print(f"⚠️ [SIMILAR] links for {case_id} not saved: {saved.get('error')}")
+        return saved.get("error")
+    return None
+
+
 def similar_defect_node(state: dict) -> dict:
     """P1: Analyze history for recurrences using backend/tools.py (real database)."""
     category = state["intake_result"].get("category", "other")
@@ -24,7 +42,9 @@ def similar_defect_node(state: dict) -> dict:
     # Call the real find_similar_cases from backend/tools.py.
     # The function accepts a 'filters' dict and returns a list of dicts.
     try:
-        history_data = find_similar_cases(filters={"unit_id": unit_id, "category": category})
+        history_data = find_similar_cases(filters={"unit_id": unit_id, "category": category}, top_k=50)
+        # The new case is already in the DB: it is not one of its own earlier cases.
+        history_data = [c for c in history_data if c.get("case_id") != state.get("case_id")]
         # Only count cases that are not INVALID (counts_toward_escalation flag from tools.py).
         past_case_count = sum(1 for c in history_data if c.get("counts_toward_escalation", True))
     except Exception as e:
@@ -67,6 +87,7 @@ def similar_defect_node(state: dict) -> dict:
     state["similar_cases_result"] = {
         "past_case_count": past_case_count,
         "total_occurrences": total_occurrences,
+        "save_error": _save_links(state.get("case_id"), history_data, total_occurrences),
         "ai_analysis": {
             "is_recurring": total_occurrences > 1,
             "recurrence_count": total_occurrences,
