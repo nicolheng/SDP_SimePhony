@@ -23,6 +23,7 @@ CASE_COLUMNS = {
     "handover_prev_slot": "TEXT",    # job start before the hand-over (same as now if the time was kept)
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
+ASSIGNMENT_COLUMNS = {"job": "TEXT"}  # inspection visit | detailed inspection | repair
 
 
 def _add_columns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
@@ -55,6 +56,28 @@ def _repair_seed_data(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE cases SET verification_status = 'verified' WHERE buyer_signed_at IS NOT NULL AND verification_status = 'pending'")
 
 
+# The job a case was on at a given moment: the latest of these milestones before it.
+_JOB_MILESTONES = {"case.created": "inspection visit", "case.reopened": "inspection visit",
+                   "inspection.approved": "detailed inspection", "repair.booked": "repair"}
+
+
+def _infer_assignment_jobs(conn: sqlite3.Connection) -> None:
+    """Fill assignment_history.job for rows written before it was recorded, from the case's timeline.
+    The first run also re-infers every existing row, correcting an earlier guess that called them all inspection visits."""
+    first = not conn.execute("SELECT 1 FROM app_meta WHERE key = 'assignment_jobs_inferred'").fetchone()
+    types = ", ".join(f"'{t}'" for t in _JOB_MILESTONES)
+    rows = conn.execute(f"SELECT assignment_id, case_id, created_at FROM assignment_history{'' if first else ' WHERE job IS NULL'}").fetchall()
+    for r in rows:
+        m = conn.execute(
+            f"""SELECT type FROM case_events WHERE case_id = ? AND type IN ({types}) AND julianday(created_at) <= julianday(?)
+                ORDER BY julianday(created_at) DESC, event_id DESC LIMIT 1""",
+            (r["case_id"], r["created_at"]),
+        ).fetchone()
+        conn.execute("UPDATE assignment_history SET job = ? WHERE assignment_id = ?",
+                     (_JOB_MILESTONES[m["type"]] if m else "inspection visit", r["assignment_id"]))
+    conn.execute("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('assignment_jobs_inferred', '1')")
+
+
 def reset_demo() -> None:
     """Reset demo: copy seed.db over the live DB, delete uploaded photos, and re-apply this migration."""
     db.reset_db()
@@ -69,7 +92,9 @@ def reset_demo() -> None:
 def migrate(conn: sqlite3.Connection) -> None:
     _add_columns(conn, "cases", CASE_COLUMNS)
     _add_columns(conn, "technicians", TECHNICIAN_COLUMNS)
+    _add_columns(conn, "assignment_history", ASSIGNMENT_COLUMNS)
     conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
+    _infer_assignment_jobs(conn)
 
     # Seeded technicians are in-house; add the demo subcontractors once.
     conn.execute("UPDATE technicians SET kind = 'technician' WHERE kind IS NULL")

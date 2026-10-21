@@ -138,7 +138,7 @@ export interface Case {
   /** The inspection time the buyer picked when reporting (the booked visit can differ). */
   preferredVisitAt?: string;
   /** Every accept and every decline / hand-over (assignment_history). */
-  assignments?: { technicianId: string; outcome: "ACCEPTED" | "REJECTED"; reason: string | null; at: string }[];
+  assignments?: { technicianId: string; outcome: "ACCEPTED" | "REJECTED"; reason: string | null; at: string; job: string }[];
   repairSlot?: string;
   photos: Photo[];
   reopenCount: number;

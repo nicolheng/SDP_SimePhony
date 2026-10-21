@@ -152,8 +152,9 @@ export function SdpCaseDetail() {
                 {[...c.assignments].reverse().map((a, i) => (
                   <li key={i} className="flex items-start justify-between gap-3 text-base">
                     <div>
+                      <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{a.job}</p>
                       <p className="font-medium">{workerLabel(a.technicianId)}</p>
-                      {a.reason && <p className="text-sm text-zinc-600">{a.reason}</p>}
+                      {a.reason && <p className="text-sm text-zinc-600">Reason: {a.reason}</p>}
                     </div>
                     <div className="shrink-0 text-right">
                       <span

@@ -3,6 +3,7 @@ import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList, Clock, Hea
 import Link from "next/link";
 import { useMemo } from "react";
 import { BrandMark } from "@/components/brand";
+import { useRecentActivity } from "@/components/case-views";
 import { BuildingBanner } from "@/components/illustrations";
 import { QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
 import { StatusBadge } from "@/components/status-badge";
@@ -22,7 +23,8 @@ export default function BuyerHome() {
   const cases = useDemo((s) => s.cases);
   const messages = useDemo((s) => s.messages);
   const now = useDemo((s) => s.now);
-  const mine = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id && !c.historical).reverse(), [cases]);
+  const own = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id && !c.historical), [cases]);
+  const { sorted: mine } = useRecentActivity(own);
   const ongoing = mine.filter((c) => isOpen(c.status));
   const closed = mine.filter((c) => !isOpen(c.status));
   const action = mine.filter(buyerNeedsAction);

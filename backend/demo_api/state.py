@@ -127,7 +127,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "visitSlot": slot_of("visit"),
             "preferredVisitAt": norm(r.get("preferred_visit_at")),
             "assignments": [
-                {"technicianId": a["technician_id"], "outcome": a["outcome"], "reason": a["rejected_reason"], "at": norm(a["created_at"])}
+                {"technicianId": a["technician_id"], "outcome": a["outcome"], "reason": a["rejected_reason"], "at": norm(a["created_at"]),
+                 "job": a.get("job") or "inspection visit"}
                 for a in assignments.get(cid, [])
             ],
             "repairSlot": repair_starts[0] if repair_starts else None,

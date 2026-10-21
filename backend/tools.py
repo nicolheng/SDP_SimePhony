@@ -12,7 +12,7 @@ Follows the web app's model (backend/demo_api):
 Callers:
   - LangGraph agents import this module directly.
   - mcp_server.py exposes the agent-facing tools (not the human decisions) to MCP clients.
-  - demo_api/workflow.py still has its own copies of these rules; it should call these later.
+  - demo_api/workflow.py (the web app) calls these inside each request's transaction (use_connection).
 
 Write tools return {"ok": False, "error": "..."} instead of raising when a business rule blocks
 the action (wrong status, technician busy, outside grace period), so an agent can react.
@@ -25,6 +25,7 @@ import re
 import smtplib
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
@@ -38,6 +39,7 @@ load_dotenv()
 
 import db
 from demo_api import config
+from demo_api.analytics import cluster_confidence
 from demo_api.migrate import migrate
 from demo_api.timeutil import add_days, days_between, demo_now, fmt_datetime, local_day, norm, parse, slot_iso
 
@@ -74,12 +76,28 @@ def load_rules() -> dict:
 # ---------- database access ----------
 
 _ready_dbs: set[str] = set()
+_shared_conn: ContextVar[Optional[sqlite3.Connection]] = ContextVar("tools_shared_conn", default=None)
+
+
+@contextmanager
+def use_connection(conn: sqlite3.Connection):
+    """Run tool calls inside the caller's open transaction (the web app's request), so one request is one
+    transaction: the tools then neither commit nor close, and a later failure rolls everything back."""
+    token = _shared_conn.set(conn)
+    try:
+        yield
+    finally:
+        _shared_conn.reset(token)
 
 
 @contextmanager
 def _connect():
-    """One transaction on the live DB. The first use per DB file applies schema.sql and the web app's
-    migrations (demo clock, subcontractors, extra columns), so agents work without starting FastAPI."""
+    """The caller's transaction (use_connection), or a new one on the live DB. The first own connection per
+    DB file applies schema.sql and the web app's migrations, so agents work without starting FastAPI."""
+    shared = _shared_conn.get()
+    if shared is not None:
+        yield shared
+        return
     key = str(db.DB_PATH)
     if key not in _ready_dbs:
         db.ensure_db()
@@ -120,9 +138,10 @@ def _get_case(conn: sqlite3.Connection, case_id: str) -> dict:
     return dict(row)
 
 
-def _require_status(case: dict, allowed: tuple, action: str) -> None:
+def _require_status(case: dict, allowed: tuple, action: str, message: Optional[str] = None) -> None:
+    """`message` is the wording shown to people in the web app; agents get the technical one."""
     if case["status"] not in allowed:
-        raise ToolError(f"Cannot {action}: case {case['case_id']} is {case['status']} (needs {' / '.join(allowed)})")
+        raise ToolError(message or f"Cannot {action}: case {case['case_id']} is {case['status']} (needs {' / '.join(allowed)})")
 
 
 def _unit(conn: sqlite3.Connection, unit_id: str) -> dict:
@@ -204,12 +223,13 @@ def _repair_blocks(hours: float) -> int:
     return min(len(config.SLOT_TIMES), max(1, -(-int(hours * 10) // (config.SLOT_HOURS * 10))))
 
 
-def _repair_options(conn: sqlite3.Connection, case: dict) -> list[dict]:
-    """Repair start times where a worker is free for the whole job. Jobs stay within one session:
-    1 block any time, 2 blocks morning or afternoon, longer from 9am."""
+def _repair_options(conn: sqlite3.Connection, case: dict, pool: Optional[list[dict]] = None) -> list[dict]:
+    """Repair start times where a worker (from the repair plan, or `pool`) is free for the whole job. Jobs stay
+    within one session: 1 block any time, 2 blocks morning or afternoon, longer from 9am."""
     plan = _case_repair_plan(case)
     n = _repair_blocks(plan["hours"])
-    pool = _repairers(_workers(conn), case["category"], _unit(conn, case["unit_id"])["block"])
+    if pool is None:
+        pool = _repairers(_workers(conn), case["category"], _unit(conn, case["unit_id"])["block"])
     bookings = _bookings(conn, ignore_case=case["case_id"], ignore_kind="repair")
     starts = list(range(len(config.SLOT_TIMES))) if n == 1 else [0, 2] if n == 2 else [0]
     out = []
@@ -244,8 +264,20 @@ def _drop_slots(conn: sqlite3.Connection, slot_ids: list[str]) -> None:
 
 
 def _release(conn: sqlite3.Connection, case_id: str, kind: str) -> None:
-    """Cancel a booking that won't happen (reassignment, rebooking). Same rules as demo_api/workflow.cancel_booking."""
+    """Cancel a booking that won't happen (reassignment, rebooking) so the time is free again."""
     _drop_slots(conn, [r["slot_id"] for r in conn.execute("SELECT slot_id FROM slots WHERE case_id = ? AND kind = ?", (case_id, kind))])
+
+
+def _release_worker(conn: sqlite3.Connection, case_id: str, kind: str, worker_id: str) -> None:
+    """Cancel one worker's bookings for this job (e.g. the one handing it over)."""
+    _drop_slots(conn, [r["slot_id"] for r in conn.execute(
+        "SELECT slot_id FROM slots WHERE case_id = ? AND kind = ? AND technician_id = ?", (case_id, kind, worker_id))])
+
+
+def _pending_assignment(case: dict) -> dict:
+    """Fields for giving the case's next job to a worker, who still has to accept it."""
+    return {"booking_status": "PENDING", "assignment_attempts": (case.get("assignment_attempts") or 0) + 1,
+            "handed_over_from": None, "handover_reason": None, "handed_over_at": None, "handover_prev_slot": None}
 
 
 def _finish(conn: sqlite3.Connection, case_id: str, kind: str) -> None:
@@ -264,6 +296,58 @@ def _declined_technicians(conn: sqlite3.Connection, case_id: str) -> list[str]:
     return declined
 
 
+# A job a worker accepts or hands over, by case status: the slot kind it books and its name in messages.
+JOB_KIND = {"VISIT_SCHEDULED": "visit", "EXTRA_INSPECTION": "visit", "REPAIR_BOOKED": "repair"}
+JOB_NAME = {"VISIT_SCHEDULED": "inspection visit", "EXTRA_INSPECTION": "detailed inspection", "REPAIR_BOOKED": "repair"}
+
+
+def _job_slots(case: dict, kind: str, start: str) -> list[str]:
+    """The 2-hour blocks a job starting at `start` takes: one for a visit, the repair plan's blocks for a repair."""
+    if kind != "repair":
+        return [start]
+    n = _repair_blocks(_case_repair_plan(case)["hours"])
+    day = local_day(start)
+    i = next((j for j, t in enumerate(config.SLOT_TIMES) if slot_iso(day, t) == start), 0)
+    return [slot_iso(day, t) for t in config.SLOT_TIMES[i:i + n]]
+
+
+def _handover_current(conn: sqlite3.Connection, case: dict, kind: str) -> list[str]:
+    """The handed-over job's time (from handover_prev_slot), if it is still bookable: a colleague free then keeps it."""
+    prev = norm(case.get("handover_prev_slot"))
+    return _job_slots(case, kind, prev) if prev and prev in _upcoming_slots(_now(conn)) else []
+
+
+def _reassignment_options(conn: sqlite3.Connection, case: dict, kind: str, current: list[str]) -> list[dict]:
+    """Colleagues who can take over a job: at the same time (`current`) if they're free, otherwise their next free
+    time. Same-time options first, then the earliest. Skips workers who declined this round and the support
+    subcontractor. Visits go to in-house technicians; repairs to anyone with the trade."""
+    workers = _workers(conn)
+    block = _unit(conn, case["unit_id"])["block"]
+    if kind == "repair":
+        plan = _repair_plan(case["category"])
+        pool = [w for w in workers if block in w["blocks"] and set(w["skills"]) & set(plan["skills"])]
+    else:
+        pool = _visit_technicians(workers, case["category"], block)
+    skip = {*_declined_technicians(conn, case["case_id"]), case.get("technician_id"), case.get("support_id")}
+    pool = [w for w in pool if w["technician_id"] not in skip]
+    bookings = _bookings(conn)
+    repair = _repair_options(conn, case, pool) if kind == "repair" else []
+    upcoming = _upcoming_slots(_now(conn))
+    out = []
+    for w in pool:
+        wid = w["technician_id"]
+        if current and all(not _busy(bookings, wid, s) for s in current):
+            slots = current
+        elif kind == "repair":
+            slots = next((o["slots"] for o in repair if wid in [x["technician_id"] for x in o["workers"]]), None)
+        else:
+            slots = next(([s] for s in upcoming if not _busy(bookings, wid, s)), None)
+        if slots:
+            out.append({"technician_id": wid, "name": _worker_label(w), "start": slots[0], "start_local": fmt_datetime(slots[0]),
+                        "slots": slots, "same_time": slots == current})
+    return sorted(out, key=lambda o: (not o["same_time"], o["start"]))
+
+
 # ---------- photos ----------
 
 def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], kind: str) -> Optional[dict]:
@@ -276,6 +360,8 @@ def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], ki
     m = re.match(r"data:image/(png|jpe?g|webp);base64,(.+)$", photo, re.S)
     if m:
         raw, ext = base64.b64decode(m.group(2)), "png" if m.group(1) == "png" else "jpg"
+    elif photo.startswith("data:"):
+        raise ToolError("Photos must be JPG, PNG or WebP images.")
     else:
         src = Path(photo)
         if not src.is_absolute():
@@ -284,10 +370,10 @@ def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], ki
             raise ToolError(f"Photo not found: {photo}")
         ext = src.suffix.lstrip(".").lower().replace("jpeg", "jpg")
         if ext not in ("png", "jpg", "webp"):
-            raise ToolError("Photos must be JPG, PNG or WebP images")
+            raise ToolError("Photos must be JPG, PNG or WebP images.")
         raw = src.read_bytes()
     if len(raw) > MAX_PHOTO_BYTES:
-        raise ToolError("That photo is too large (max 15 MB)")
+        raise ToolError("That photo is too large (max 15 MB).")
     photo_id = db.next_record_id(conn, "case_photos")
     name = f"{case_id}_{photo_id}_{kind}.{ext}"
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -794,15 +880,17 @@ def save_intake_result(case_id: str, intake: dict) -> dict:
 
 
 @_returns_errors
-def save_similar_cases(case_id: str, links: list[dict], occurrence_count: Optional[int] = None) -> dict:
-    """SimilarDefectAgent: store related cases (replacing earlier links for this case), shown on the
-    case page. links: [{related_case_id, reason, score?}]. occurrence_count: reports of this defect in
-    this unit including this one (check_escalation computes it). Returns {ok, linked}."""
+def save_similar_cases(case_id: str, links: Optional[list[dict]] = None, occurrence_count: Optional[int] = None) -> dict:
+    """SimilarDefectAgent / RecurrenceAgent: store related cases (replacing earlier links for this case),
+    shown on the case page. links: [{related_case_id, reason, score?}]; omit to keep the links and only
+    update occurrence_count (reports of this defect in this unit including this one, as check_escalation
+    computes it). Returns {ok, linked}."""
     with _connect() as conn:
         _get_case(conn, case_id)
         now = _now(conn)
-        conn.execute("DELETE FROM case_links WHERE case_id = ?", (case_id,))
-        for link in links:
+        if links is not None:
+            conn.execute("DELETE FROM case_links WHERE case_id = ?", (case_id,))
+        for link in links or []:
             if not conn.execute("SELECT 1 FROM cases WHERE case_id = ?", (link["related_case_id"],)).fetchone():
                 raise ToolError(f"Related case {link['related_case_id']!r} not found")
             conn.execute(
@@ -811,7 +899,7 @@ def save_similar_cases(case_id: str, links: list[dict], occurrence_count: Option
             )
         if occurrence_count is not None:
             _save(conn, case_id, occurrence_count=occurrence_count)
-    return {"ok": True, "linked": len(links)}
+    return {"ok": True, "linked": len(links or [])}
 
 
 @_returns_errors
@@ -819,18 +907,18 @@ def assign_technician(
     case_id: str, technician_id: str, start: str, reason: str,
     urgency: Optional[str] = None, support_id: Optional[str] = None,
 ) -> dict:
-    """TriageAgent: request the inspection visit from an in-house technician who has the category's
-    skill, covers the block and is free at `start` (one of the times from get_booking_options). The time
-    is held and the case waits for the technician (booking_status PENDING): SUBMITTED / REOPENED ->
-    ASSIGNED; EXTRA_INSPECTION keeps its status (optionally with a subcontractor `support_id` for a
-    joint inspection). The technician then accepts or rejects (respond_to_assignment); after a
-    rejection, call get_booking_options again and assign someone else. Rebooking replaces the earlier
-    visit. Returns {ok, status, booking_status, technician_id, start, start_local}."""
+    """TriageAgent: book the inspection visit with an in-house technician who has the category's skill,
+    covers the block and is free at `start` (one of the times from get_booking_options). The time is held
+    and the technician still has to accept it (booking_status PENDING): SUBMITTED / REOPENED ->
+    VISIT_SCHEDULED; EXTRA_INSPECTION keeps its status (optionally with a subcontractor `support_id` for a
+    joint inspection). The technician accepts or hands the job over (respond_to_assignment); after a
+    hand-over use get_reassignment_options + reassign_job. Rebooking replaces the earlier visit.
+    Returns {ok, status, booking_status, technician_id, start, start_local}."""
     if urgency and urgency.lower() not in ("high", "normal", "low"):
         raise ToolError(f"Invalid urgency {urgency!r} (use high / normal / low)")
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("SUBMITTED", "ASSIGNED", "VISIT_SCHEDULED", "REOPENED", "EXTRA_INSPECTION"), "book a visit")
+        _require_status(case, ("SUBMITTED", "VISIT_SCHEDULED", "REOPENED", "EXTRA_INSPECTION"), "book a visit")
         start = norm(start)
         if start not in _upcoming_slots(_now(conn)):
             raise ToolError(f"{start} is not a bookable visit time (see get_booking_options)")
@@ -859,9 +947,8 @@ def assign_technician(
         slot_id = _book(conn, case_id, technician_id, start, "visit")
         if support:
             _book(conn, case_id, support_id, start, "visit")
-        fields = {"technician_id": technician_id, "triage_reason": reason, "booking_status": "PENDING",
-                  "assignment_attempts": (case.get("assignment_attempts") or 0) + 1,
-                  "status": "EXTRA_INSPECTION" if case["status"] == "EXTRA_INSPECTION" else "ASSIGNED"}
+        fields = {"technician_id": technician_id, "triage_reason": reason, **_pending_assignment(case),
+                  "status": "EXTRA_INSPECTION" if case["status"] == "EXTRA_INSPECTION" else "VISIT_SCHEDULED"}
         if urgency:
             fields["urgency"] = urgency.lower()
         if support:
@@ -906,6 +993,52 @@ def set_triage_result(case_id: str, urgency: str, reason: str) -> dict:
         _save(conn, case_id, urgency=urgency)
         _emit(conn, case_id, "agent.step", f"Triage: {urgency} urgency. {reason}", agent="TriageAgent")
     return {"ok": True, "urgency": urgency}
+
+
+@_returns_errors
+def get_reassignment_options(case_id: str) -> dict:
+    """TriageAgent: after a technician hands a job over (respond_to_assignment with accept=false), the
+    colleagues who can take it: at the same time if they're free (same_time=true), otherwise their next free
+    time; same-time options first. Visits: in-house technicians; repairs: anyone with the trade. Workers who
+    declined this round are skipped. Returns {case_id, job, previous_start, options: [{technician_id, name,
+    start, start_local, slots, same_time}]}."""
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        kind = JOB_KIND.get(case["status"])
+        if kind is None or case["booking_status"] != "REJECTED":
+            raise ToolError(f"Case {case_id} has no job waiting for a new technician")
+        options = _reassignment_options(conn, case, kind, _handover_current(conn, case, kind))
+    return {"case_id": case_id, "job": JOB_NAME[case["status"]], "previous_start": norm(case.get("handover_prev_slot")), "options": options}
+
+
+@_returns_errors
+def reassign_job(case_id: str, technician_id: str, start: str) -> dict:
+    """TriageAgent: give a handed-over job to a colleague from get_reassignment_options (technician_id and
+    its start). Books the job (repairs take the repair plan's blocks); the new worker still has to accept
+    (booking_status PENDING). For a joint extra inspection moved to a new time, the subcontractor moves too.
+    Returns {ok, status, booking_status, technician_id, start, start_local, same_time}."""
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        kind = JOB_KIND.get(case["status"])
+        if kind is None or case["booking_status"] != "REJECTED":
+            raise ToolError(f"Case {case_id} has no job waiting for a new technician")
+        option = next((o for o in _reassignment_options(conn, case, kind, _handover_current(conn, case, kind))
+                       if o["technician_id"] == technician_id and o["start"] == norm(start)), None)
+        if option is None:
+            raise ToolError(f"{technician_id} at {start} is not one of the reassignment options (see get_reassignment_options)")
+        for s in option["slots"]:
+            _book(conn, case_id, technician_id, s, kind)
+        support = case.get("support_id")
+        if case["status"] == "EXTRA_INSPECTION" and support and not option["same_time"]:
+            _release_worker(conn, case_id, "visit", support)
+            _book(conn, case_id, support, option["start"], "visit")
+        # Keep the hand-over details (handed_over_from / reason / previous slot) for the screens.
+        _save(conn, case_id, technician_id=technician_id, booking_status="PENDING",
+              assignment_attempts=(case.get("assignment_attempts") or 0) + 1)
+        _emit(conn, case_id, "case.assigned", f"Handed over to {option['name']} "
+              + ("(same time)" if option["same_time"] else f"(moved to {option['start_local']})"), technician_id=technician_id)
+    return {"ok": True, "status": case["status"], "booking_status": "PENDING", "technician_id": technician_id,
+            "start": option["start"], "start_local": option["start_local"], "same_time": option["same_time"]}
 
 
 @_returns_errors
@@ -970,7 +1103,14 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
         unit = _unit(conn, case["unit_id"])
         related = _related_cases(conn, case, unit)
         stack_ids = [r["case_id"] for r in related] + [case_id]
-        reopened = sum(1 for r in related if (r["reopen_count"] or 0) > 0) + (1 if (case["reopen_count"] or 0) > 0 else 0)
+        cluster = [*({"unit_id": r["unit_id"], "reopen_count": r["reopen_count"] or 0} for r in related),
+                   {"unit_id": case["unit_id"], "reopen_count": case["reopen_count"] or 0}]
+        reopened = sum(1 for x in cluster if x["reopen_count"] > 0)
+        per_unit: dict[str, int] = {}
+        for x in cluster:
+            per_unit[x["unit_id"]] = per_unit.get(x["unit_id"], 0) + 1
+        # Same score the SDP Analytics page shows for this block + stack + category cluster.
+        confidence = cluster_confidence(len(per_unit), sum(1 for n in per_unit.values() if n > 1), sum(x["reopen_count"] for x in cluster))
 
         approval_id = _next_id(conn, "approvals", "approval_id", "APR", 4)
         conn.execute(
@@ -985,7 +1125,7 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
                 "UPDATE systemic_issues SET related_cases = ?, recurrence_count = ?, reopened_count = MAX(reopened_count, ?), "
                 "confidence = MAX(COALESCE(confidence, 0), ?), status = 'open', approval_id = ?, "
                 "recommended_action = COALESCE(?, recommended_action) WHERE issue_id = ?",
-                (json.dumps(related), len(related), reopened, min(0.95, 0.55 + len(related) * 0.06), approval_id, recommended_action, issue_id),
+                (json.dumps(related), len(related), reopened, confidence, approval_id, recommended_action, issue_id),
             )
         else:
             issue_id = _next_id(conn, "systemic_issues", "issue_id", "SI", 3)
@@ -994,7 +1134,7 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
                    confidence, detected_at, status, recommended_action, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
                 (issue_id, title or (case["sub_category"] or "").replace("_", " ").capitalize() or config.CATEGORY_LABEL.get(case["category"]),
                  case["category"], unit["block"], unit["stack"], json.dumps(stack_ids), len(stack_ids), reopened,
-                 min(0.95, 0.55 + len(stack_ids) * 0.06), now,
+                 confidence, now,
                  recommended_action or f"Extra inspection of {case['unit_id']} and the unit above; check the shared riser for stack {unit['block']}-{unit['stack']}.",
                  approval_id),
             )
@@ -1011,9 +1151,9 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
 
 @_returns_errors
 def attach_inspection_brief(case_id: str, brief: dict | str) -> dict:
-    """InitialInspectionAgent: after SDP approves, save the technician's pre-inspection brief and move
-    the case to EXTRA_INSPECTION (then book the visit with assign_technician). brief keys shown in the
-    app: timeline [{at, text}], photoComparison, neighbouringUnits [{unitId, cases, last}],
+    """InitialInspectionAgent: after SDP approves (the case needs an approved request), save the technician's
+    pre-inspection brief and move the case to EXTRA_INSPECTION (then book the visit with assign_technician).
+    brief keys shown in the app: timeline [{at, text}], photoComparison, neighbouringUnits [{unitId, cases, last}],
     likelyComponents [...], checklist [...]. Returns {ok, status}."""
     if isinstance(brief, str):
         brief = _parse_guide(brief)
@@ -1023,7 +1163,10 @@ def attach_inspection_brief(case_id: str, brief: dict | str) -> dict:
         raise ToolError("The brief needs a checklist")
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("ESCALATION_PENDING", "EXTRA_INSPECTION"), "attach an inspection brief")
+        # Usually ESCALATION_PENDING; an approved request can also be on a case in another status (e.g. seeded
+        # APR-0002 on a CLOSED case), and approval moves it to EXTRA_INSPECTION like the web app always has.
+        if case["status"] == "INVALID":
+            raise ToolError(f"Cannot attach an inspection brief: case {case_id} is INVALID")
         if not conn.execute("SELECT 1 FROM approvals WHERE case_id = ? AND status = 'approved'", (case_id,)).fetchone():
             raise ToolError(f"Case {case_id} has no approved extra-inspection request")
         now = _now(conn)
@@ -1110,10 +1253,12 @@ def notify_technician(case_id: str, subject: str, body: str, technician_id: Opti
 
 
 @_returns_errors
-def log_agent_step(case_id: str, agent: str, message: str, data: Optional[dict] = None) -> dict:
-    """Record what an agent did (agent.step event) for the SDP agent-trace page. Returns {ok, event_id}."""
+def log_agent_step(case_id: Optional[str], agent: str, message: str, data: Optional[dict] = None) -> dict:
+    """Record what an agent did (agent.step event) for the SDP agent-trace page. case_id may be null for
+    system-wide steps. Returns {ok, event_id}."""
     with _connect() as conn:
-        _get_case(conn, case_id)
+        if case_id:
+            _get_case(conn, case_id)
         event_id = _emit(conn, case_id, "agent.step", message, agent=agent, **({"data": data} if data else {}))
     return {"ok": True, "event_id": event_id}
 
@@ -1121,17 +1266,35 @@ def log_agent_step(case_id: str, agent: str, message: str, data: Optional[dict] 
 # =====================================================================
 # Human actions (buyer / technician / SDP screens). Not exposed over MCP:
 # these are decisions a person makes, so an AI client must not take them.
+# Their error messages are shown to people in the web app.
 # =====================================================================
+
+def _log_assignment(conn: sqlite3.Connection, case_id: str, worker_id: str, outcome: str, job: str,
+                    reason: Optional[str] = None, slot_id: Optional[str] = None) -> None:
+    """assignment_history: every accept (ACCEPTED) and every decline or hand-over (REJECTED, with the reason),
+    with the job it was for (inspection visit / detailed inspection / repair)."""
+    conn.execute(
+        "INSERT INTO assignment_history (assignment_id, case_id, technician_id, slot_id, outcome, rejected_reason, created_at, job) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (db.next_record_id(conn, "assignment_history"), case_id, worker_id, slot_id, outcome, reason, _now(conn), job),
+    )
+
+
+def _fmt_hours(h: float) -> str:
+    if h >= 8:
+        return "about 1 day"
+    n = f"{h:.1f}" if h % 1 else f"{int(h)}"
+    return f"about {n} hour{'' if h == 1 else 's'}"
+
 
 @_returns_errors
 def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: Optional[str] = None, photo: Optional[str] = None) -> dict:
     """Buyer reports a defect (-> SUBMITTED; intake runs next). preferred_slot: the visit time the buyer
     picked (ISO). photo: data URL or local file path. Returns {ok, case_id, status, preferred_visit_at, photo}."""
     if not description.strip():
-        raise ToolError("Please describe the problem")
+        raise ToolError("Please describe the problem.")
     with _connect() as conn:
         if not conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
-            raise ToolError(f"Unknown buyer {buyer_id} for unit {unit_id}")
+            raise ToolError("Unknown buyer or unit.")
         preferred = norm(preferred_slot) if preferred_slot else None
         case_id = _next_id(conn, "cases", "case_id", "C", 4)
         conn.execute(
@@ -1154,69 +1317,82 @@ def add_photo(case_id: str, photo: str, kind: str) -> dict:
 
 
 @_returns_errors
-def answer_follow_up(case_id: str, answer: str, photo: Optional[str] = None) -> dict:
-    """Buyer answers IntakeAgent's question. Appends it to the description; the case stays INFO_NEEDED
-    until intake runs again (save_intake_result). Returns {ok, description}."""
+def answer_follow_up(case_id: str, answer: str, photo: Optional[str] = None, preferred_slot: Optional[str] = None) -> dict:
+    """Buyer answers IntakeAgent's question (optionally with a photo or a new visit time). Appends it to the
+    description; the case stays INFO_NEEDED until intake runs again (save_intake_result).
+    Returns {ok, description, preferred_visit_at}."""
     if not answer.strip():
-        raise ToolError("Please type an answer")
+        raise ToolError("Please type an answer.")
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("INFO_NEEDED",), "answer a follow-up question")
+        _require_status(case, ("INFO_NEEDED",), "answer a follow-up question", "This case isn't waiting for more information.")
         description = f"{case['description']}\n{answer.strip()}"
-        _save(conn, case_id, description=description)
+        preferred = norm(preferred_slot) if preferred_slot else norm(case.get("preferred_visit_at"))
+        _save(conn, case_id, description=description, preferred_visit_at=preferred)
         _save_photo(conn, case_id, photo, "original")
-    return {"ok": True, "description": description}
+    return {"ok": True, "description": description, "preferred_visit_at": preferred}
 
 
 @_returns_errors
-def respond_to_assignment(case_id: str, accept: bool, reason: str = "") -> dict:
-    """Technician accepts or rejects a PENDING visit request.
-    Accept -> booking CONFIRMED; ASSIGNED -> VISIT_SCHEDULED (EXTRA_INSPECTION stays).
-    Reject (reason required) -> the held time is freed, the technician is cleared and the case goes back
-    to SUBMITTED (REOPENED for a revisit; EXTRA_INSPECTION stays); TriageAgent then reassigns, skipping
-    rejected_technicians. Returns {ok, status, booking_status, needs_reassignment, rejected_technicians}."""
+def respond_to_assignment(case_id: str, accept: bool, reason: str = "", technician_id: Optional[str] = None) -> dict:
+    """The assigned worker accepts or hands over the case's current job (inspection visit, extra inspection
+    or repair). technician_id: the worker responding (must be the one assigned).
+    Accept (booking PENDING) -> CONFIRMED; the case keeps its status.
+    Hand over (reason required; also after accepting, e.g. an emergency) -> their booking is cancelled, the
+    technician is cleared and booking_status is REJECTED with the hand-over details; the case keeps its status.
+    TriageAgent then gives the job to a colleague: handover_options here (same as get_reassignment_options),
+    then reassign_job. Returns {ok, status, booking_status, job, start (the job's booked time),
+    needs_reassignment, rejected_technicians, handover_options}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        if case["booking_status"] != "PENDING":
-            raise ToolError(f"Case {case_id} has no visit waiting for a response (booking_status={case['booking_status']})")
-        if not accept and not reason.strip():
-            raise ToolError("Give a reason for rejecting the visit")
-        tech_id = case["technician_id"]
-        tech = _worker(conn, tech_id)
-        slot = conn.execute(
-            "SELECT slot_id, start_at FROM slots WHERE case_id = ? AND kind = 'visit' AND technician_id = ? ORDER BY start_at DESC LIMIT 1",
-            (case_id, tech_id),
-        ).fetchone()
-        now = _now(conn)
-        conn.execute(
-            "INSERT INTO assignment_history (assignment_id, case_id, technician_id, slot_id, outcome, rejected_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (db.next_record_id(conn, "assignment_history"), case_id, tech_id, slot["slot_id"] if slot else None,
-             "ACCEPTED" if accept else "REJECTED", None if accept else reason.strip(), now),
-        )
-        when = f" for {fmt_datetime(slot['start_at'])}" if slot else ""
+        kind = JOB_KIND.get(case["status"])
+        if kind is None or not case["technician_id"]:
+            raise ToolError("This case has no job to accept or hand over right now.")
+        if technician_id and case["technician_id"] != technician_id:
+            raise ToolError("This job is assigned to another technician.")
+        worker_id = case["technician_id"]
+        label = _worker_label(_worker(conn, worker_id))
+        job = JOB_NAME[case["status"]]
+        booked = conn.execute(
+            "SELECT slot_id, start_at FROM slots WHERE case_id = ? AND kind = ? AND technician_id = ? ORDER BY start_at",
+            (case_id, kind, worker_id),
+        ).fetchall()
+        starts = [norm(r["start_at"]) for r in booked]
         if accept:
-            status = case["status"] if case["status"] == "EXTRA_INSPECTION" else "VISIT_SCHEDULED"
-            _save(conn, case_id, status=status, booking_status="CONFIRMED")
-            _emit(conn, case_id, "booking.confirmed", f"{tech['name']} accepted the visit{when}", technician_id=tech_id)
-        else:
-            status = case["status"] if case["status"] == "EXTRA_INSPECTION" else "REOPENED" if (case["reopen_count"] or 0) > 0 else "SUBMITTED"
-            _release(conn, case_id, "visit")
-            _save(conn, case_id, status=status, booking_status="REJECTED", technician_id=None)
-            _emit(conn, case_id, "booking.rejected", f"{tech['name']} rejected the visit{when}: {reason.strip()}",
-                  technician_id=tech_id, reason=reason.strip())
+            if case["booking_status"] != "PENDING":
+                raise ToolError("You've already accepted this job.")
+            _log_assignment(conn, case_id, worker_id, "ACCEPTED", job, slot_id=booked[0]["slot_id"] if booked else None)
+            _save(conn, case_id, booking_status="CONFIRMED")
+            _emit(conn, case_id, "booking.confirmed", f"{label} accepted the {job}", technician_id=worker_id)
+            return {"ok": True, "status": case["status"], "booking_status": "CONFIRMED", "job": job, "start": starts[0] if starts else None,
+                    "needs_reassignment": False, "rejected_technicians": _declined_technicians(conn, case_id), "handover_options": []}
+
+        reason = reason.strip()
+        if not reason:
+            raise ToolError("Please give a reason.")
+        declined = case["booking_status"] == "PENDING"
+        _log_assignment(conn, case_id, worker_id, "REJECTED", job, reason)
+        _release_worker(conn, case_id, kind, worker_id)
+        _save(conn, case_id, technician_id=None, booking_status="REJECTED", handed_over_from=worker_id, handover_reason=reason,
+              handed_over_at=_now(conn), handover_prev_slot=starts[0] if starts else None)
+        _emit(conn, case_id, "booking.rejected", f"{label} {'declined' if declined else 'can no longer do'} the {job}: {reason}",
+              technician_id=worker_id, reason=reason)
+        case_now = _get_case(conn, case_id)
+        options = _reassignment_options(conn, case_now, kind, _handover_current(conn, case_now, kind))
         rejected = _declined_technicians(conn, case_id)
-    return {"ok": True, "status": status, "booking_status": "CONFIRMED" if accept else "REJECTED",
-            "needs_reassignment": not accept, "rejected_technicians": rejected}
+    return {"ok": True, "status": case["status"], "booking_status": "REJECTED", "job": job, "start": starts[0] if starts else None,
+            "needs_reassignment": True, "rejected_technicians": rejected, "handover_options": options}
 
 
 @_returns_errors
 def book_repair(case_id: str, start: str, technician_id: Optional[str] = None) -> dict:
     """Buyer books the repair after a VALID verdict, at a start time from get_booking_options(kind=repair).
-    The job takes the repair plan's hours (several 2-hour blocks). technician_id: any worker free for that
-    option; default is the extra inspection's subcontractor if free, else the first. Returns {ok, status, start, technician_id, repair_hours}."""
+    The job takes the repair plan's hours (several 2-hour blocks) and the worker still has to accept it
+    (booking_status PENDING). technician_id: any worker free for that option; default is the extra
+    inspection's subcontractor if free, else the first. Returns {ok, status, start, technician_id, repair_hours, duration}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("VALID",), "book a repair")
+        _require_status(case, ("VALID",), "book a repair", "This case isn't ready for a repair booking.")
         option = next((o for o in _repair_options(conn, case) if o["start"] == norm(start)), None)
         if option is None:
             raise ToolError("That repair time is no longer available. Please choose another.")
@@ -1229,23 +1405,32 @@ def book_repair(case_id: str, start: str, technician_id: Optional[str] = None) -
         for s in option["slots"]:
             _book(conn, case_id, worker_id, s, "repair")
         _save(conn, case_id, inspector_id=case.get("inspector_id") or case["technician_id"], technician_id=worker_id,
-              repair_hours=plan["hours"], status="REPAIR_BOOKED")
-        _emit(conn, case_id, "repair.booked", f"Repair booked for {fmt_datetime(option['start'])} with {_worker_label(_worker(conn, worker_id))}",
+              repair_hours=plan["hours"], status="REPAIR_BOOKED", **_pending_assignment(case))
+        duration = _fmt_hours(plan["hours"])
+        _emit(conn, case_id, "repair.booked",
+              f"Repair booked for {fmt_datetime(option['start'])} ({duration}) with {_worker_label(_worker(conn, worker_id))}",
               technician_id=worker_id, start=option["start"])
-    return {"ok": True, "status": "REPAIR_BOOKED", "start": option["start"], "technician_id": worker_id, "repair_hours": plan["hours"]}
+    return {"ok": True, "status": "REPAIR_BOOKED", "start": option["start"], "technician_id": worker_id,
+            "repair_hours": plan["hours"], "duration": duration}
+
+
+def _require_accepted_job(case: dict, action: str) -> None:
+    if case["booking_status"] == "PENDING":
+        raise ToolError(f"Accept the job before {action}.")
+    if case["booking_status"] in ("REJECTED", "NEEDS_STAFF"):
+        raise ToolError("This job is waiting for a technician.")
 
 
 @_returns_errors
 def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] = None) -> dict:
-    """Technician's inspection result. VALID -> buyer books a repair. INVALID -> terminal (a new report
-    becomes a new case). Returns {ok, status}."""
-    if verdict not in ("VALID", "INVALID") or not note.strip():
-        raise ToolError("Choose VALID or INVALID and add a note")
+    """Technician's inspection result (the visit must be accepted). VALID -> buyer books a repair.
+    INVALID -> terminal (a new report becomes a new case). Returns {ok, status}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("VISIT_SCHEDULED", "EXTRA_INSPECTION"), "record a verdict")
-        if case["booking_status"] in ("PENDING", "REJECTED", "NEEDS_STAFF"):
-            raise ToolError(f"Cannot record a verdict: the visit for {case_id} isn't confirmed (booking_status={case['booking_status']})")
+        _require_status(case, ("VISIT_SCHEDULED", "EXTRA_INSPECTION"), "record a verdict", "This case isn't waiting for an inspection result.")
+        _require_accepted_job(case, "recording the result")
+        if verdict not in ("VALID", "INVALID") or not note.strip():
+            raise ToolError("Choose Valid or Invalid and add a note.")
         _save_photo(conn, case_id, photo, "verdict")
         _finish(conn, case_id, "visit")
         now = _now(conn)
@@ -1260,13 +1445,15 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
 
 @_returns_errors
 def mark_repaired(case_id: str, repair_note: str, photo: Optional[str] = None) -> dict:
-    """Technician marks the repair done (-> REPAIRED, repair.done). VerificationAgent then calls
-    start_verification. repair_note should say what was fixed and where. Returns {ok, status}."""
-    if not repair_note.strip():
-        raise ToolError("Add a repair note")
+    """Technician marks the repair done (the repair must be accepted) -> REPAIRED, repair.done.
+    VerificationAgent then calls start_verification. repair_note should say what was fixed and where.
+    Returns {ok, status}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("REPAIR_BOOKED",), "mark repaired")
+        _require_status(case, ("REPAIR_BOOKED",), "mark repaired", "This case has no booked repair.")
+        _require_accepted_job(case, "marking it repaired")
+        if not repair_note.strip():
+            raise ToolError("Add a repair note.")
         _save_photo(conn, case_id, photo, "repair")
         _finish(conn, case_id, "repair")
         _save(conn, case_id, status="REPAIRED", repair_note=repair_note.strip(), repaired_at=_now(conn),
@@ -1279,18 +1466,18 @@ def mark_repaired(case_id: str, repair_note: str, photo: Optional[str] = None) -
 
 @_returns_errors
 def record_verification(case_id: str, outcome: str, note: str = "", photo: Optional[str] = None) -> dict:
-    """Buyer's check of the repair. FIXED -> buyer sign-off (closes if the developer signed).
-    NOT_FIXED (photo required) -> REOPENED; RecurrenceAgent runs next. CANNOT_VERIFY -> stays PENDING_SIGNOFF.
-    Returns {ok, outcome, status, reopen_count?}."""
-    if outcome not in ("FIXED", "NOT_FIXED", "CANNOT_VERIFY"):
-        raise ToolError(f"Invalid outcome {outcome!r} (use FIXED / NOT_FIXED / CANNOT_VERIFY)")
-    if outcome == "NOT_FIXED" and not photo:
-        raise ToolError("Please add a new photo showing the problem")
+    """Buyer's check of the repair. FIXED -> buyer sign-off, only after the developer has signed (closes the
+    case). NOT_FIXED (photo required) -> REOPENED; RecurrenceAgent runs next. CANNOT_VERIFY -> stays
+    PENDING_SIGNOFF. Returns {ok, outcome, status, reopen_count?}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("PENDING_SIGNOFF",), "record verification")
+        _require_status(case, ("PENDING_SIGNOFF",), "record verification", "This case isn't waiting for your sign-off.")
+        if outcome not in ("FIXED", "NOT_FIXED", "CANNOT_VERIFY"):
+            raise ToolError("Unknown result.")
+        if outcome == "NOT_FIXED" and not photo:
+            raise ToolError("Please add a new photo showing the problem.")
         if outcome == "FIXED" and not case["developer_signed_at"]:
-            raise ToolError("The developer has to sign off before the buyer")
+            raise ToolError("The developer has to approve the repair before you can sign off.")
         now = _now(conn)
         saved = _save_photo(conn, case_id, photo, "reopen" if outcome == "NOT_FIXED" else "verification")
         v = conn.execute(
@@ -1317,13 +1504,14 @@ def record_verification(case_id: str, outcome: str, note: str = "", photo: Optio
 
 @_returns_errors
 def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[str] = None, note: str = "") -> dict:
-    """Developer (SDP) or buyer sign-off while PENDING_SIGNOFF; closes the case when both have signed.
-    Buyers normally sign through record_verification(FIXED). Returns {ok, both_signed, status}."""
+    """Developer (SDP) or buyer sign-off while PENDING_SIGNOFF. The developer signs first; the case closes
+    when both have signed. Buyers normally sign through record_verification(FIXED).
+    Returns {ok, both_signed, status}."""
     if party not in ("developer", "buyer"):
         raise ToolError(f"Invalid party {party!r} (use developer / buyer)")
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("PENDING_SIGNOFF",), "sign off")
+        _require_status(case, ("PENDING_SIGNOFF",), "sign off", "This case isn't waiting for sign-off.")
         now = _now(conn)
         if party == "developer":
             by = signed_by or SDP_SIGNER
@@ -1331,7 +1519,7 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
             _emit(conn, case_id, "signoff.completed", f"Developer signed off ({by})", party="developer")
         else:
             if not case["developer_signed_at"]:
-                raise ToolError("The developer has to sign off before the buyer")
+                raise ToolError("The developer has to approve the repair before you can sign off.")
             _save(conn, case_id, buyer_signed=1, buyer_signed_at=now, buyer_signoff_note=note)
             _emit(conn, case_id, "signoff.completed", "Buyer signed off the repair", party="buyer")
         closed = _close_if_both_signed(conn, case_id)
@@ -1346,9 +1534,9 @@ def reopen_case(case_id: str, description: str, photo: str) -> dict:
     with _connect() as conn:
         case = _get_case(conn, case_id)
         if case["status"] != "CLOSED" or not case["closed_at"] or days_between(case["closed_at"], _now(conn)) > config.GRACE_PERIOD_DAYS:
-            raise ToolError(f"Only closed cases can be reopened, within {config.GRACE_PERIOD_DAYS} days of closing")
+            raise ToolError(f"Only closed cases can be reopened, within {config.GRACE_PERIOD_DAYS} days of closing.")
         if not photo:
-            raise ToolError("A new photo is required to reopen")
+            raise ToolError("A new photo is required to reopen.")
         _save_photo(conn, case_id, photo, "reopen")
         count = _reopen(conn, case, description.strip() or "Problem came back")
     return {"ok": True, "status": "REOPENED", "reopen_count": count}
@@ -1363,7 +1551,7 @@ def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] =
     with _connect() as conn:
         a = conn.execute("SELECT * FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
         if a is None or a["status"] != "pending":
-            raise ToolError("This request has already been decided" if a else f"Approval {approval_id!r} not found")
+            raise ToolError("This request has already been decided.")
         case_id = a["case_id"]
         conn.execute("UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE approval_id = ?",
                      (status, decided_by or SDP_SIGNER, _now(conn), approval_id))
@@ -1374,3 +1562,59 @@ def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] =
             _save(conn, case_id, status="VALID")
             _emit(conn, case_id, "inspection.rejected", "SDP rejected extra inspection: normal repair booking")
     return {"ok": True, "status": status, "case_id": case_id}
+
+
+# =====================================================================
+# Time rules (run by the system, not exposed over MCP)
+# =====================================================================
+
+def signoff_deadline(case: dict) -> str:
+    """The buyer signs after the developer, so their sign-off period starts at the developer's sign-off."""
+    start = case.get("developer_signed_at") or case.get("repaired_at") or case.get("verdict_at") or case["created_at"]
+    return add_days(start, config.SIGNOFF_PERIOD_DAYS)
+
+
+def sweep_signoffs() -> list[dict]:
+    """Buyer sign-off period (config.SIGNOFF_PERIOD_DAYS, starts once the developer has signed): an in-app
+    reminder config.SIGNOFF_REMINDER_DAYS_BEFORE days before the deadline, then auto-close; high-urgency cases
+    are flagged to SDP instead (rules.yaml safety.high_urgency.allow_auto_close). Run it whenever the clock may
+    have moved; the web app runs it on every request. Returns [{case_id, action: reminder|auto_closed|overdue}]."""
+    done = []
+    with _connect() as conn:
+        now = _now(conn)
+        ids = [r["case_id"] for r in conn.execute(
+            "SELECT case_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL AND developer_signed_at IS NOT NULL")]
+        for case_id in ids:
+            case = _get_case(conn, case_id)
+            deadline = signoff_deadline(case)
+            left = days_between(now, deadline)
+            p, g = config.SIGNOFF_PERIOD_DAYS, config.GRACE_PERIOD_DAYS
+            ref = f"{case_id} ({case['summary']})"
+
+            def message(title: str, body: str) -> None:
+                conn.execute(
+                    "INSERT INTO buyer_messages (message_id, case_id, title, body, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (db.next_record_id(conn, "buyer_messages"), case_id, title, body, now),
+                )
+
+            if left <= 0:
+                if case["urgency"] == "high" and not config.HIGH_URGENCY_AUTO_CLOSE:
+                    if case.get("signoff_overdue_at"):
+                        continue
+                    _save(conn, case_id, signoff_overdue_at=now)
+                    _emit(conn, case_id, "signoff.overdue", f"Buyer sign-off overdue ({p} days). High urgency, so not auto-closed: flagged to SDP")
+                    message("Sign-off overdue", f"{ref}. The {p}-day sign-off period has passed. Our team will contact you to confirm the repair.")
+                    done.append({"case_id": case_id, "action": "overdue"})
+                else:
+                    _save(conn, case_id, status="CLOSED", closed_at=deadline, auto_closed_at=deadline)
+                    _emit(conn, case_id, "case.closed", f"Closed automatically: no buyer sign-off within {p} days")
+                    message("Case closed automatically", f"{ref}. We didn't receive your sign-off within {p} days, so the case was closed. "
+                            f"If the problem comes back, you can reopen it within {g} days with a new photo.")
+                    done.append({"case_id": case_id, "action": "auto_closed"})
+            elif left <= config.SIGNOFF_REMINDER_DAYS_BEFORE and not case.get("signoff_reminder_at"):
+                _save(conn, case_id, signoff_reminder_at=now)
+                _emit(conn, case_id, "signoff.reminder", f"Sign-off reminder sent to buyer ({-int(-left)} day(s) left)")
+                tail = "If we don't hear from you, our team will follow up." if case["urgency"] == "high" else "After that the case will close automatically."
+                message("Reminder: please sign off your repair", f"{ref}. Please check the repair and sign off by {fmt_datetime(deadline)}. {tail}")
+                done.append({"case_id": case_id, "action": "reminder"})
+    return done
