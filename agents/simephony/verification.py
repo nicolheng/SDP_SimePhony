@@ -4,83 +4,42 @@ import os
 from .llm_client import get_client, get_models
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 from .intake import encode_image
-from .rules import load_rules
+from . import backend_tools
 
 _ALLOWED = {"looks_resolved", "unclear", "not_resolved"}
 _UNCLEAR = {"assessment": "unclear", "observations": "", "matches_location": False}
 _UNAVAILABLE = "Photo check unavailable"
 _VALID_OUTCOMES = {"FIXED", "NOT_FIXED", "CANNOT_VERIFY"}
 
-# Higher-risk categories: the buyer guide is SAFE_CHECKS verbatim, never LLM phrasing.
+# Higher-risk categories: the buyer guide is the rules.yaml steps word for word, never LLM phrasing.
 _VERBATIM_CATEGORIES = {"electrical", "roof", "door_window"}
 
-_WATER = [
-    "Look at the repaired area for damp patches, staining or bubbling paint.",
-    "Run the nearby tap or shower for a few minutes, then check the repaired area for drips or dampness.",
-    "Touch the surface lightly and check it feels dry.",
+# Used only when tools.get_verification_protocol fails or returns nothing.
+_FALLBACK_STEPS = [
+    "Look at the repaired area and check it matches what the technician described.",
+    "Use the repaired item as you normally would and check it works.",
 ]
-_SURFACE = [
-    "Look at the repaired area for new cracks, gaps or uneven finish.",
-    "Press the surface gently with your hand and check it feels firm.",
-]
+# Kept for electrical until rules.yaml carries an equivalent stop rule (board card v2).
+_ELECTRICAL_STOP = "If you see sparks or smell burning, stop, do not touch anything, and report it."
+# Same wording as the web app's sign-off page (tools.start_verification default).
+IF_FAILS = 'If any check fails, do not sign off: choose "Still not fixed" and add a photo. Your case will be reopened.'
 
-# Allow-list of buyer actions per rules.yaml category. Look, touch the surface,
-# run water, use switches/doors as normal. Never panels, wiring, climbing or tools.
-SAFE_CHECKS: dict[str, list[str]] = {
-    "water_leak": _WATER,
-    "plumbing": _WATER,
-    "waterproofing": _WATER,
-    "drainage": [
-        "Run water into the drain for a few minutes and check it flows away without pooling.",
-        "Look around the drain and the repaired area for dampness or standing water.",
-    ],
-    "sanitary_fittings": [
-        "Use the fitting as normal and check for drips or dampness around it.",
-        "Look at the base and joints of the fitting for water or staining.",
-    ],
-    "electrical": [
-        "Switch the repaired light, socket or switch on and off a few times as you normally would and check it works.",
-        "Look at the fitting for scorch marks or discolouration.",
-        "If you see sparks or smell burning, stop, do not touch anything, and report it.",
-    ],
-    "wall_crack": _SURFACE,
-    "structural_crack": _SURFACE,
-    "tiles": [
-        "Look at the repaired tiles for cracks, loose edges or gaps in the grout.",
-        "Press gently on the tiles and check none feel loose or hollow.",
-    ],
-    "flooring": [
-        "Walk across the repaired floor and check it feels even and firm.",
-        "Look for gaps, lifting edges or uneven joins.",
-    ],
-    "ceiling": [
-        "Look at the repaired ceiling area for new stains, sagging or cracks.",
-        "Check the area again after the next rain or after water has been used in the unit above.",
-    ],
-    "roof": [
-        "Look at the ceiling below the repaired area for new stains or damp.",
-        "Check the area again after the next rain.",
-    ],
-    "door_window": [
-        "Open and close the door or window a few times and check it moves smoothly and closes fully.",
-        "Check the lock or latch engages as normal.",
-    ],
-    "paint": [
-        "Look at the repainted area in daylight for patches, drips or uneven colour.",
-        "Touch the surface lightly and check it is dry and smooth.",
-    ],
-    "cabinetry": [
-        "Open and close the doors and drawers a few times and check they move smoothly and align.",
-        "Look at the repaired area for gaps or loose parts.",
-    ],
-    "external_works": [
-        "Look at the repaired area for cracks, gaps or standing water.",
-    ],
-    "other": [
-        "Look at the repaired area and check it matches what the technician described.",
-        "Use the repaired item as you normally would and check it works.",
-    ],
-}
+
+def protocol_steps(category: str) -> list[str]:
+    """The buyer's check steps for a category: xiaowen's rules.yaml verification_protocols via tools.py,
+    screened by the guardrails, with a minimal safe fallback."""
+    try:
+        steps = list(backend_tools.get_verification_protocol(category).get("steps") or [])
+    except Exception as e:
+        print(f"[VERIFICATION] check steps unavailable for {category}: {e}")
+        steps = []
+    steps = [s for s in steps if not scan_for_unsafe_steps(s) and not scan_for_liability(s)[0]]
+    if not steps:
+        steps = list(_FALLBACK_STEPS)
+    if category == "electrical" and not any("spark" in s.lower() and "stop" in s.lower() for s in steps):
+        steps.append(_ELECTRICAL_STOP)
+    return steps
+
 
 _VISION_SYSTEM = (
     "You are a property repair photo checker. You compare a technician's repair photo against the "
@@ -208,6 +167,20 @@ def _phrase_checks(state: dict, category: str, location: str, checks: list[str])
     return lines
 
 
+def _save_guide(case_id: str | None, guide: dict) -> tuple[str | None, str | None]:
+    """Store the guide through tools.start_verification. Returns (verification_id, error)."""
+    if not case_id:
+        return None, "No case_id to save the guide against"
+    try:
+        saved = backend_tools.start_verification(case_id, guide)
+    except Exception as e:
+        saved = {"ok": False, "error": str(e)}
+    if saved.get("ok") is False:
+        print(f"[VERIFICATION] guide for {case_id} not saved: {saved.get('error')}")
+        return None, saved.get("error")
+    return saved.get("verification_id"), None
+
+
 def verification_node(state: dict) -> dict:
     """Photo-checks the technician's repair, then builds a safe, case-specific buyer guide."""
     category = state.get("intake_result", {}).get("category", "other")
@@ -245,7 +218,7 @@ def verification_node(state: dict) -> dict:
             "Please check the repair or upload a clearer photo.",
         )
 
-    checks = SAFE_CHECKS.get(category, SAFE_CHECKS["other"])
+    checks = protocol_steps(category)
     if category in _VERBATIM_CATEGORIES:
         lines = list(checks)
     else:
@@ -253,22 +226,51 @@ def verification_node(state: dict) -> dict:
     if not lines:
         lines = list(checks)
 
-    grace = load_rules().get("grace_period_days")
-    protocol = "\n".join(
-        [f"The technician's photo appears to show the repair completed at {location}."]
-        + lines
-        + [f"If any check fails, do not sign off. Reopen the case within {grace} days with a new photo."]
-    )
+    intro = f"The technician's photo appears to show the repair completed at {location}."
+    verification_id, save_error = _save_guide(state.get("case_id"), {"intro": intro, "steps": lines, "ifFails": IF_FAILS})
     state["verification_result"] = {
         "category": category,
         "assessment": photo_check["assessment"],
         "observations": photo_check["observations"],
-        "protocol": protocol,
+        "protocol": "\n".join([intro] + lines + [IF_FAILS]),
         "needs_technician_input": False,
         "technician_message": None,
+        "verification_id": verification_id,  # the guide saved for the buyer's sign-off page
+        "save_error": save_error,
     }
     state["current_status"] = "PENDING_SIGNOFF"
     state["verification_status"] = "pending"  # a new repair cycle: an earlier "verified" no longer applies
+    return state
+
+
+def _guide_text(guide) -> str | None:
+    """The saved guide ({intro, steps, ifFails} or a list of steps) as the text the buyer gets."""
+    if isinstance(guide, dict):
+        lines = [guide.get("intro"), *(guide.get("steps") or []), guide.get("ifFails")]
+        return "\n".join(x for x in lines if x) or None
+    if isinstance(guide, list):
+        return "\n".join(guide) or None
+    return guide or None
+
+
+def signoff_ready_node(state: dict) -> dict:
+    """SDP signed the repair off (developer.signed): the buyer can now check it. Loads the guide saved at
+    repair.done and the buyer's sign-off deadline, for CommsAgent. Sign-off order: technician -> SDP -> buyer."""
+    result = dict(state.get("verification_result") or {})
+    result.pop("rejected_reason", None)
+    try:
+        info = backend_tools.get_signoff_info(state.get("case_id"))
+    except Exception as e:
+        info = {"ok": False, "error": str(e)}
+    if info.get("ok") is False:
+        result["rejected_reason"] = f"Sign-off details unavailable: {info.get('error')}"
+    elif info["status"] != "PENDING_SIGNOFF" or not info["developer_signed"]:
+        result["rejected_reason"] = "The developer has not signed this repair off yet"
+    else:
+        result["protocol"] = _guide_text(info.get("guide")) or result.get("protocol")
+        state["signoff_deadline_local"] = info["deadline_local"]
+        state["current_status"] = "PENDING_SIGNOFF"
+    state["verification_result"] = result
     return state
 
 
@@ -286,12 +288,19 @@ def verification_result_node(state: dict) -> dict:
         return state
     result["next_event"] = None
     if outcome == "FIXED":
-        state["current_status"] = "PENDING_SIGNOFF"
+        # Sign-off order is technician -> SDP -> buyer (tools.record_verification refuses FIXED before the
+        # SDP sign-off), so the buyer's FIXED is the last sign-off and closes the case.
+        state["current_status"] = "CLOSED"
         state["verification_status"] = "verified"
     elif outcome == "NOT_FIXED":
+        # CONTRACTS: NOT_FIXED needs a new photo and reopens the case; RecurrenceAgent checks escalation next.
+        if not state.get("reopen_photo_path"):
+            result["rejected_reason"] = "NOT_FIXED needs a new photo showing the problem"
+            return state
         state["verification_status"] = "not_verified"
-        state["current_status"] = "VALID"
-        result["next_event"] = "repair.rebook"
+        state["current_status"] = "REOPENED"
+        state["reopen_count"] = state.get("reopen_count", 0) + 1
+        result["next_event"] = "case.reopened"
     elif outcome == "CANNOT_VERIFY":
         state["verification_status"] = "pending"
     return state

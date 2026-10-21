@@ -43,6 +43,8 @@ for fn in (
     tools.escalate_booking,          # TriageAgent
     tools.start_verification,        # VerificationAgent
     tools.request_extra_inspection,  # RecurrenceAgent
+    tools.set_repair_estimate,       # RepairEstimateAgent
+    tools.set_triage_result,         # TriageAgent
     tools.attach_inspection_brief,   # InitialInspectionAgent
     tools.notify_buyer,              # CommsAgent
     tools.notify_technician,

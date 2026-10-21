@@ -231,3 +231,61 @@ class TestResilience:
         result = similar_defect_node(state)
         assert "similar_cases_result" in result
 
+
+
+# ---------------------------------------------------------------------------
+# Live-run fix (21 Oct): the new case must not count as one of its own earlier cases
+# ---------------------------------------------------------------------------
+def test_current_case_is_not_counted_as_an_earlier_case(fake_llm):
+    rows = [_make_case("C-0016", status="SUBMITTED"), _make_case("H-0001"), _make_case("H-0002")]
+    with patch("agents.simephony.similar_defect.find_similar_cases", return_value=rows) as find:
+        out = similar_defect_node(_base_state(case_id="C-0016"))
+    r = out["similar_cases_result"]
+    assert r["past_case_count"] == 2 and r["total_occurrences"] == 3
+    assert find.call_args.kwargs["top_k"] >= 50  # the default top 5 would cap the count
+
+
+def test_first_report_in_a_clean_unit_has_no_earlier_cases(fake_llm):
+    with patch("agents.simephony.similar_defect.find_similar_cases",
+               return_value=[_make_case("C-0015", status="SUBMITTED")]):
+        out = similar_defect_node(_base_state(case_id="C-0015", unit_id="A-1-01"))
+    assert out["similar_cases_result"]["past_case_count"] == 0
+    assert out["similar_cases_result"]["ai_analysis"]["is_recurring"] is False
+
+
+# ---------------------------------------------------------------------------
+# Saving the links (tools.save_similar_cases) so the case page shows the related cases
+# ---------------------------------------------------------------------------
+def test_related_cases_are_saved_with_the_occurrence_count(fake_llm, monkeypatch):
+    from agents.simephony import backend_tools
+    save = MagicMock(return_value={"ok": True, "linked": 3})
+    monkeypatch.setattr(backend_tools, "save_similar_cases", save)
+    rows = [{**_make_case("H-0001"), "reason": "same unit", "score": 1.0},
+            {**_make_case("H-0002", status="INVALID"), "reason": "same unit", "score": 1.0},
+            {**_make_case("C-0014"), "reason": "same unit", "score": 1.0}]
+    with patch("agents.simephony.similar_defect.find_similar_cases", return_value=rows):
+        out = similar_defect_node(_base_state(case_id="C-0016"))
+    case_id, links = save.call_args.args
+    assert case_id == "C-0016"
+    assert [l["related_case_id"] for l in links] == ["H-0001", "H-0002", "C-0014"]  # INVALID shown, not counted
+    assert links[0] == {"related_case_id": "H-0001", "reason": "same unit", "score": 1.0}
+    assert save.call_args.kwargs["occurrence_count"] == 3  # 2 counted earlier cases + this one
+    assert out["similar_cases_result"]["save_error"] is None
+
+
+@pytest.mark.parametrize("case_id", [None, "C-NEW"])
+def test_nothing_saved_without_a_case_in_the_db(fake_llm, monkeypatch, case_id):
+    from agents.simephony import backend_tools
+    save = MagicMock()
+    monkeypatch.setattr(backend_tools, "save_similar_cases", save)
+    with patch("agents.simephony.similar_defect.find_similar_cases", return_value=[]):
+        similar_defect_node(_base_state(case_id=case_id))
+    save.assert_not_called()
+
+
+def test_save_failure_is_recorded_not_raised(fake_llm, monkeypatch):
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "save_similar_cases", MagicMock(side_effect=RuntimeError("database is locked")))
+    with patch("agents.simephony.similar_defect.find_similar_cases", return_value=[_make_case("H-0001")]):
+        out = similar_defect_node(_base_state(case_id="C-0016"))
+    assert "locked" in out["similar_cases_result"]["save_error"]

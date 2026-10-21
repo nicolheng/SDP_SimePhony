@@ -67,7 +67,7 @@ escalation:
 # description, photos and the technician's repair_note. 
 verification_protocols:
   water_leak:
-    - Run the water source above or next to the repaired spot (shower, basin or the unit above) for 10 minutes.
+    - Run the shower or basin in your own unit nearest the repaired spot for 10 minutes.
     - Look at the repaired area for new drips, damp patches or spreading stains.
     - Touch the repaired surface with a dry hand to check it is not damp.
     - Check again after the next heavy rain if the leak only appeared during rain.
@@ -93,6 +93,7 @@ verification_protocols:
     - Use the repaired socket with a normal appliance for 10 minutes.
     - Check the breaker does not trip and there is no sparking, buzzing or burning smell.
     - Do not open the distribution board or touch any wiring.
+    - If you see sparks or smell burning, stop, do not touch anything, and report it.
   wall_crack:
     - Look at the repaired area in good light; the crack line should not be visible.
     - Lightly run your hand over the surface; it should feel smooth and level.

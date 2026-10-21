@@ -43,6 +43,59 @@ _LOW_URGENCY_KEYWORDS = (
 )
 
 
+# Malay / English keywords -> category, checked in this order (a crack near a window is a crack).
+_CATEGORY_KEYWORDS = (
+    ("electrical", ("spark", "socket", "wiring", "soket", "suis", "wayar", "litar")),
+    ("wall_crack", ("retak", "crack")),
+    ("drainage", ("longkang", "tersumbat", "tak turun", "drain", "pooling")),
+    ("tiles", ("jubin", "tile")),
+    ("water_leak", ("bocor", "leak", "rembes", "titis", "drip")),
+    ("door_window", ("pintu", "tingkap", "door", "window")),
+)
+
+# Room words (Malay / English) -> location, most specific first.
+_ROOM_KEYWORDS = (
+    ("master bedroom", ("master bedroom", "bilik tidur utama", "bilik utama")),
+    ("bedroom", ("bedroom", "bilik tidur")),
+    ("bathroom", ("bathroom", "bilik air", "tandas", "toilet")),
+    ("kitchen", ("kitchen", "dapur")),
+    ("living room", ("living room", "ruang tamu")),
+    ("balcony", ("balcony", "balkoni")),
+)
+_NO_LOCATION = {"", "none", "null", "unknown", "n/a"}
+
+
+def _category_from_keywords(text: str) -> str | None:
+    for category, words in _CATEGORY_KEYWORDS:
+        if any(w in text for w in words):
+            return category
+    return None
+
+
+def _location_from_text(text: str) -> str | None:
+    """'Ceiling bocor lagi in the bedroom' -> 'bedroom ceiling'; None if no room or ceiling is named."""
+    room = next((name for name, words in _ROOM_KEYWORDS if any(w in text for w in words)), None)
+    ceiling = "ceiling" in text or "siling" in text
+    if room and ceiling:
+        return f"{room} ceiling"
+    return room or ("ceiling" if ceiling else None)
+
+
+def _save(case_id: str | None, intake: dict) -> dict:
+    """Store the intake on the case through tools.save_intake_result. Failures are recorded, never raised."""
+    from . import backend_tools
+    if not case_id or case_id == "C-NEW":
+        return {"ok": False, "error": "No case in the DB to save the intake against"}
+    try:
+        saved = backend_tools.save_intake_result(case_id, intake)
+    except Exception as e:
+        saved = {"ok": False, "error": str(e)}
+    if saved.get("ok") is False:
+        print(f"⚠️ [INTAKE] result for {case_id} not saved: {saved.get('error')}")
+        return {"ok": False, "error": saved.get("error")}
+    return {"ok": True, "error": None}
+
+
 def encode_image(image_path: str) -> str:
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode("utf-8")
@@ -92,6 +145,11 @@ def intake_node(state: dict) -> dict:
         "   - 'retak' / 'crack on wall' -> 'wall_crack'\n"
         "   - 'spark' / 'socket' / 'wiring' -> 'electrical'\n"
         "   - 'aircond' / 'air conditioning' -> 'other'\n"
+        "   Reports are often in Manglish (Malay mixed with English): bocor = leak, siling = ceiling, "
+        "retak = crack, pintu = door, tingkap = window, jubin = tile, longkang = drain, "
+        "bilik tidur = bedroom, bilik air / tandas = bathroom, dapur = kitchen, lagi = again. "
+        "Only use 'other' when the text names none of these defects.\n"
+        "   location_in_unit: the room and surface, e.g. 'bedroom ceiling'.\n"
         "2. preliminary_outcome is 'VALID_DEFECT' for all genuine property defects.\n"
         "3. urgency triggers:\n"
         f"   - high:\n{high_triggers_str}\n"
@@ -142,17 +200,13 @@ def intake_node(state: dict) -> dict:
         parsed_intake["category"] = "drainage"
     elif "aircond" in desc_lower or "air conditioning" in desc_lower:
         parsed_intake["category"] = "other"
-    elif cat not in _ALLOWED_CATEGORIES:
-        if "spark" in full_text or "socket" in full_text or "wiring" in full_text:
-            parsed_intake["category"] = "electrical"
-        elif "door" in full_text or "tingkap" in full_text or "pintu" in full_text:
-            parsed_intake["category"] = "door_window"
-        elif "retak" in full_text or "crack" in full_text:
-            parsed_intake["category"] = "wall_crack"
-        elif "bocor" in full_text or "leak" in full_text:
-            parsed_intake["category"] = "water_leak"
-        else:
-            parsed_intake["category"] = "other"
+    elif cat not in _ALLOWED_CATEGORIES or cat == "other":
+        # Live qwen answered 'other' for "Ceiling bocor lagi": an allowed category, so check the words too.
+        parsed_intake["category"] = _category_from_keywords(full_text) or "other"
+
+    # 1b. Location: live qwen returned none for "Ceiling bocor lagi in the bedroom"
+    if str(parsed_intake.get("location_in_unit") or "").strip().lower() in _NO_LOCATION:
+        parsed_intake["location_in_unit"] = _location_from_text(desc_lower)
 
     # 2. Recurrence detection from user description text
     match_count = re.search(r'(\d+)(?:st|nd|rd|th)?\s*(?:time|kali)', desc_lower)
@@ -176,16 +230,15 @@ def intake_node(state: dict) -> dict:
     )
     is_low = any(kw in full_text for kw in _LOW_URGENCY_KEYWORDS) or (
         parsed_intake.get("category") == "wall_crack" and "structural" not in full_text and "major" not in full_text
-    )
+    ) or parsed_intake.get("category") == "paint"  # rules.yaml low: cosmetic paint defects
 
     if is_high:
         parsed_intake["urgency"] = "high"
     elif is_low:
         parsed_intake["urgency"] = "low"
-    elif parsed_intake.get("urgency") in ["high", "low", "normal"]:
-        # If model returned normal or if no high/low trigger matched, default to normal per rules.yaml
-        parsed_intake["urgency"] = parsed_intake["urgency"] if parsed_intake["urgency"] != "high" else "normal"
     else:
+        # No high/low trigger matched: normal per rules.yaml. The model's own "high" or "low" is not
+        # trusted (live qwen rated a hollow tile and "aircond not cold" low).
         parsed_intake["urgency"] = "normal"
 
     # 4. Blur / missing photo detection
@@ -219,4 +272,5 @@ def intake_node(state: dict) -> dict:
 
     state["intake_result"] = parsed_intake
     state["missing_info"] = parsed_intake.get("missing_info", [])
+    state["intake_save"] = _save(state.get("case_id"), parsed_intake)
     return state

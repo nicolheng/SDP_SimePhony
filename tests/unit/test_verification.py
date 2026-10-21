@@ -2,7 +2,8 @@ import json
 import pytest
 
 from agents.simephony.verification import (
-    SAFE_CHECKS,
+    IF_FAILS,
+    protocol_steps,
     assess_repair_photo,
     verification_node,
     verification_result_node,
@@ -26,6 +27,7 @@ def repair_photo(tmp_path):
 @pytest.fixture
 def state(repair_photo):
     return {
+        "case_id": "C-1",
         "user_description": "Water leaking from the ceiling",
         "intake_result": {"category": "water_leak", "location_in_unit": "master bedroom ceiling"},
         "repair_note": "Resealed the pipe joint above and patched the ceiling.",
@@ -119,8 +121,8 @@ def test_resolved_builds_safe_guide(state, fake_llm):
     assert r["needs_technician_input"] is False
     assert r["protocol"].startswith(HEADER)
     assert "master bedroom ceiling" in r["protocol"].splitlines()[0]
-    assert r["protocol"].rstrip().endswith("Reopen the case within 30 days with a new photo.")
-    assert "If any check fails, do not sign off." in r["protocol"]
+    assert r["protocol"].rstrip().endswith(IF_FAILS)  # same wording as the web app's sign-off page
+    assert r["verification_id"] == "V-STUB" and r["save_error"] is None
     assert "Look at the patched area" in r["protocol"]
     assert out["current_status"] == "PENDING_SIGNOFF"
     assert len(fake_llm.calls) == 2
@@ -152,7 +154,7 @@ def test_guide_strips_liability_lines(state, fake_llm):
 def test_all_lines_filtered_falls_back_to_safe_checks(state, fake_llm):
     fake_llm.responses = [_vision(), "Open the breaker panel.\nClimb a ladder and check the wiring."]
     p = verification_node(state)["verification_result"]["protocol"]
-    for item in SAFE_CHECKS["water_leak"]:
+    for item in protocol_steps("water_leak"):
         assert item in p.splitlines()
     assert "ladder" not in p
 
@@ -176,7 +178,7 @@ def test_text_llm_error_falls_back_to_safe_checks(state, fake_llm):
     fake_llm.client.chat.completions.create.side_effect = boom
     r = verification_node(state)
     p = r["verification_result"]["protocol"]
-    for item in SAFE_CHECKS["water_leak"]:
+    for item in protocol_steps("water_leak"):
         assert item in p.splitlines()
     assert r["current_status"] == "PENDING_SIGNOFF"
 
@@ -192,33 +194,67 @@ def test_scan_for_unsafe_steps():
     assert scan_for_unsafe_steps("Use a step stool or tools near the wires") != []
 
 
-def test_electrical_safe_checks_include_stop_rule():
-    assert "stop, do not touch anything" in " ".join(SAFE_CHECKS["electrical"]).lower()
-    assert "other" in SAFE_CHECKS
+def test_electrical_steps_include_stop_rule():
+    assert "stop, do not touch anything" in " ".join(protocol_steps("electrical")).lower()
 
 
-def test_safe_checks_are_themselves_safe():
-    for cat, items in SAFE_CHECKS.items():
-        for item in items:
+def test_steps_come_from_rules_yaml():
+    from agents.simephony.rules import load_rules
+    assert protocol_steps("tiles") == load_rules()["verification_protocols"]["tiles"]
+    assert protocol_steps("no_such_category") == load_rules()["verification_protocols"]["other"]
+
+
+def test_steps_fall_back_when_the_tool_fails(monkeypatch):
+    from agents.simephony import backend_tools
+    def boom(category):
+        raise RuntimeError("rules.yaml unreadable")
+    monkeypatch.setattr(backend_tools, "get_verification_protocol", boom)
+    steps = protocol_steps("water_leak")
+    assert steps and all(not scan_for_unsafe_steps(s) for s in steps)
+
+
+def test_unsafe_step_added_to_rules_is_screened_out(monkeypatch):
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "get_verification_protocol", lambda c: {
+        "steps": ["Look at the repaired joint.", "Unscrew the cover and check the wiring."]})
+    assert protocol_steps("plumbing") == ["Look at the repaired joint."]
+
+
+def test_every_category_step_is_safe():
+    from agents.simephony.rules import load_rules
+    for cat in load_rules()["verification_protocols"]:
+        for item in protocol_steps(cat):
             assert scan_for_unsafe_steps(item) == [], (cat, item)
             assert scan_for_liability(item)[0] is False, (cat, item)
 
 
 def test_outcome_fixed():
+    # Sign-off order is technician -> SDP -> buyer: the buyer's FIXED is the last one and closes the case.
     out = verification_result_node({"verification_outcome": "FIXED", "current_status": "PENDING_SIGNOFF"})
-    assert out["current_status"] == "PENDING_SIGNOFF"
+    assert out["current_status"] == "CLOSED"
     assert out["verification_status"] == "verified"
     assert out["verification_result"]["next_event"] is None
 
 
-def test_outcome_not_fixed():
+def test_outcome_not_fixed_reopens_the_case():
     out = verification_result_node(
-        {"verification_outcome": "NOT_FIXED", "current_status": "PENDING_SIGNOFF", "verification_result": {"x": 1}}
+        {"verification_outcome": "NOT_FIXED", "current_status": "PENDING_SIGNOFF", "verification_result": {"x": 1},
+         "reopen_photo_path": "/tmp/still-leaking.jpg", "reopen_count": 0}
     )
-    assert out["current_status"] == "VALID"
+    assert out["current_status"] == "REOPENED"  # CONTRACTS: NOT_FIXED (with photo) -> REOPENED
+    assert out["reopen_count"] == 1
     assert out["verification_status"] == "not_verified"
-    assert out["verification_result"]["next_event"] == "repair.rebook"
+    assert out["verification_result"]["next_event"] == "case.reopened"
     assert out["verification_result"]["x"] == 1
+
+
+def test_outcome_not_fixed_needs_a_photo():
+    out = verification_result_node(
+        {"verification_outcome": "NOT_FIXED", "current_status": "PENDING_SIGNOFF", "reopen_count": 0}
+    )
+    assert "photo" in out["verification_result"]["rejected_reason"]
+    assert out["current_status"] == "PENDING_SIGNOFF"
+    assert out["reopen_count"] == 0
 
 
 def test_outcome_cannot_verify():
@@ -252,7 +288,7 @@ def test_high_risk_categories_use_safe_checks_verbatim(state, fake_llm, category
     r = verification_node(state)["verification_result"]
     lines = r["protocol"].splitlines()
     assert "master bedroom ceiling" in lines[0]
-    assert lines[1:-1] == SAFE_CHECKS[category]
+    assert lines[1:-1] == protocol_steps(category)
     assert "cover" not in r["protocol"]
     assert len(fake_llm.calls) == 1  # vision only, no text LLM
 
@@ -343,3 +379,26 @@ def test_valid_outcome_clears_stale_rejected_reason():
     out = verification_result_node({"verification_outcome": "FIXED", "current_status": "PENDING_SIGNOFF",
                                     "verification_result": {"rejected_reason": "old"}})
     assert "rejected_reason" not in out["verification_result"]
+
+
+
+def test_guide_without_case_id_is_not_saved_but_still_built(state, fake_llm):
+    del state["case_id"]
+    fake_llm.responses = [_vision(), "Look at the patched area for damp or staining."]
+    r = verification_node(state)["verification_result"]
+    assert r["verification_id"] is None and "case_id" in r["save_error"]
+    assert "Look at the patched area" in r["protocol"]
+
+
+# --- rules.yaml check steps the buyer can safely and actually do ---
+def test_rules_yaml_electrical_has_the_stop_rule():
+    from agents.simephony.rules import load_rules
+    steps = " ".join(load_rules()["verification_protocols"]["electrical"]).lower()
+    assert "sparks" in steps and "stop" in steps and "do not touch anything" in steps
+
+
+def test_rules_yaml_never_sends_the_buyer_into_another_unit():
+    from agents.simephony.rules import load_rules
+    for category, steps in load_rules()["verification_protocols"].items():
+        for step in steps:
+            assert "unit above" not in step.lower(), (category, step)

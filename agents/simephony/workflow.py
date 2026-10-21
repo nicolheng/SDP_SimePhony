@@ -10,8 +10,9 @@ from .similar_defect import similar_defect_node
 from .triage import triage_node
 from .booking import booking_node
 from .comms import comms_node
-from .verification import verification_node, verification_result_node
-from .recurrence import recurrence_node
+from .verification import signoff_ready_node, verification_node, verification_result_node
+from .recurrence import new_case_escalation_node, recurrence_node, reopen_escalation_node
+from .repair_estimate import repair_estimate_node
 from .initial_inspection import initial_inspection_node
 
 # 1. Setup Qwen Client (Points to local Ollama by default)
@@ -38,7 +39,7 @@ class AgentState(TypedDict):
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
     # Event-driven fields
-    event: str # case.created | repair.done | verification.submitted | case.reopened
+    event: str # case.created | verdict.recorded | repair.done | verification.submitted | case.reopened | booking.rejected
     case_id: str
     verdict_note: str
     repair_note: str
@@ -49,8 +50,11 @@ class AgentState(TypedDict):
     reopen_count: int
     verification_outcome: str # FIXED | NOT_FIXED | CANNOT_VERIFY
     verification_status: str
+    new_case_escalation: dict # new report: extra inspection asked of SDP too (keep_status)
+    signoff_deadline_local: str # buyer's sign-off deadline once SDP has signed (developer.signed)
     verification_result: dict
     recurrence_result: dict
+    repair_estimate: dict # hours + reason after a VALID verdict
 
 # 3. Build the LangGraph
 workflow = StateGraph(AgentState)
@@ -63,7 +67,11 @@ workflow.add_node("booking", booking_node)
 workflow.add_node("comms", comms_node)
 workflow.add_node("verification", verification_node)
 workflow.add_node("verification_result", verification_result_node)
+workflow.add_node("signoff_ready", signoff_ready_node)
 workflow.add_node("recurrence", recurrence_node)
+workflow.add_node("reopen_escalation", reopen_escalation_node)
+workflow.add_node("new_case_escalation", new_case_escalation_node)
+workflow.add_node("repair_estimate", repair_estimate_node)
 workflow.add_node("initial_inspection", initial_inspection_node)
 
 def prepare_new_case(state: dict) -> dict:
@@ -102,6 +110,8 @@ def should_reassign(state: AgentState):
     booking_res = state.get("booking_result", {})
     if booking_res.get("assignment_ok") is False:
         return "booking"
+    if state.get("event") in (None, "", "case.created"):
+        return "new_case_escalation"  # a repeat defect on a new report also goes to SDP; the visit stays booked
     return "comms"
 
 def route_event(state: AgentState) -> str:
@@ -112,6 +122,10 @@ def route_event(state: AgentState) -> str:
         "repair.done": "verification",
         "verification.submitted": "verification_result",
         "case.reopened": "recurrence",
+        "booking.rejected": "booking",  # technician turned the visit down in the app: book someone else
+        "verdict.recorded": "repair_estimate",  # VALID: estimate the repair time, then tell the buyer
+        "developer.signed": "signoff_ready",  # SDP signed the repair off: send the buyer the check guide
+        "inspection.approved": "initial_inspection",  # SDP approved the extra inspection: brief, then book it
     }.get(event, "unhandled_event")
 
 
@@ -129,15 +143,31 @@ def after_verification(state: AgentState):
         return END  # technician message stays in state for the technician app; no buyer email
     return "comms"
 
-def after_verification_result(state: AgentState):
+def after_initial_inspection(state: AgentState):
+    if (state.get("initial_inspection_result") or {}).get("save_error"):
+        return END  # brief refused (e.g. no approved request): nothing booked, nobody told
+    return "booking"  # book the detailed inspection (EXTRA_INSPECTION keeps its status)
+
+def after_signoff_ready(state: AgentState):
     if (state.get("verification_result") or {}).get("rejected_reason"):
-        return END  # wrong status or unknown outcome: no buyer email
+        return END  # SDP hasn't signed yet (or the case moved on): nothing to tell the buyer
+    return "comms"
+
+def after_verification_result(state: AgentState):
+    result = state.get("verification_result") or {}
+    if result.get("rejected_reason"):
+        return END  # wrong status, unknown outcome or NOT_FIXED without a photo: no buyer email
+    if result.get("next_event") == "case.reopened":
+        return "reopen_escalation"  # NOT_FIXED reopened the case: check escalation before telling the buyer
     return "comms"
 
 def after_recurrence(state: AgentState):
-    if state.get("recurrence_result", {}).get("action") == "NEW_CASE":
+    action = state.get("recurrence_result", {}).get("action")
+    if action == "NEW_CASE":
         return "prepare_new_case"
-    return "comms"
+    if action == "REOPENED":
+        return "triage"  # below the escalation threshold: book a revisit (xiaowen's flow)
+    return "comms"  # escalated to SDP, or the reopen was rejected
 
 workflow.set_conditional_entry_point(route_event)
 workflow.add_edge("intake", "similar_defect")
@@ -146,8 +176,13 @@ workflow.add_edge("triage", "booking")
 workflow.add_conditional_edges("booking", should_reassign)
 workflow.add_conditional_edges("verification", after_verification)
 workflow.add_conditional_edges("verification_result", after_verification_result)
+workflow.add_conditional_edges("signoff_ready", after_signoff_ready)
+workflow.add_conditional_edges("initial_inspection", after_initial_inspection)
 workflow.add_conditional_edges("recurrence", after_recurrence)
 workflow.add_edge("prepare_new_case", "intake")
+workflow.add_conditional_edges("reopen_escalation", after_recurrence)
+workflow.add_edge("repair_estimate", "comms")
+workflow.add_edge("new_case_escalation", "comms")
 workflow.add_edge("comms", END)
 workflow.add_edge("unhandled_event", END)
 
@@ -159,7 +194,7 @@ if __name__ == "__main__":
     example_state = {
         "unit_id": "A-12-08",
         "user_description": "Ceiling bocor lagi, dah 3 kali ni!",
-        "image_path": "tests/test_cases/images/water_leak_again.jpg",
+        "image_path": "tests/data/test_cases/images/water_leak_again.jpg",
         "intake_result": {},
         "similar_cases_result": {},
         "triage_result": {},
