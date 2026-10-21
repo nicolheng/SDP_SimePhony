@@ -1086,10 +1086,13 @@ def start_verification(case_id: str, guide: dict | list[str] | str) -> dict:
 
 
 @_returns_errors
-def request_extra_inspection(case_id: str, reasons: list[str], recommended_action: Optional[str] = None, title: Optional[str] = None) -> dict:
+def request_extra_inspection(case_id: str, reasons: list[str], recommended_action: Optional[str] = None,
+                             title: Optional[str] = None, keep_status: bool = False) -> dict:
     """RecurrenceAgent: ask SDP staff to approve an extra inspection (-> ESCALATION_PENDING) and email
     them. Links the case to the open systemic issue for the same category/block/stack if there is one
     (e.g. SI-002), otherwise creates one. Call check_escalation first; reasons come from it.
+    keep_status=True (a new report on its 3rd occurrence / in a stack cluster): the case keeps its status so
+    its booked inspection visit goes ahead; if SDP approves, that visit becomes the detailed inspection.
     Returns {ok, approval_id, issue_id, reused_issue, email_status}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
@@ -1138,7 +1141,8 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
                  recommended_action or f"Extra inspection of {case['unit_id']} and the unit above; check the shared riser for stack {unit['block']}-{unit['stack']}.",
                  approval_id),
             )
-        _save(conn, case_id, status="ESCALATION_PENDING")
+        if not keep_status:
+            _save(conn, case_id, status="ESCALATION_PENDING")
         _emit(conn, case_id, "recurrence.detected", " ".join(reasons), agent="RecurrenceAgent")
         _emit(conn, case_id, "inspection.requested", f"Extra inspection requested ({issue_id}); waiting for SDP approval",
               agent="RecurrenceAgent", approval_id=approval_id, issue_id=issue_id)
@@ -1545,8 +1549,10 @@ def reopen_case(case_id: str, description: str, photo: str) -> dict:
 @_returns_errors
 def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] = None) -> dict:
     """SDP staff decision on an extra-inspection request. Approved: inspection.approved; InitialInspectionAgent
-    then attaches the brief and the visit is booked; systemic issue -> under_inspection. Rejected: case back
-    to VALID for a normal repair booking; systemic issue -> monitoring. Returns {ok, status, case_id}."""
+    then attaches the brief and the visit is booked; systemic issue -> under_inspection. Rejected: an
+    ESCALATION_PENDING case goes back to VALID for a normal repair booking; a case that kept its status (a new
+    report escalated with keep_status) carries on as it was; systemic issue -> monitoring.
+    Returns {ok, status, case_id}."""
     status = "approved" if approve else "rejected"
     with _connect() as conn:
         a = conn.execute("SELECT * FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
@@ -1558,9 +1564,11 @@ def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] =
         conn.execute("UPDATE systemic_issues SET status = ? WHERE approval_id = ?", ("under_inspection" if approve else "monitoring", approval_id))
         if approve:
             _emit(conn, case_id, "inspection.approved", f"SDP approved extra inspection ({approval_id})")
-        else:
+        elif _get_case(conn, case_id)["status"] == "ESCALATION_PENDING":
             _save(conn, case_id, status="VALID")
             _emit(conn, case_id, "inspection.rejected", "SDP rejected extra inspection: normal repair booking")
+        else:
+            _emit(conn, case_id, "inspection.rejected", "SDP rejected extra inspection: the case carries on as booked")
     return {"ok": True, "status": status, "case_id": case_id}
 
 

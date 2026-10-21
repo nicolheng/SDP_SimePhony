@@ -64,6 +64,29 @@ def reopen_escalation_node(state: dict) -> dict:
     return _escalate_or_reopen(state, "Reopened after the buyer's check failed")
 
 
+def new_case_escalation_node(state: dict) -> dict:
+    """A new report on its 3rd occurrence in the unit, or in a stack cluster: ask SDP for an extra inspection
+    too, keeping the visit just booked (keep_status). If SDP approves, that visit becomes the detailed
+    inspection; if SDP rejects, it simply goes ahead. Same rules as a reopen (escalation.check_escalation)."""
+    result = {"escalated": False, "approval_id": None, "issue_id": None, "reasons": [], "error": None}
+    case_id = state.get("case_id")
+    if case_id and case_id != "C-NEW":
+        esc = check_escalation(case_id, 0)
+        result.update(reasons=esc["reasons"], error=esc.get("error"))
+        if esc["escalate"]:
+            try:
+                approval = request_extra_inspection(case_id, esc["reasons"], keep_status=True)
+            except Exception as e:
+                approval = {"ok": False, "error": str(e)}
+            if approval.get("ok") is False:
+                print(f"[RECURRENCE] Extra inspection for new case {case_id} refused: {approval.get('error')}")
+                result["error"] = approval.get("error")
+            else:
+                result.update(escalated=True, approval_id=approval.get("approval_id"), issue_id=approval.get("issue_id"))
+    state["new_case_escalation"] = result
+    return state
+
+
 def _escalate_or_reopen(state: dict, reason: str) -> dict:
     esc = check_escalation(state["case_id"], state.get("reopen_count", 0))
     occurrence = esc["occurrence"]

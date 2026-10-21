@@ -199,3 +199,53 @@ def test_refused_request_keeps_case_reopened(stubs):
     r = out["recurrence_result"]
     assert out["current_status"] == "REOPENED"
     assert r["action"] == "REOPENED" and "pending" in r["error"]
+
+
+# --- New reports escalate too (3rd occurrence / stack cluster), keeping the booked visit ---
+from agents.simephony.recurrence import new_case_escalation_node
+
+
+def _new_case(**extra):
+    return {"event": "case.created", "case_id": "C-0016", "unit_id": "A-12-08", "current_status": "VISIT_SCHEDULED", **extra}
+
+
+def test_third_occurrence_on_a_new_report_asks_sdp_and_keeps_the_visit(escalation_db):
+    escalation_db.earlier = 2
+    escalation_db.request.return_value = {"ok": True, "approval_id": "APR-9", "issue_id": "SI-002"}
+    out = new_case_escalation_node(_new_case())
+    escalation_db.request.assert_called_once()
+    assert escalation_db.request.call_args.kwargs == {"keep_status": True}
+    r = out["new_case_escalation"]
+    assert r["escalated"] is True and r["approval_id"] == "APR-9" and r["reasons"]
+    assert out["current_status"] == "VISIT_SCHEDULED"
+
+
+def test_stack_cluster_on_a_new_report_asks_sdp(escalation_db):
+    escalation_db.stack_units = 3
+    escalation_db.request.return_value = {"ok": True, "approval_id": "APR-9", "issue_id": "SI-002"}
+    assert new_case_escalation_node(_new_case())["new_case_escalation"]["escalated"] is True
+
+
+def test_first_report_asks_nothing(escalation_db):
+    out = new_case_escalation_node(_new_case())
+    escalation_db.request.assert_not_called()
+    assert out["new_case_escalation"]["escalated"] is False
+
+
+def test_pending_request_is_not_repeated(escalation_db):
+    escalation_db.earlier, escalation_db.pending = 2, "APR-1"
+    new_case_escalation_node(_new_case())
+    escalation_db.request.assert_not_called()
+
+
+@pytest.mark.parametrize("case_id", [None, "C-NEW"])
+def test_case_not_in_db_is_skipped(escalation_db, case_id):
+    out = new_case_escalation_node(_new_case(case_id=case_id))
+    assert escalation_db.calls == [] and out["new_case_escalation"]["escalated"] is False
+
+
+def test_refused_request_is_recorded(escalation_db):
+    escalation_db.earlier = 2
+    escalation_db.request.return_value = {"ok": False, "error": "Case C-0016 is CLOSED"}
+    r = new_case_escalation_node(_new_case())["new_case_escalation"]
+    assert r["escalated"] is False and "CLOSED" in r["error"]
