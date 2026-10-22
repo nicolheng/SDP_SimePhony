@@ -46,7 +46,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 export const DEMO_START = "2026-10-19T09:00:00+08:00"; // Monday (offline demo data only)
 export const TZ = "Asia/Kuala_Lumpur";
 
-export let PROJECT_NAME = "Residensi Harmoni";
+export let PROJECT_NAME = "Serenia City";
 
 export const unitId = (block: string, floor: number, stack: string) => `${block}-${floor}-${stack}`;
 
@@ -82,8 +82,8 @@ export const getUnit = (id: string): Unit => {
 /** The buyer signed in on the buyer app (demo login: always B-0118); name, email and unit come from the buyers table. */
 export const DEMO_BUYER: Buyer = {
   id: "B-0118",
-  name: "Aisyah Rahman",
-  email: "aisyah.demo@example.com",
+  name: "Elsa",
+  email: "elsa.demo@example.com",
   unitId: "A-12-08",
 };
 
@@ -92,7 +92,7 @@ export const getBuyer = (id?: string) => (id ? buyerById.get(id) : undefined);
 
 // In-house technicians: inspection visits and minor repairs.
 export let TECHNICIANS: Technician[] = [
-  { id: "T-01", name: "Hafiz Osman", email: "hafiz.tech@example.com", skills: ["plumbing", "waterproofing"], blocks: ["A", "B"], kind: "technician" },
+  { id: "T-01", name: "Olaf", email: "olaf.tech@example.com", skills: ["plumbing", "waterproofing"], blocks: ["A", "B"], kind: "technician" },
   { id: "T-02", name: "Ravi Kumar", email: "ravi.tech@example.com", skills: ["plumbing"], blocks: ["A", "B", "C"], kind: "technician" },
   { id: "T-03", name: "Lim Wei Jie", email: "weijie.tech@example.com", skills: ["electrical"], blocks: ["A", "B", "C"], kind: "technician" },
   { id: "T-04", name: "Nurul Izzah", email: "nurul.tech@example.com", skills: ["civil", "tiling", "painting"], blocks: ["A", "B", "C"], kind: "technician" },

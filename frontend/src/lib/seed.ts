@@ -167,7 +167,7 @@ export function buildSeed(): DemoState {
     ["B-14-09", "paint", -12, "PENDING_SIGNOFF", 0],
     ["C-10-04", "drainage", -3, "VISIT_SCHEDULED", 1],
     ["A-6-10", "wall_crack", -8, "INVALID", 0],
-    // Jobs for the default technician (T-01 Hafiz) so the technician view has work on day one.
+    // Jobs for the default technician (T-01 Olaf) so the technician view has work on day one.
     ["B-3-06", "water_leak", -2, "VISIT_SCHEDULED", 0.25],
     ["A-8-03", "plumbing", -7, "REPAIR_BOOKED", 1.08],
     ["B-2-09", "water_leak", -5, "VALID", 0],

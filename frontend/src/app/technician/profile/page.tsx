@@ -2,6 +2,7 @@
 import { ArrowLeft, Building2, Check, UserRound } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import { SUBCONTRACTORS, TECHNICIANS } from "@/lib/constants";
 import { setTechnicianId } from "@/lib/session";
 import { useDemo } from "@/lib/store";
@@ -25,8 +26,8 @@ export default function TechnicianProfile() {
         <Link href="/technician" className="absolute left-4 top-6 grid size-9 place-items-center rounded-full hover:bg-white/10" aria-label="Back">
           <ArrowLeft className="size-5" />
         </Link>
-        <span className="grid size-24 place-items-center rounded-full bg-zinc-300 text-zinc-500">
-          {tech.kind === "subcontractor" ? <Building2 className="size-12" /> : <UserRound className="size-14" />}
+        <span className="grid size-24 place-items-center overflow-hidden rounded-full bg-zinc-300 text-zinc-500">
+          <ProfileAvatar id={tech.id} fallback={tech.kind === "subcontractor" ? <Building2 className="size-12" /> : <UserRound className="size-14" />} />
         </span>
         <p className="mt-4 text-2xl font-semibold">{tech.name}</p>
         {tech.company && <p className="text-sm text-zinc-300">{tech.company}</p>}
@@ -56,7 +57,11 @@ export default function TechnicianProfile() {
                     className="flex w-full items-center gap-3 py-3 text-left"
                   >
                     <span className={cn("grid size-9 place-items-center rounded-full", t.id === tech.id ? "bg-brand text-white" : "bg-zinc-100 text-zinc-500")}>
-                      {t.id === tech.id ? <Check className="size-4" /> : t.kind === "subcontractor" ? <Building2 className="size-4" /> : <UserRound className="size-4" />}
+                      {t.id === tech.id ? (
+                        <Check className="size-4" />
+                      ) : (
+                        <ProfileAvatar id={t.id} fallback={t.kind === "subcontractor" ? <Building2 className="size-4" /> : <UserRound className="size-4" />} />
+                      )}
                     </span>
                     <span className="flex-1">
                       <span className="block text-[15px]">{t.name}</span>

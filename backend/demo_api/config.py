@@ -22,7 +22,7 @@ SLOT_TIMES = ["09:00", "11:00", "14:00", "16:00"]  # local (Malaysia) start time
 SLOT_HOURS = 2
 BOOKING_WINDOW_DAYS = 14
 
-PROJECT_NAME = "Residensi Harmoni"
+PROJECT_NAME = "Serenia City"
 SDP_STAFF_NAME = "Farah Lee"
 SDP_STAFF_TITLE = "SDP Defect Team"
 SDP_STAFF_EMAIL = "sdp.staff@example.com"

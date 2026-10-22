@@ -50,10 +50,14 @@ export async function apiFetch<T = { state: DemoState }>(path: string, init?: Re
   return body as T;
 }
 
+// Other tabs and frames (e.g. the side-by-side /demo page) get the new state straight away instead of on their next poll.
+let channel: BroadcastChannel | null = null;
+
 /** POST an action and adopt the state the backend returns. */
 export async function apiAction<T extends object = object>(path: string, payload?: unknown): Promise<T & { state: DemoState }> {
   const r = await apiFetch<T & { state: DemoState }>(path, { method: "POST", body: payload === undefined ? undefined : JSON.stringify(payload) });
   setState(r.state);
+  channel?.postMessage(r.state);
   return r;
 }
 
@@ -78,6 +82,10 @@ export async function refresh() {
 function start() {
   if (started || typeof window === "undefined") return;
   started = true;
+  if ("BroadcastChannel" in window) {
+    channel = new BroadcastChannel("simephony-state");
+    channel.onmessage = (e: MessageEvent<DemoState>) => setState(e.data);
+  }
   void refresh();
   setInterval(() => {
     if (document.visibilityState === "visible") void refresh();

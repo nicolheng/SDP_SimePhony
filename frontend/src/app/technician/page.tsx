@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { BrandMark } from "@/components/brand";
 import { EmptyState, QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import { dayKey, fmtDay } from "@/lib/dates";
 import { TECH_TODO } from "@/lib/status";
 import { useDemo } from "@/lib/store";
@@ -32,8 +33,8 @@ export default function TechnicianHome() {
             <Bell className="size-6" />
             {inbox > 0 && <span className="absolute -right-1.5 -top-1.5 grid min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold">{inbox}</span>}
           </Link>
-          <Link href="/technician/profile" className="grid size-10 place-items-center rounded-full bg-zinc-300 text-zinc-500" aria-label="Profile">
-            <UserRound className="size-6" />
+          <Link href="/technician/profile" className="grid size-10 place-items-center overflow-hidden rounded-full bg-zinc-300 text-zinc-500" aria-label="Profile">
+            <ProfileAvatar id={tech.id} fallback={<UserRound className="size-6" />} />
           </Link>
         </div>
       </header>

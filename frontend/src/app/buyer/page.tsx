@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { BrandMark } from "@/components/brand";
 import { useRecentActivity } from "@/components/case-views";
 import { BuildingBanner } from "@/components/illustrations";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import { QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
 import { StatusBadge } from "@/components/status-badge";
 import { DEMO_BUYER, getUnit, PROJECT_NAME } from "@/lib/constants";
@@ -40,8 +41,8 @@ export default function BuyerHome() {
             <Bell className="size-6" />
             {updates > 0 && <span className="absolute -right-1.5 -top-1.5 grid min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold">{updates}</span>}
           </Link>
-          <Link href="/buyer/profile" className="grid size-10 place-items-center rounded-full bg-zinc-300 text-zinc-500" aria-label="Profile">
-            <UserRound className="size-6" />
+          <Link href="/buyer/profile" className="grid size-10 place-items-center overflow-hidden rounded-full bg-zinc-300 text-zinc-500" aria-label="Profile">
+            <ProfileAvatar id={DEMO_BUYER.id} fallback={<UserRound className="size-6" />} />
           </Link>
         </div>
       </header>

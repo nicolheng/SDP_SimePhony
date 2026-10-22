@@ -29,7 +29,7 @@ CONTRACTORS = {
 }
 
 TECHNICIANS = [
-    {"id": "T-01", "name": "Hafiz Osman", "email": "hafiz.tech@example.com", "skills": ["plumbing", "waterproofing"], "blocks": ["A", "B"]},
+    {"id": "T-01", "name": "Olaf", "email": "olaf.tech@example.com", "skills": ["plumbing", "waterproofing"], "blocks": ["A", "B"]},
     {"id": "T-02", "name": "Ravi Kumar", "email": "ravi.tech@example.com", "skills": ["plumbing"], "blocks": ["A", "B", "C"]},
     {"id": "T-03", "name": "Lim Wei Jie", "email": "weijie.tech@example.com", "skills": ["electrical"], "blocks": ["A", "B", "C"]},
     {"id": "T-04", "name": "Nurul Izzah", "email": "nurul.tech@example.com", "skills": ["civil", "tiling", "painting"], "blocks": ["A", "B", "C"]},
@@ -63,7 +63,7 @@ def seed_core():
                     unit_rows.append((u_id, block, floor, stack, contractor))
 
                     if u_id == "A-12-08":
-                        buyer_rows.append((f"B-{numeric_buyer_index:04d}", "Aisyah Rahman", "aisyah.demo@example.com", u_id))
+                        buyer_rows.append((f"B-{numeric_buyer_index:04d}", "Elsa", "elsa.demo@example.com", u_id))
                     else:
                         buyer_rows.append((f"B-{numeric_buyer_index:04d}", f"Resident {u_id}", f"buyer.{u_id.lower().replace('-', '.')}@example.com", u_id))
                     numeric_buyer_index += 1
