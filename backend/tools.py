@@ -747,7 +747,7 @@ def _open_issue(conn: sqlite3.Connection, category: str, unit: dict) -> Optional
 @_returns_errors
 def check_escalation(case_id: str) -> dict:
     """Apply the rules.yaml escalation rule (same as the web app's RecurrenceAgent). occurrence_count =
-    earlier non-INVALID cases of the same category in the same unit + this one; stack_unit_count =
+    earlier non-INVALID cases of the same category in the same unit + this one + its reopens; stack_unit_count =
     distinct units in the same block/stack with that category, including this one. Also returns the open
     systemic issue for the stack (request_extra_inspection reuses it) and any pending approval.
     Returns {occurrence_count, reopen_count, stack_units, stack_unit_count, thresholds, repeated_defect,
@@ -766,13 +766,16 @@ def check_escalation(case_id: str) -> dict:
     label = config.CATEGORY_LABEL.get(case["category"], case["category"])
     same_unit = [r for r in related if r["unit_id"] == case["unit_id"]]
     stack_units = sorted({r["unit_id"] for r in related if r["unit_id"] != case["unit_id"]})
-    occurrence, stack_unit_count = len(same_unit) + 1, len(stack_units) + 1
+    reopens = case["reopen_count"] or 0
+    # rules.yaml occurrence (agreed 20 Oct): earlier same-unit cases + this case + its reopens, so one case
+    # that keeps coming back also reaches the threshold
+    occurrence, stack_unit_count = len(same_unit) + 1 + reopens, len(stack_units) + 1
     repeated = occurrence >= config.OCCURRENCE_THRESHOLD
     cluster = stack_unit_count >= config.STACK_CLUSTER_THRESHOLD
     reasons = []
     if repeated:
-        reasons.append(f"{label} reported in {case['unit_id']} {occurrence} times ({occurrence - 1} earlier case(s)), "
-                       f"and this case has been reopened {case['reopen_count'] or 0}×.")
+        reasons.append(f"{label} reported in {case['unit_id']} {occurrence} times ({len(same_unit)} earlier case(s), "
+                       f"and this case has been reopened {reopens}×).")
     if cluster:
         reasons.append(f"{stack_unit_count} units in stack {unit['block']}-{unit['stack']} have the same problem: "
                        f"{', '.join([case['unit_id'], *stack_units])}.")

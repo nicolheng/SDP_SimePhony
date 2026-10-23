@@ -24,11 +24,14 @@ def _candidates(options: dict, urgency: str) -> list[dict]:
 
 
 def _escalate(state: dict, case_id: str, reason: str, tried: list[str], attempts: int) -> dict:
-    print(f"❌ [BOOKING] {reason} Escalating to SDP for manual booking.")
-    try:
-        sent = backend_tools.escalate_booking(case_id, reason)
-    except Exception as e:
-        sent = {"ok": False, "error": str(e)}
+    if state.get("decide_only"):  # the caller (the web app) decides what to do when nobody is free
+        sent = {"ok": True}
+    else:
+        print(f"❌ [BOOKING] {reason} Escalating to SDP for manual booking.")
+        try:
+            sent = backend_tools.escalate_booking(case_id, reason)
+        except Exception as e:
+            sent = {"ok": False, "error": str(e)}
     state["booking_result"] = {
         "booking_status": "NEEDS_STAFF", "assignment_ok": None, "reason": reason,
         "error": None if sent.get("ok") is not False else sent.get("error"),
@@ -109,6 +112,13 @@ def booking_node(state: dict) -> dict:
                 return _escalate(state, case_id, f"No booking after {attempts} attempts.", tried, attempts)
             reason = (f"Needs {skill}; {tech['name']} covers this block and is free "
                       f"{option['start_local']}.")
+            if state.get("decide_only"):  # the caller (the web app) books it with tools.assign_technician
+                state["booking_result"] = {
+                    "assigned_technician": tech["technician_id"], "technician_name": tech["name"],
+                    "start": option["start"], "start_local": option["start_local"], "booking_status": "PROPOSED",
+                    "reason": reason, "alternatives": [o for o in candidates if o["start"] != option["start"]][:3],
+                }
+                return state
             print(f"🛠️ [BOOKING] Requesting {tech['technician_id']} for {option['start_local']}")
             try:
                 held = backend_tools.assign_technician(case_id, tech["technician_id"], option["start"], reason, urgency)

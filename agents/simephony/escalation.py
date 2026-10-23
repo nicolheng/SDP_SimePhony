@@ -1,8 +1,8 @@
-"""Escalation decision for a reopened case: xiaowen's tools.check_escalation plus this case's reopens.
+"""Escalation decision: xiaowen's tools.check_escalation, with this case's reopens as the agent sees them.
 
-tools.check_escalation counts earlier same-unit cases and stack units from the DB. A case that keeps
-reopening is one case in the DB, so its reopens are added here: occurrence = earlier same-unit cases
-+ this case + its reopens (agreed 20 Oct). Pure: never requests an inspection.
+tools.check_escalation counts occurrence = earlier same-unit cases + this case + its reopens (agreed 20 Oct),
+plus the stack units, from the DB. The agent state may know of a reopen the DB hasn't recorded yet, so the
+larger reopen count is used. Pure: never requests an inspection.
 """
 from . import backend_tools
 from .rules import load_rules
@@ -18,9 +18,12 @@ def check_escalation(case_id: str, reopen_count: int) -> dict:
         return {"escalate": False, "reasons": [], "occurrence": reopen_count + 1, "cluster_size": 1,
                 "pending_approval_id": None, "error": db["error"]}
 
-    reopens = max(reopen_count, db.get("reopen_count") or 0)
-    earlier = db["occurrence_count"] - 1
-    occurrence = db["occurrence_count"] + reopens
+    # tools.py counts earlier cases + this case + the reopens it has recorded; the state may already know
+    # of a reopen the DB hasn't recorded yet
+    db_reopens = db.get("reopen_count") or 0
+    reopens = max(reopen_count, db_reopens)
+    earlier = db["occurrence_count"] - 1 - db_reopens
+    occurrence = earlier + 1 + reopens
     repeated = occurrence >= cfg["occurrence_threshold"]
     cluster = db["stack_unit_count"] >= cfg["stack_cluster_threshold"]
 

@@ -227,12 +227,15 @@ def verification_node(state: dict) -> dict:
         lines = list(checks)
 
     intro = f"The technician's photo appears to show the repair completed at {location}."
-    verification_id, save_error = _save_guide(state.get("case_id"), {"intro": intro, "steps": lines, "ifFails": IF_FAILS})
+    guide = {"intro": intro, "steps": lines, "ifFails": IF_FAILS}
+    # decide_only: the caller (the web app) saves the guide itself
+    verification_id, save_error = (None, None) if state.get("decide_only") else _save_guide(state.get("case_id"), guide)
     state["verification_result"] = {
         "category": category,
         "assessment": photo_check["assessment"],
         "observations": photo_check["observations"],
         "protocol": "\n".join([intro] + lines + [IF_FAILS]),
+        "guide": guide,
         "needs_technician_input": False,
         "technician_message": None,
         "verification_id": verification_id,  # the guide saved for the buyer's sign-off page

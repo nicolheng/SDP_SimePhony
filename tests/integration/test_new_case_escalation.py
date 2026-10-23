@@ -124,3 +124,26 @@ def test_agent_new_case_escalates_without_blocking_the_visit(fake_llm):
     assert final["comms_result"]["message"].endswith(
         "As this problem has been reported before in your unit, our team is also reviewing whether a more detailed "
         "inspection is needed.")
+
+
+# ---------------------------------------------------------------- reopens count (agreed rule, 20 Oct)
+
+def test_one_case_reopened_twice_reaches_the_threshold():
+    # occurrence = earlier same-unit cases + this case + its reopens: a clean unit, one case, two reopens = 3
+    import db
+    tools = _tools()
+    case_id = _booked_new_leak("A-1-01", "B-0001")
+    with db.get_conn() as conn:
+        conn.execute("UPDATE cases SET reopen_count = 2 WHERE case_id = ?", (case_id,))
+    esc = tools.check_escalation(case_id)
+    assert esc["occurrence_count"] == 3 and esc["repeated_defect"] and esc["should_escalate"]
+    assert "reopened 2" in esc["reasons"][0]
+
+
+def test_agents_do_not_count_reopens_twice():
+    import db
+    from agents.simephony.escalation import check_escalation
+    case_id = _booked_new_leak("A-1-01", "B-0001")
+    with db.get_conn() as conn:
+        conn.execute("UPDATE cases SET reopen_count = 1 WHERE case_id = ?", (case_id,))
+    assert check_escalation(case_id, 1)["occurrence"] == 2

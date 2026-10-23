@@ -2,15 +2,15 @@
 
 Every database change goes through backend/tools.py, the one place with the business rules; the tools join
 this request's transaction (tools.use_connection), so a failed step rolls the whole action back. This module
-only orchestrates: it runs the rule-based agent stand-ins in agents.py (P2's LangGraph agents can replace them)
-and sends the buyer / technician notifications.
+only orchestrates: it runs the agents (the LangGraph agents through ai_agents.py when USE_AI_AGENTS is on,
+otherwise the rule-based stand-ins in agents.py) and sends the buyer / technician notifications.
 """
 import json
 import sqlite3
 
 import tools
 
-from . import agents, config
+from . import agents, ai_agents, config
 from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
@@ -108,7 +108,7 @@ def step(ctx: Ctx, case_id: str | None, agent: str, message: str) -> None:
 
 def notify_buyer(ctx: Ctx, case_id: str, kind: str, **extra) -> None:
     """CommsAgent stand-in: the template for this situation, posted in the app and emailed."""
-    title, body = agents.comms(ctx, kind, load_case(ctx, case_id), extra)
+    title, body = ai_agents.comms(ctx, kind, load_case(ctx, case_id), extra)
     _tool(ctx, tools.notify_buyer, case_id, title, body)
 
 
@@ -136,7 +136,7 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
         raise WorkflowError("Please describe the problem.")
     if not ctx.conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
         raise WorkflowError("Unknown buyer or unit.")
-    result = agents.intake(description, bool(photo))
+    result = ai_agents.intake(ctx, description, photo)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
     case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
@@ -153,7 +153,7 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
 
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, slot: str | None) -> None:
     description = _tool(ctx, tools.answer_follow_up, case_id, answer, None, slot)["description"]
-    result = agents.intake(description, bool(ctx.photo_kinds(case_id)))
+    result = ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id)
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", "Still missing information")
@@ -168,20 +168,23 @@ def _continue_new_case(ctx: Ctx, case_id: str) -> None:
     chosen time (kept in preferred_visit_at) if a technician is free then. On the 3rd occurrence in the unit
     or a stack cluster, SDP is also asked for an extra inspection; the visit still goes ahead (keep_status)."""
     c = load_case(ctx, case_id)
-    sim = agents.similar(ctx, c)
+    sim = ai_agents.similar(ctx, c)
     _tool(ctx, tools.save_similar_cases, case_id, [{"related_case_id": r["case_id"], "reason": r["reason"]} for r in sim["refs"]], sim["occurrence"])
     step(ctx, case_id, "SimilarDefectAgent",
          f"Found {len(sim['refs'])} related case(s); recurrence_count={sim['occurrence']} in this unit; {len(sim['stack_units'])} other unit(s) in the stack"
          if sim["refs"] else "No related cases: treated as a new defect")
+    if sim.get("cluster_reason") and sim["refs"]:
+        step(ctx, case_id, "SimilarDefectAgent", sim["cluster_reason"])
     c = load_case(ctx, case_id)
-    t = agents.triage(ctx, c, _bookable(ctx, c["preferred_visit_at"]))
+    t = ai_agents.triage(ctx, c, _bookable(ctx, c["preferred_visit_at"]))
     _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
     step(ctx, case_id, "TriageAgent", t["reason"])
     esc = _tool(ctx, tools.check_escalation, case_id)
-    if esc["should_escalate"] and not esc.get("pending_approval_id"):
+    escalated = esc["should_escalate"] and not esc.get("pending_approval_id")
+    if escalated:
         _tool(ctx, tools.request_extra_inspection, case_id, esc["reasons"], keep_status=True)
         step(ctx, case_id, "RecurrenceAgent", f"Repeat defect on a new report: extra inspection requested; visit kept. {' '.join(esc['reasons'])}")
-    notify_buyer(ctx, case_id, "received", slot=fmt_datetime(t["slot"]))
+    notify_buyer(ctx, case_id, "received", slot=fmt_datetime(t["slot"]), escalated=escalated)
     notify_tech(ctx, case_id, "New inspection visit: please accept",
                 f"{c['unit_id']}: {c['summary']}. Inspection visit {fmt_datetime(t['slot'])}. Accept it in the app, or hand it over if you can't make it.")
 
@@ -235,7 +238,7 @@ def _after_reopen(ctx: Ctx, case_id: str, description: str) -> None:
         _tool(ctx, tools.request_extra_inspection, case_id, esc["reasons"])
         notify_buyer(ctx, case_id, "escalated")
     else:
-        t = agents.triage(ctx, load_case(ctx, case_id), None)
+        t = ai_agents.triage(ctx, load_case(ctx, case_id), None)
         _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
         step(ctx, case_id, "TriageAgent", f"Below escalation threshold; revisit: {t['reason']}")
         notify_tech(ctx, case_id, "Revisit job", f"{c['unit_id']}: {c['summary']} came back. Visit {fmt_datetime(t['slot'])}.")
@@ -247,14 +250,18 @@ def _after_reopen(ctx: Ctx, case_id: str, description: str) -> None:
 
 def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.record_verdict, case_id, outcome, note, photo)
+    if outcome == "VALID":
+        ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
     notify_buyer(ctx, case_id, "valid" if outcome == "VALID" else "invalid", note=note.strip())
 
 
 def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.mark_repaired, case_id, note, photo)
     c = load_case(ctx, case_id)
-    guide = agents.verification_guide(c)
+    guide, photo_note = ai_agents.verification_guide(ctx, c)
     _tool(ctx, tools.start_verification, case_id, guide)
+    if photo_note:
+        step(ctx, case_id, "VerificationAgent", photo_note)
     step(ctx, case_id, "VerificationAgent", f"Retrieved {config.CATEGORY_LABEL.get(c['category'], '').lower()} protocol; {len(guide['steps'])} case-specific checks for the buyer")
     notify_buyer(ctx, case_id, "verify")
 
@@ -297,12 +304,12 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
             notify_buyer(ctx, case_id, "valid", note="Our team will repair this as a normal case")
         return
     c = load_case(ctx, case_id)
-    brief = agents.initial_inspection(ctx, c, c.get("verdict_note"), latest_verification(ctx, case_id))
+    brief = ai_agents.initial_inspection(ctx, c, c.get("verdict_note"), latest_verification(ctx, case_id))
     _tool(ctx, tools.attach_inspection_brief, case_id, brief)
 
     # InitialInspectionAgent's brief is attached; TriageAgent books the joint inspection.
     c = load_case(ctx, case_id)
-    t = agents.triage(ctx, c, None)
+    t = ai_agents.triage(ctx, c, None)
     sub = agents.subcontractor_for(ctx, c)
     if sub and agents.busy(ctx, sub["technician_id"], t["slot"]):
         sub = None  # the subcontractor isn't free then; the in-house technician inspects alone
