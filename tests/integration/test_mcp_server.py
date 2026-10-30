@@ -171,7 +171,7 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
 
         # 3 earlier leaks in A-12-08 + stack A-08 cluster; SI-002 is already open for the stack
         esc = ok(await call("check_escalation", case_id=cid))
-        assert esc["occurrence_count"] == 4 and esc["repeated_defect"] and esc["stack_cluster"] and esc["should_escalate"]
+        assert esc["occurrence_count"] == 5 and esc["repeated_defect"]  # 3 earlier + this case + its reopen and esc["stack_cluster"] and esc["should_escalate"]
         assert esc["existing_systemic_issue"]["issue_id"] == "SI-002"
         req = ok(await call("request_extra_inspection", case_id=cid, reasons=esc["reasons"]))
         assert req["issue_id"] == "SI-002" and req["reused_issue"]

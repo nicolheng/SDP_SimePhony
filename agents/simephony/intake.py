@@ -272,5 +272,7 @@ def intake_node(state: dict) -> dict:
 
     state["intake_result"] = parsed_intake
     state["missing_info"] = parsed_intake.get("missing_info", [])
-    state["intake_save"] = _save(state.get("case_id"), parsed_intake)
+    # decide_only: the caller (the web app) saves the intake itself
+    state["intake_save"] = ({"ok": False, "error": "decide_only: the caller saves"} if state.get("decide_only")
+                            else _save(state.get("case_id"), parsed_intake))
     return state

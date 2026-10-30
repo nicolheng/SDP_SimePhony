@@ -1,65 +1,102 @@
-# SDP_SimePhony
+# Simephony
 
-AI-assisted defect management for SDP property buyers, technicians and SDP staff.
-**"Don't just close the ticket. Close the problem."**
+**Don't just close the defect. Prove it's resolved.**
 
-Buyers report defects with a photo; AI agents (Google ADK + Gemini Flash) handle intake,
-find similar/recurring defects, assign technicians, write buyer updates, and escalate
-recurring problems to SDP staff for a human-approved extra inspection.
+Simephony aims to solve a gap in how property defects are handled: a defect is marked closed without
+anyone confirming the repair worked, and when it comes back it is logged as a new ticket, so recurring
+problems in a unit or across a building stack go unnoticed. It solves this with AI agents that read the
+buyer's report and photo, set the urgency, book a qualified technician, check the technician's repair photo
+and give the buyer a short, safe checklist. A case closes only after the developer and the buyer both sign
+off, and a defect that returns a third time in a unit, or appears in three or more units of the same stack,
+is escalated to SDP staff for a detailed inspection. The impact is a trusted record of every repair, fewer
+repeat repairs and disputes, and root causes found and fixed earlier.
 
-See [CONTRACTS.md](CONTRACTS.md) for statuses, tools, events and DB rules, and
-[rules.yaml](rules.yaml) for business rules.
+## How a defect moves through Simephony
 
-## Stack
+1. **Report:** the buyer describes the defect (English or Malay) and adds a photo.
+2. **Inspection visit:** the defect is categorised, its urgency set and a qualified technician booked.
+   The technician accepts the job or hands it over to a colleague.
+3. **Verdict:** the technician confirms the defect (valid) or not (invalid). For a valid defect the repair
+   time is estimated and the buyer books a repair slot.
+4. **Repair and photo check:** after the repair, the technician's photo is checked against the original
+   report and a short, safe checklist is prepared for the buyer.
+5. **Sign-off:** SDP staff sign off first, then the buyer checks the repair and signs off. The case closes.
+6. **Recurrence:** if the buyer reopens within 30 days, the case is revisited, or escalated to SDP for a
+   detailed inspection on the 3rd occurrence or when 3+ units in the stack have the same defect.
 
-Google ADK · Gemini Flash · FastMCP · FastAPI · SQLite (WAL) · Next.js · shadcn/ui · Recharts · Gmail SMTP
+AI agents recommend; people decide. Agents cannot record verdicts, sign off or approve escalations, and
+buyer messages never admit liability or give unsafe repair steps.
 
-## Layout
+## Repo layout
 
 ```
-agents/simephony/   ADK agents (P1, P2) — currently on stub tools
-backend/            FastAPI app, FastMCP tool server, db.py, schema.sql, seed scripts (P3, P4)
-frontend/           Next.js buyer / technician / SDP apps (P3, P4)
-data/               seed.db (committed) and simephony.db (live, gitignored)
-uploads/            photo uploads (gitignored)
-rules.yaml          shared business rules
-CONTRACTS.md        shared contracts
+agents/simephony/   LangGraph agents: intake, similar defects, triage, booking, repair estimate,
+                    verification, recurrence, initial inspection, comms (+ guardrails)
+backend/            FastAPI web API (demo_api/), tools.py (all business rules + DB writes),
+                    FastMCP tool server, db.py, schema.sql, seed scripts
+frontend/           Next.js apps: buyer and technician (mobile), SDP console (desktop)
+data/               seed.db (committed demo data); simephony.db (live, gitignored)
+tests/              unit, integration and functional tests (pytest)
+scripts/            demo_flow.py: watch the agents run through scenarios end to end
+rules.yaml          business rules: categories, urgency, grace period, escalation thresholds
+CONTRACTS.md        statuses, events, tools and DB rules shared by the team
 ```
 
-## Setup
+## Run it locally
+
+Needs Python 3.12+, Node 20+ and [Ollama](https://ollama.com) with two models:
+
+```bash
+ollama pull qwen2.5:7b
+ollama pull llava-llama3
+```
+
+One-time setup, from the repo root:
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
+.venv\Scripts\activate              # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env    # then fill in your own Gemini key + team Gmail app password
+copy .env.example .env              # macOS/Linux: cp .env.example .env
+cd frontend && npm install
 ```
 
-Run:
+Then run each in its own terminal (Ollama keeps running in the background):
 
 ```bash
-# API (http://localhost:8001)
-cd backend && uvicorn main:app --reload --port 8001
+# Backend API: http://localhost:8001 (health check: /health)
+cd backend
+uvicorn main:app --port 8001
+```
 
-# MCP tool server
-python backend/mcp_server.py
+```bash
+# Web app: http://localhost:3000 (role picker: buyer, technician, SDP staff)
+cd frontend
+npm run dev
+```
 
-# Agents dev UI (run from agents/, pick "simephony")
-cd agents && adk web
+In the SDP console, **Reset demo** restores the demo data from `data/seed.db`. The buyer app is signed in
+as the demo buyer of unit A-12-08. See [frontend/README.md](frontend/README.md) for a 3-minute demo script.
+
+## Tests
+
+```bash
+pytest                          # all tests with a stand-in model; the live DB is never written
+pytest -m live_llm              # the same checks against the real Ollama models (slow)
+python scripts/demo_flow.py     # scenarios printed step by step; add --live for the real models
 ```
 
 ## Team
 
 | Role | Owns |
 |---|---|
-| P1 – AI Engineer A | IntakeAgent, SimilarDefectAgent, InitialInspectionAgent, analytics insight |
-| P2 – AI Engineer B | TriageAgent, CommsAgent, VerificationAgent, RecurrenceAgent, sign-off logic, guardrails |
-| P3 – Full-stack (buyer/technician) | Buyer + technician apps, db.py, booking/scheduling/email tools |
-| P4 – Full-stack (SDP) | SDP console, analytics, approvals, history/analytics tools |
+| Tan Syn Yee – AI Engineer A | IntakeAgent, SimilarDefectAgent, InitialInspectionAgent, analytics insight |
+| Nicol Heng Si Yi – AI Engineer B | TriageAgent, BookingAgent, CommsAgent, VerificationAgent, RecurrenceAgent, RepairEstimateAgent, guardrails |
+| Phoebe Angelina Surin – Full-stack (buyer/technician) | Buyer + technician apps, db.py, booking/scheduling/email tools |
+| Lim Xiao Wen – Full-stack (SDP) | SDP console, analytics, approvals, history/analytics tools |
 
 ## Workflow
 
 - Never commit `.env`.
-- Branch per feature (`p1/intake-agent`, `p3/report-defect`…), open a PR into `main`.
+- Branch per feature, open a PR into `main`.
 - Changes to `CONTRACTS.md`, `rules.yaml` or `schema.sql` need sign-off from affected owners.
-- Final demo build is tagged `v1-demo`.

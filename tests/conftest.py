@@ -206,7 +206,8 @@ class FakeEscalationDB:
     def check(self, case_id):
         self.calls.append(case_id)
         reasons = [f"{self.stack_units} units in stack A-08 have the same problem."] if self.stack_units >= 3 else []
-        return {"case_id": case_id, "occurrence_count": self.earlier + 1, "reopen_count": self.db_reopens,
+        # like tools.check_escalation: earlier same-unit cases + this case + its reopens
+        return {"case_id": case_id, "occurrence_count": self.earlier + 1 + self.db_reopens, "reopen_count": self.db_reopens,
                 "stack_unit_count": self.stack_units, "reasons": reasons, "pending_approval_id": self.pending}
 
 
