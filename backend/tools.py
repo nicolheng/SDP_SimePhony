@@ -1669,6 +1669,25 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
 
 
 @_returns_errors
+def record_rating(case_id: str, rating: int, comment: str = "") -> dict:
+    """Buyer's satisfaction with the repair (1-5 stars, optional comment), once per case after they have
+    signed off. Shown in the SDP analytics. Returns {ok, rating}."""
+    if not isinstance(rating, int) or not 1 <= rating <= 5:
+        raise ToolError("Please choose a rating from 1 to 5 stars.")
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        if not case["buyer_signed_at"]:
+            raise ToolError("You can rate the repair after you have signed off.")
+        if case["buyer_rating"] is not None:
+            raise ToolError("You have already rated this repair.")
+        comment = (comment or "").strip()
+        _save(conn, case_id, buyer_rating=rating, buyer_rating_comment=comment or None, buyer_rated_at=_now(conn))
+        _emit(conn, case_id, "feedback.submitted",
+              f"Buyer rated the repair {rating}/5" + (f' — "{comment}"' if comment else ""), rating=rating)
+    return {"ok": True, "rating": rating}
+
+
+@_returns_errors
 def reopen_case(case_id: str, description: str, photo: str) -> dict:
     """Buyer reopens a CLOSED case within the grace period (rules.yaml grace_period_days, counted on the
     demo clock from closed_at) with a mandatory new photo (-> REOPENED; RecurrenceAgent runs next).

@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { decideApproval } from "@/lib/api";
 import { FLOORS, getUnit } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
-import { useDemo } from "@/lib/store";
+import { useDemo, useOffline } from "@/lib/store";
 import type { Approval, Case, SystemicIssue } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -32,9 +32,10 @@ export default function Approvals() {
         </Panel>
       )}
       <div className="space-y-6">
-        {pending.map((a) => (
-          <ApprovalCard key={a.id} a={a} c={cases.find((c) => c.id === a.caseId)!} si={issues.find((s) => s.id === a.systemicIssueId)} cases={cases} />
-        ))}
+        {pending.map((a) => {
+          const c = cases.find((x) => x.id === a.caseId);
+          return c ? <ApprovalCard key={a.id} a={a} c={c} si={issues.find((s) => s.id === a.systemicIssueId)} cases={cases} /> : null;
+        })}
       </div>
       {decided.length > 0 && (
         <Panel title="Decided" className="mt-8">
@@ -60,6 +61,7 @@ export default function Approvals() {
 
 function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: SystemicIssue; cases: Case[] }) {
   const [busy, setBusy] = useState(false);
+  const offline = useOffline();
   const unit = getUnit(c.unitId);
   const stackUnits = useMemo(() => {
     const ids = new Set(
@@ -142,7 +144,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
       <div className="mt-6 flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || offline}
           onClick={() => decide(true)}
           className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
         >
@@ -150,7 +152,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
         </button>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || offline}
           onClick={() => decide(false)}
           className="inline-flex h-11 items-center gap-2 rounded-xl border border-zinc-300 bg-white px-5 text-base font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >

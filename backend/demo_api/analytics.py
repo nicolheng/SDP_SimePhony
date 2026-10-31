@@ -5,7 +5,7 @@ Sent as `analytics` in the state (frontend/src/lib/types.ts Analytics). The scre
 from collections import defaultdict
 
 from . import config
-from .timeutil import MYT, add_days, days_between, parse
+from .timeutil import MYT, add_days, days_between, norm, parse
 
 OPEN = {"SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED",
         "ESCALATION_PENDING", "EXTRA_INSPECTION"}
@@ -42,6 +42,29 @@ def stack_clusters(ctx, cases: list[dict]) -> list[dict]:
             "confidence": cluster_confidence(len(per_unit), sum(1 for n in per_unit.values() if n > 1), reopened),
         })
     return sorted(out, key=lambda d: (-d["confidence"], -len(d["cases"])))
+
+
+def satisfaction(ctx) -> dict:
+    """Buyer ratings (1-5) given after sign-off: average, spread, response rate, per category and latest comments."""
+    rated = [dict(r) for r in ctx.conn.execute(
+        """SELECT case_id, unit_id, category, technician_id, buyer_rating, buyer_rating_comment, buyer_rated_at FROM cases
+           WHERE buyer_rating IS NOT NULL ORDER BY buyer_rated_at DESC, case_id DESC""")]
+    signed = ctx.conn.execute("SELECT COUNT(*) FROM cases WHERE buyer_signed_at IS NOT NULL").fetchone()[0]
+    by_cat: dict[str, list[int]] = defaultdict(list)
+    for r in rated:
+        by_cat[r["category"] if r["category"] in config.CATEGORY_LABEL else "other"].append(r["buyer_rating"])
+    stars = [r["buyer_rating"] for r in rated]
+    return {
+        "count": len(stars),
+        "average": sum(stars) / len(stars) if stars else 0,
+        "responseRate": len(stars) / signed if signed else 0,
+        "low": sum(1 for s in stars if s <= 2),
+        "distribution": [{"stars": n, "count": stars.count(n)} for n in range(5, 0, -1)],
+        "byCategory": sorted(({"key": k, "name": config.CATEGORY_LABEL[k], "average": sum(v) / len(v), "count": len(v)}
+                              for k, v in by_cat.items()), key=lambda x: x["average"]),
+        "recent": [{"caseId": r["case_id"], "unitId": r["unit_id"], "technicianId": r["technician_id"], "stars": r["buyer_rating"],
+                    "comment": r["buyer_rating_comment"] or "", "at": norm(r["buyer_rated_at"])} for r in rated[:8]],
+    }
 
 
 def build_analytics(ctx, issue_rows: list[dict]) -> dict:
@@ -128,4 +151,5 @@ def build_analytics(ctx, issue_rows: list[dict]) -> dict:
         "systemicConfidence": SYSTEMIC_CONFIDENCE,
         "insight": insight,
         "unitStats": list(unit_stats.values()),
+        "satisfaction": satisfaction(ctx),
     }

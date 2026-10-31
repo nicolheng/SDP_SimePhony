@@ -6,8 +6,10 @@ import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { MobileHeader, Section } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
+import { RatingDialog } from "@/components/rating";
 import { signoffDeadline, submitVerification } from "@/lib/api";
 import { fmtDate } from "@/lib/dates";
+import { useOffline } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function VerifyRepair() {
@@ -19,6 +21,9 @@ export function VerifyRepair() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  // Set once the buyer has signed off: the satisfaction rating pop-up shows, then we go back to the case.
+  const [rating, setRating] = useState(false);
+  const offline = useOffline();
 
   if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
   const g = c.verificationGuide;
@@ -34,18 +39,21 @@ export function VerifyRepair() {
     try {
       await submitVerification(c!.id, result, note.trim(), photo);
       toast.success(result === "FIXED" ? "Signed off: case closed" : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
-      router.push(`/buyer/cases/${c!.id}`);
+      if (result === "FIXED") setRating(true);
+      else router.push(`/buyer/cases/${c!.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setBusy(false);
     }
   }
 
-  if (c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer || !c.signoff?.developer)
+  // After signing off the case has left PENDING_SIGNOFF, so this also covers the rating step.
+  if (rating || c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer || !c.signoff?.developer)
     return (
       <div>
         <MobileHeader title="Check & Sign Off" back={`/buyer/cases/${c.id}`} />
-        <p className="p-6 text-sm text-zinc-500">Nothing to sign off for this case right now.</p>
+        <p className="p-6 text-sm text-zinc-500">{rating ? "Signed off. Thank you!" : "Nothing to sign off for this case right now."}</p>
+        {rating && <RatingDialog caseId={c.id} onDone={() => router.push(`/buyer/cases/${c.id}`)} />}
       </div>
     );
 
@@ -126,7 +134,7 @@ export function VerifyRepair() {
         <div className="space-y-2">
           <button
             type="button"
-            disabled={busy || !confirm}
+            disabled={busy || !confirm || offline}
             onClick={() => submit("FIXED")}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
           >
@@ -134,7 +142,7 @@ export function VerifyRepair() {
           </button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || offline}
             onClick={() => submit("NOT_FIXED")}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-semibold text-white disabled:opacity-50"
           >
@@ -142,7 +150,7 @@ export function VerifyRepair() {
           </button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || offline}
             onClick={() => submit("CANNOT_VERIFY")}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-700 disabled:opacity-50"
           >

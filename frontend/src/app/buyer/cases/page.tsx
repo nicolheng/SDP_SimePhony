@@ -97,7 +97,7 @@ export default function MyDefects() {
               return (
                 <li key={c.id}>
                   <Link href={`/buyer/cases/${c.id}`} className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200">
-                    <PhotoThumb photo={c.photos[0]} className="size-20 shrink-0" label={false} />
+                    <PhotoThumb photo={c.photos[0]} className="size-20 shrink-0" label={false} zoom={false} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold">{c.summary}</p>
                       <p className="text-xs text-zinc-500">

@@ -38,7 +38,7 @@ export function ReopenCase() {
           <p className="text-sm font-semibold">{c.summary}</p>
           <p className="text-xs text-zinc-500">{c.id} · same case, same details — we only need a new photo.</p>
           <div className="mt-3 w-28">
-            <PhotoThumb photo={c.photos[0]} className="aspect-square" />
+            {c.photos[0] && <PhotoThumb photo={c.photos[0]} className="aspect-square" />}
           </div>
         </Section>
         <Section title="1. New photo *">

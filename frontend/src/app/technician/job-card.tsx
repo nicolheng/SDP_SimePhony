@@ -15,7 +15,7 @@ export function JobCard({ c }: { c: Case }) {
   return (
     <Link href={`/technician/jobs/${c.id}`} className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200">
       <div className="relative shrink-0">
-        <PhotoThumb photo={c.photos[0]} className="size-20" label={false} />
+        <PhotoThumb photo={c.photos[0]} className="size-20" label={false} zoom={false} />
         <span className={cn("absolute -bottom-1.5 -right-1.5 grid size-7 place-items-center rounded-full ring-2 ring-white", repair ? "bg-sky-600 text-white" : "bg-amber-500 text-white")}>
           {repair ? <Hammer className="size-3.5" /> : <ClipboardCheck className="size-3.5" />}
         </span>

@@ -57,7 +57,7 @@ Write tools return `{ok: false, error}` instead of raising when a rule blocks th
 Every event is a row in `case_events`, written by `tools.py`, with a `message` the timeline and SDP trace
 pages show. The web app reads them through `GET /api/state`. Main types: `case.created`, `case.info_needed`,
 `case.assigned`, `booking.requested` / `confirmed` / `rejected` / `escalated`, `verdict.recorded`, `repair.booked`,
-`repair.done`, `verification.requested` / `completed`, `signoff.completed`, `signoff.reminder`, `signoff.overdue`,
+`repair.done`, `verification.requested` / `completed`, `signoff.completed`,  `feedback.submitted`,`signoff.reminder`, `signoff.overdue`,
 `case.closed`, `case.reopened`, `recurrence.detected`, `inspection.requested` / `approved` / `rejected`,
 `email.sent`, `agent.step`.
 

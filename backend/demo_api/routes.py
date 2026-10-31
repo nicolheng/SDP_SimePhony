@@ -111,14 +111,20 @@ def create_case(body: NewReport, request: Request, background_tasks: BackgroundT
                 background_tasks=background_tasks)
 
 
+# Images uploaded from the browser only: tools._save_photo also takes server file paths, which a client must not name.
+UPLOADED_IMAGE = r"^data:image/(png|jpe?g|webp);base64,"
+
+
 class FollowUp(BaseModel):
     answer: str = Field(min_length=1, max_length=500)
     slot: str | None = None
+    photo: str | None = Field(default=None, pattern=UPLOADED_IMAGE)  # data URL
 
 
 @router.post("/cases/{case_id}/follow-up")
 def follow_up(case_id: str, body: FollowUp, request: Request, background_tasks: BackgroundTasks):
-    return _run(request, workflow.answer_follow_up, case_id, body.answer, body.slot, background_tasks=background_tasks)
+    return _run(request, workflow.answer_follow_up, case_id, body.answer, body.photo, body.slot,
+                background_tasks=background_tasks)
 
 
 class RepairBooking(BaseModel):
@@ -140,6 +146,17 @@ class Verification(BaseModel):
 def verification(case_id: str, body: Verification, request: Request, background_tasks: BackgroundTasks):
     return _run(request, workflow.submit_verification, case_id, body.result, body.note, body.photo,
                 background_tasks=background_tasks)
+
+
+class Rating(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str = Field(default="", max_length=500)
+
+
+@router.post("/cases/{case_id}/rating")
+def rating(case_id: str, body: Rating, request: Request):
+    """Buyer's satisfaction rating, asked once they have signed off."""
+    return _run(request, workflow.rate_case, case_id, body.rating, body.comment)
 
 
 class Reopen(BaseModel):

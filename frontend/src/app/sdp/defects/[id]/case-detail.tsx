@@ -8,17 +8,20 @@ import { DefectRecordCard } from "@/components/defect-record";
 import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { PhotoThumb } from "@/components/photo";
+import { Stars } from "@/components/rating";
 import { Panel } from "@/components/sdp-ui";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { developerSignOff } from "@/lib/api";
 import { CATEGORY_LABEL, getTechnician, getUnit, SDP_STAFF, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
+import { useOffline } from "@/lib/store";
 
 export function SdpCaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
   const events = useCaseEvents(id);
   const [busy, setBusy] = useState(false);
+  const offline = useOffline();
   if (!c) return <p className="text-base text-zinc-500">Case {id} not found.</p>;
   const unit = getUnit(c.unitId);
   const tech = getTechnician(c.technicianId);
@@ -34,6 +37,9 @@ export function SdpCaseDetail() {
     ["Repair", c.repairSlot ? fmtDateTime(c.repairSlot) : "—"],
     ["Occurrence in unit", c.occurrence],
     ["Reopened", `${c.reopenCount}×`],
+    ...(c.rating
+      ? ([["Buyer rating", <span key="r" className="inline-flex items-center gap-2"><Stars value={c.rating.stars} /> {c.rating.stars}/5</span>]] as [string, React.ReactNode][])
+      : []),
   ];
 
   return (
@@ -127,7 +133,7 @@ export function SdpCaseDetail() {
               )}
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || offline}
                 onClick={async () => {
                   setBusy(true);
                   try {
@@ -143,6 +149,13 @@ export function SdpCaseDetail() {
               >
                 Approve repair (developer sign-off)
               </button>
+            </Panel>
+          )}
+          {c.rating?.comment && (
+            <Panel title="Buyer feedback">
+              <Stars value={c.rating.stars} className="text-lg" />
+              <p className="mt-2 text-base text-zinc-700">&ldquo;{c.rating.comment}&rdquo;</p>
+              <p className="mt-1 text-sm text-zinc-500">{fmtDateTime(c.rating.at)}</p>
             </Panel>
           )}
           {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${SDP_STAFF.name} (${SDP_STAFF.title})`} large />}

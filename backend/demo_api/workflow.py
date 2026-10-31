@@ -185,8 +185,8 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     return {"caseId": case_id}
 
 
-def answer_follow_up(ctx: Ctx, case_id: str, answer: str, slot: str | None) -> None:
-    description = _tool(ctx, tools.answer_follow_up, case_id, answer, None, slot)["description"]
+def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:
+    description = _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot)["description"]
     result = ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id)
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     if result.get("needs_human_review"):
@@ -256,6 +256,10 @@ def submit_verification(ctx: Ctx, case_id: str, result: str, note: str, photo: s
             notify_buyer(ctx, case_id, "closed")
     elif result == "NOT_FIXED":
         _after_reopen(ctx, case_id, note or "Buyer verification failed: still not fixed")
+
+
+def rate_case(ctx: Ctx, case_id: str, rating: int, comment: str) -> None:
+    _tool(ctx, tools.record_rating, case_id, rating, comment)
 
 
 def developer_signoff(ctx: Ctx, case_id: str) -> None:

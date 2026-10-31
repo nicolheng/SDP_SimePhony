@@ -59,6 +59,7 @@ export type EventType =
   | "signoff.completed"
   | "signoff.reminder"
   | "signoff.overdue"
+  | "feedback.submitted"
   | "case.closed"
   | "email.sent"
   | "agent.step";
@@ -150,6 +151,8 @@ export interface Case {
   verificationGuide?: VerificationGuide;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
+  /** Buyer's satisfaction rating (1-5), asked after they sign off. */
+  rating?: { stars: number; comment: string; at: string } | null;
   /** When the buyer must sign off by (pending sign-off only; computed by the backend). */
   signoffDeadline?: string;
   /** In-app sign-off reminder sent (3 days before the deadline). */
@@ -287,6 +290,22 @@ export interface Analytics {
   insight: string;
   /** Per unit and category (count includes reopens), for the stack heatmap. */
   unitStats: { unitId: string; category: Category; count: number; open: boolean }[];
+  /** Buyer ratings given after sign-off. */
+  satisfaction?: Satisfaction;
+}
+
+export interface Satisfaction {
+  count: number;
+  /** Mean stars (0 when nothing is rated yet). */
+  average: number;
+  /** Rated cases ÷ cases the buyer signed off. */
+  responseRate: number;
+  /** Ratings of 1 or 2 stars. */
+  low: number;
+  distribution: { stars: number; count: number }[];
+  /** Lowest average first. */
+  byCategory: { key: Category; name: string; average: number; count: number }[];
+  recent: { caseId: string; unitId: string; technicianId: string | null; stars: number; comment: string; at: string }[];
 }
 
 export interface Buyer {

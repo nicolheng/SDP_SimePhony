@@ -52,6 +52,8 @@ export async function apiFetch<T = { state: DemoState }>(path: string, init?: Re
 
 /** POST an action and adopt the state the backend returns. */
 export async function apiAction<T extends object = object>(path: string, payload?: unknown): Promise<T & { state: DemoState }> {
+  // The built-in demo data never reached the database, so its ids can't be acted on.
+  if (!state) throw new Error("The backend is offline, so the app is read-only. Start the backend and try again.");
   const r = await apiFetch<T & { state: DemoState }>(path, { method: "POST", body: payload === undefined ? undefined : JSON.stringify(payload) });
   setState(r.state);
   return r;
@@ -115,4 +117,11 @@ export function useLoadStatus(): LoadStatus {
 /** Why the API couldn't be used (null while connected). */
 export function useApiError(): string | null {
   return useSyncExternalStore(subscribe, () => apiError, () => null);
+}
+
+const isOffline = () => !state || apiError !== null;
+
+/** True while the backend can't be reached: screens are read-only, so action buttons are disabled. */
+export function useOffline(): boolean {
+  return useSyncExternalStore(subscribe, isOffline, () => false);
 }

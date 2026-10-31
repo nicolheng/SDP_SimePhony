@@ -8,6 +8,7 @@ import { Section } from "@/components/mobile";
 import { acceptJob, handOverJob } from "@/lib/api";
 import { getTechnician, workerLabel } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
+import { useOffline } from "@/lib/store";
 import type { Case } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
   const [reason, setReason] = useState<string | null>(null);
   const [other, setOther] = useState("");
   const [busy, setBusy] = useState(false);
+  const offline = useOffline();
   const text = reason === "Other" ? other.trim() : reason;
 
   async function accept() {
@@ -65,7 +67,7 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || offline}
                 onClick={accept}
                 className="h-12 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:bg-zinc-200 disabled:text-zinc-400"
               >
@@ -73,7 +75,7 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || offline}
                 onClick={() => setOpen(true)}
                 className="h-12 rounded-xl border-2 border-zinc-800 text-sm font-semibold text-zinc-800 disabled:border-zinc-200 disabled:text-zinc-400"
               >
@@ -143,7 +145,7 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
             </button>
             <button
               type="button"
-              disabled={busy || !text}
+              disabled={busy || !text || offline}
               onClick={handOver}
               className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-brand text-sm font-semibold text-white disabled:bg-zinc-200 disabled:text-zinc-400"
             >

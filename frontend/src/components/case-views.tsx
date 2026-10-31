@@ -106,6 +106,7 @@ const EVENT_LABEL: Partial<Record<CaseEvent["type"], string>> = {
   "signoff.completed": "Signed off",
   "signoff.reminder": "Sign-off reminder",
   "signoff.overdue": "Sign-off overdue",
+  "feedback.submitted": "Rated",
   "booking.requested": "Booking requested",
   "booking.confirmed": "Booking confirmed",
   "booking.rejected": "Booking declined",

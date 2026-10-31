@@ -1,5 +1,5 @@
 "use client";
-import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, Loader2, MessageSquare, ShieldAlert, UserRound, Wrench } from "lucide-react";
+import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, Loader2, MessageSquare, ShieldAlert, Star, UserRound, Wrench } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -8,7 +8,8 @@ import { CaseProgress, PreviousReports, useCase, useCaseId } from "@/components/
 import { DefectRecordCard } from "@/components/defect-record";
 import { recordAvailable } from "@/lib/defect-record";
 import { EmptyState, MobileHeader, PrimaryButton, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
-import { PhotoThumb } from "@/components/photo";
+import { PhotoInput, PhotoThumb } from "@/components/photo";
+import { RatingDialog, STAR_LABEL, Stars } from "@/components/rating";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { fmtHours } from "@/lib/agents";
 import { answerFollowUp, canReopen, signoffDeadline } from "@/lib/api";
@@ -101,7 +102,9 @@ export function CaseDetail() {
   const messages = useMemo(() => allMessages.filter((m) => m.caseId === id).reverse(), [allMessages, id]);
   const [tab, setTab] = useState<Tab>("details");
   const [answer, setAnswer] = useState("");
+  const [followUpPhoto, setFollowUpPhoto] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [rating, setRating] = useState(false);
 
   if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
   const reopenable = canReopen(c, now);
@@ -123,8 +126,8 @@ export function CaseDetail() {
           <>
             {/* Summary */}
             <Section>
-              <PhotoThumb photo={c.photos[0]} className="aspect-[16/9] w-full" />
-              <div className="mt-3 flex items-start justify-between gap-2">
+              {c.photos[0] && <PhotoThumb photo={c.photos[0]} className="mb-3 aspect-[16/9] w-full" />}
+              <div className="flex items-start justify-between gap-2">
                 <h2 className="text-lg font-semibold leading-snug">{c.summary}</h2>
                 <UrgencyBadge urgency={c.urgency} />
               </div>
@@ -151,14 +154,18 @@ export function CaseDetail() {
                   placeholder="e.g. Master bedroom, ceiling above the wardrobe"
                   className="mt-3 w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
                 />
+                <div className="mt-2">
+                  <PhotoInput value={followUpPhoto} onChange={setFollowUpPhoto} label="Add a photo if it helps (optional)" />
+                </div>
                 <PrimaryButton
                   className="mt-3"
                   disabled={!answer.trim() || sending}
                   onClick={async () => {
                     setSending(true);
                     try {
-                      await answerFollowUp(c.id, answer.trim());
+                      await answerFollowUp(c.id, answer.trim(), followUpPhoto);
                       setAnswer("");
+                      setFollowUpPhoto(null);
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
                     } finally {
@@ -226,6 +233,22 @@ export function CaseDetail() {
                 )}
               </Section>
             )}
+
+            {c.signoff?.buyer && !c.historical && (
+              <Section>
+                {c.rating ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm text-zinc-700">Your rating: {STAR_LABEL[c.rating.stars]}</p>
+                    <Stars value={c.rating.stars} className="text-lg" />
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setRating(true)} className="flex w-full items-center justify-center gap-2 text-sm font-semibold text-brand">
+                    <Star className="size-4" /> Rate this repair
+                  </button>
+                )}
+              </Section>
+            )}
+            {rating && <RatingDialog caseId={c.id} onDone={() => setRating(false)} />}
 
             {/* What the buyer sent */}
             <Section title="What you reported">

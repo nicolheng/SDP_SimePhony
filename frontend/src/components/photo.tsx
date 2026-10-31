@@ -1,6 +1,8 @@
 "use client";
 import { Camera, ImageIcon, Loader2, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { fmtDateTime } from "@/lib/dates";
 import type { Photo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CameraCapture, canUseCamera } from "./camera-capture";
@@ -13,22 +15,58 @@ const KIND_LABEL: Record<Photo["kind"], string> = {
   verification: "Verification",
 };
 
-export function PhotoThumb({ photo, className, label = true }: { photo: Photo; className?: string; label?: boolean }) {
+/** Full-size photo over the page; tap anywhere or press Esc to close. */
+export function PhotoViewer({ src, caption, onClose }: { src: string; caption?: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label="Photo" onClick={onClose} className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 p-4">
+      <button type="button" onClick={onClose} className="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/15 text-white" aria-label="Close photo">
+        <X className="size-5" />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={caption ?? "Photo"} className="max-h-[85vh] max-w-full rounded-lg object-contain" />
+      {caption && <p className="mt-3 text-sm text-white/80">{caption}</p>}
+    </div>,
+    document.body,
+  );
+}
+
+/** A case photo; tapping it opens it full size (zoom={false} inside links, so the tap navigates instead).
+ * A missing photo shows the placeholder rather than crashing. */
+export function PhotoThumb({ photo, className, label = true, zoom = true }: { photo?: Photo | null; className?: string; label?: boolean; zoom?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const kind = photo ? KIND_LABEL[photo.kind] ?? "Photo" : null;
+  const canZoom = zoom && !!photo?.url;
+  const image = photo?.url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={photo.url} alt={`${kind} photo`} className="size-full object-cover" />
+  ) : (
+    <div className="grid size-full place-items-center bg-gradient-to-br from-zinc-200 to-zinc-300 text-zinc-500">
+      <ImageIcon className="size-6" />
+    </div>
+  );
   return (
     <figure className={cn("relative overflow-hidden rounded-lg bg-zinc-100", className)}>
-      {photo.url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={photo.url} alt={`${KIND_LABEL[photo.kind]} photo`} className="size-full object-cover" />
+      {canZoom ? (
+        <button type="button" onClick={() => setOpen(true)} className="block size-full cursor-zoom-in" aria-label={`View ${kind?.toLowerCase()} photo full size`}>
+          {image}
+        </button>
       ) : (
-        <div className="grid size-full place-items-center bg-gradient-to-br from-zinc-200 to-zinc-300 text-zinc-500">
-          <ImageIcon className="size-6" />
-        </div>
+        image
       )}
-      {label && (
-        <figcaption className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-          {KIND_LABEL[photo.kind]}
-        </figcaption>
+      {label && kind && (
+        <figcaption className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{kind}</figcaption>
       )}
+      {open && photo?.url && <PhotoViewer src={photo.url} caption={`${kind} photo${photo.at ? ` · ${fmtDateTime(photo.at)}` : ""}`} onClose={() => setOpen(false)} />}
     </figure>
   );
 }
@@ -90,6 +128,7 @@ export function PhotoInput({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [camera, setCamera] = useState(false);
+  const [viewing, setViewing] = useState(false);
 
   async function fromFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -131,8 +170,11 @@ export function PhotoInput({
       )}
       {value ? (
         <div className="relative">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt="Selected" className="h-44 w-full rounded-xl object-cover" />
+          <button type="button" onClick={() => setViewing(true)} className="block w-full cursor-zoom-in" aria-label="View selected photo full size">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={value} alt="Selected" className="h-44 w-full rounded-xl object-cover" />
+          </button>
+          {viewing && <PhotoViewer src={value} caption="Selected photo" onClose={() => setViewing(false)} />}
           <button
             type="button"
             onClick={() => onChange(null)}

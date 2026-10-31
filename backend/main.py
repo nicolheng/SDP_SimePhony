@@ -19,7 +19,7 @@ import db  # noqa: E402  (after load_dotenv so env paths apply)
 from demo_api import config  # noqa: E402
 import tools  # noqa: E402
 from demo_api import ai_agents  # noqa: E402
-from demo_api.migrate import migrate, reset_demo  # noqa: E402
+from demo_api.migrate import migrate  # noqa: E402
 from demo_api.routes import router as app_router  # noqa: E402
 
 log = logging.getLogger("simephony.startup")
@@ -120,13 +120,6 @@ def health():
     return {"status": status, "checks": checks}
 
 
-@app.post("/demo/reset")
-def demo_reset():
-    """Same as POST /api/demo/reset (kept for older callers), without returning the state."""
-    reset_demo()
-    return {"ok": True}
-
-
 if __name__ == "__main__":
     import uvicorn
 
@@ -138,7 +131,3 @@ if __name__ == "__main__":
         reload_includes=["rules.yaml"],
         reload_excludes=[str(config.ROOT / d) for d in ("frontend", ".venv", "data", "uploads", "tests")],
     )
-
-
-# TODO P3: buyer + technician endpoints (cases, photos, slots, verdicts, sign-off, reopen, SSE)
-# TODO P4: SDP endpoints (KPIs, defect list, analytics, approvals, agent trace SSE)

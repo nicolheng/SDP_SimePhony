@@ -153,6 +153,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
                 "buyer": {"at": norm(r["buyer_signed_at"]), "note": r["buyer_signoff_note"] or ""} if r["buyer_signed_at"] else None,
                 "developer": {"at": norm(r["developer_signed_at"]), "by": r["developer_signed_by"] or "SDP"} if r["developer_signed_at"] else None,
             } if (r["buyer_signed_at"] or r["developer_signed_at"]) else None,
+            "rating": {"stars": r.get("buyer_rating"), "comment": r.get("buyer_rating_comment") or "", "at": norm(r.get("buyer_rated_at"))}
+            if r.get("buyer_rating") is not None else None,
             "signoffReminderAt": norm(r.get("signoff_reminder_at")),
             "signoffDeadline": signoff_deadline({**r, "created_at": norm(r["created_at"]), "repaired_at": norm(r["repaired_at"]),
                                                  "verdict_at": norm(r["verdict_at"]), "developer_signed_at": norm(r["developer_signed_at"])})

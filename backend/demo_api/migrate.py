@@ -23,6 +23,9 @@ CASE_COLUMNS = {
     "handover_reason": "TEXT",
     "handed_over_at": "TEXT",
     "handover_prev_slot": "TEXT",    # job start before the hand-over (same as now if the time was kept)
+    "buyer_rating": "INTEGER",       # buyer satisfaction 1-5, asked after sign-off
+    "buyer_rating_comment": "TEXT",
+    "buyer_rated_at": "TEXT",
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 ASSIGNMENT_COLUMNS = {"job": "TEXT"}  # inspection visit | detailed inspection | repair

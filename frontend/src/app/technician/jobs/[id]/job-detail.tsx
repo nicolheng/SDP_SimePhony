@@ -17,7 +17,7 @@ import { CATEGORY_LABEL, getUnit, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { TECH_EXPLAIN, TECH_TODO } from "@/lib/status";
 import { useTechnicianId } from "@/lib/session";
-import { useDemo } from "@/lib/store";
+import { useDemo, useOffline } from "@/lib/store";
 import { jobKind, jobSlot } from "../../use-my-jobs";
 import { JobAssignment } from "./assignment";
 
@@ -87,6 +87,7 @@ export function JobDetail() {
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const offline = useOffline();
 
   if (!c) return <MobileHeader title="Job not found" back="/technician/jobs" />;
   if (c.technicianId !== me && c.supportId !== me)
@@ -139,8 +140,8 @@ export function JobDetail() {
           <>
             {/* Summary */}
             <Section>
-              <PhotoThumb photo={c.photos[0]} className="aspect-[16/9] w-full" />
-              <div className="mt-3 flex items-center gap-1.5">
+              {c.photos[0] && <PhotoThumb photo={c.photos[0]} className="mb-3 aspect-[16/9] w-full" />}
+              <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold uppercase tracking-wide text-brand">{jobKind(c)}</span>
                 <UrgencyBadge urgency={c.urgency} />
               </div>
@@ -188,7 +189,7 @@ export function JobDetail() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    disabled={!note.trim() || busy}
+                    disabled={!note.trim() || busy || offline}
                     onClick={() => run(() => recordVerdict(c.id, "VALID", note.trim(), photo), "Marked valid: buyer asked to book a repair")}
                     className="h-12 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:bg-zinc-200 disabled:text-zinc-400"
                   >
@@ -196,7 +197,7 @@ export function JobDetail() {
                   </button>
                   <button
                     type="button"
-                    disabled={!note.trim() || busy}
+                    disabled={!note.trim() || busy || offline}
                     onClick={() => run(() => recordVerdict(c.id, "INVALID", note.trim(), photo), "Marked invalid: case closed")}
                     className="h-12 rounded-xl border-2 border-zinc-800 text-sm font-semibold text-zinc-800 disabled:border-zinc-200 disabled:text-zinc-400"
                   >

@@ -28,8 +28,8 @@ export async function submitReport(input: ReportInput, onCreated?: (caseId: stri
   return { caseId: r.caseId, nonDefect: r.nonDefect };
 }
 
-export async function answerFollowUp(caseId: string, answer: string) {
-  await apiAction(`/api/cases/${caseId}/follow-up`, { answer });
+export async function answerFollowUp(caseId: string, answer: string, photoUrl: string | null = null) {
+  await apiAction(`/api/cases/${caseId}/follow-up`, { answer, photo: photoUrl });
 }
 
 export async function bookRepair(caseId: string, start: string) {
@@ -38,6 +38,11 @@ export async function bookRepair(caseId: string, start: string) {
 
 export async function submitVerification(caseId: string, result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY", note: string, photoUrl: string | null) {
   await apiAction(`/api/cases/${caseId}/verification`, { result, note, photo: photoUrl });
+}
+
+/** Satisfaction rating (1-5 stars) once the buyer has signed off. */
+export async function rateRepair(caseId: string, stars: number, comment: string) {
+  await apiAction(`/api/cases/${caseId}/rating`, { rating: stars, comment });
 }
 
 export async function reopenCase(caseId: string, description: string, photoUrl: string) {

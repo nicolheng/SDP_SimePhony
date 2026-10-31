@@ -1,10 +1,13 @@
 "use client";
-import { ArrowLeft, ChevronsRight } from "lucide-react";
+import { ArrowLeft, ChevronsRight, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
+import { useOffline } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./role-switcher";
+
+const OFFLINE_HINT = "The backend is offline, so the app is read-only.";
 
 /** Phone-sized frame: full screen on phones, a device mock-up on desktop. */
 export function MobileFrame({ role, nav, children }: { role: string; nav: ReactNode; children: ReactNode }) {
@@ -17,10 +20,20 @@ export function MobileFrame({ role, nav, children }: { role: string; nav: ReactN
         <span className="hidden md:inline">{role} view (mobile)</span>
       </div>
       <div className="relative flex min-h-0 w-full max-w-[420px] flex-1 flex-col overflow-hidden bg-white md:h-[860px] md:flex-none md:rounded-[2.5rem] md:border-[10px] md:border-zinc-900 md:shadow-2xl">
+        <OfflineBanner />
         <div className="no-scrollbar flex-1 overflow-y-auto">{children}</div>
         <Suspense fallback={<div className="h-16 border-t bg-white" />}>{nav}</Suspense>
       </div>
     </div>
+  );
+}
+
+function OfflineBanner() {
+  if (!useOffline()) return null;
+  return (
+    <p role="status" className="flex shrink-0 items-center justify-center gap-1.5 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900">
+      <WifiOff className="size-3.5" /> Offline: showing demo data, actions are disabled
+    </p>
   );
 }
 
@@ -154,19 +167,26 @@ export function Section({ title, children, className }: { title?: string; childr
 export const primaryButtonClass =
   "grid h-12 w-full place-items-center rounded-xl bg-brand text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50";
 
-export function PrimaryButton({ className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+/** Primary/secondary action buttons are disabled while the backend is offline (read-only demo data). */
+export function PrimaryButton({ className, disabled, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const offline = useOffline();
   return (
     <button
       {...props}
+      disabled={disabled || offline}
+      title={offline ? OFFLINE_HINT : props.title}
       className={cn(primaryButtonClass, className)}
     />
   );
 }
 
-export function SecondaryButton({ className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function SecondaryButton({ className, disabled, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const offline = useOffline();
   return (
     <button
       {...props}
+      disabled={disabled || offline}
+      title={offline ? OFFLINE_HINT : props.title}
       className={cn(
         "h-12 w-full rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50",
         className,

@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS cases (
     buyer_signed         INTEGER NOT NULL DEFAULT 0,
     buyer_signed_at      TEXT,                      -- ISO 8601 time of buyer sign-off
     buyer_signoff_note   TEXT,                      -- buyer comment at sign-off
+    buyer_rating         INTEGER,                   -- buyer satisfaction 1-5, asked after sign-off
+    buyer_rating_comment TEXT,                      -- optional comment with the rating
+    buyer_rated_at       TEXT,                      -- ISO 8601 time of the rating
     developer_signed_at  TEXT,                      -- ISO 8601 time of developer sign-off
     developer_signed_by  TEXT,                      -- name of SDP staff who signed
     verification_status  TEXT DEFAULT 'pending',    -- pending, verified, not_verified
