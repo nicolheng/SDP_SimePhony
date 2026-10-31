@@ -87,14 +87,44 @@ def banner(title: str) -> None:
     print("\n" + "=" * 78 + f"\n  {title}\n" + "=" * 78)
 
 
-def skip_pending_review(case: dict, test_case: str) -> bool:
+def approve_pending_review(case: dict, test_case: str) -> dict:
     if case["status"] != "PENDING_REVIEW":
-        return False
-    print(f"      SKIP: {test_case} is pending human review; no technician job is available.")
-    return True
+        return case
+
+    import db
+    import tools
+    from demo_api import workflow
+
+    ai_mode = os.environ.get("USE_AI_AGENTS", "")
+    try:
+        with db.get_conn() as conn:
+            current = workflow.load_case(workflow.Ctx(conn), case["case_id"])
+            if current["status"] != "PENDING_REVIEW":
+                return current
+            conn.execute(
+                "UPDATE cases SET status = 'SUBMITTED' WHERE case_id = ? AND status = 'PENDING_REVIEW'",
+                (case["case_id"],),
+            )
+            tools._emit(
+                conn,
+                case["case_id"],
+                "case.review_approved",
+                "SDP staff approved the case after reviewing the AI recommendation.",
+                decided_by="Demo SDP staff",
+            )
+            # The demo's human reviewer makes the routing decision using the rules-based path.
+            os.environ["USE_AI_AGENTS"] = "false"
+            ctx = workflow.Ctx(conn)
+            workflow._continue_new_case(ctx, case["case_id"])
+            approved = workflow.load_case(ctx, case["case_id"])
+    finally:
+        os.environ["USE_AI_AGENTS"] = ai_mode
+
+    print(f"      SDP: approved human review for {test_case}; continued with rules-based routing.")
+    return approved
 
 
-def tc1_door_happy_path() -> str | None:
+def tc1_door_happy_path() -> str:
     from demo_api import workflow
     import tools
     banner("TC1 door defect: report -> visit -> VALID + estimate -> repair -> SDP signs -> buyer checks -> CLOSED")
@@ -102,8 +132,7 @@ def tc1_door_happy_path() -> str | None:
                   photo("door_misaligned.jpg"), None)["caseId"]
     w = Watch(case_id)
     c = w.show(1, "Buyer", "reports a door that won't close (door_misaligned.jpg)")
-    if skip_pending_review(c, "TC1 door happy path"):
-        return None
+    c = approve_pending_review(c, "TC1 door happy path")
     web(workflow.accept_job, case_id, c["technician_id"])
     w.show(2, f"Technician {c['technician_id']}", "accepts the visit")
     web(workflow.record_verdict, case_id, "VALID",
@@ -131,8 +160,7 @@ def tc2_repeat_leak() -> None:
                   photo("water_leak_again.jpg"), None)["caseId"]
     w = Watch(case_id)
     c = w.show(1, "Buyer", "reports the leak again (water_leak_again.jpg)")
-    if skip_pending_review(c, "TC2 repeat leak"):
-        return
+    approve_pending_review(c, "TC2 repeat leak")
     with db.get_conn() as conn:
         row = conn.execute("SELECT approval_id FROM approvals WHERE case_id = ? AND status = 'pending'", (case_id,)).fetchone()
     if not row:
@@ -157,8 +185,7 @@ def tc3_handover() -> None:
                   photo("bathroom_pooling.jpg"), None)["caseId"]
     w = Watch(case_id)
     c = w.show(1, "Buyer", "reports a leaking kitchen sink pipe")
-    if skip_pending_review(c, "TC3 handover"):
-        return
+    c = approve_pending_review(c, "TC3 handover")
     try:
         web(workflow.hand_over, case_id, c["technician_id"], "Called to an emergency.")
         w.show(2, f"Technician {c['technician_id']}", "hands the visit over")
@@ -232,10 +259,7 @@ def main() -> None:
         door = tc1_door_happy_path()
         tc2_repeat_leak()
         tc3_handover()
-        if door:
-            tc4_reopen(door)
-        else:
-            print("\nTC4 skipped: TC1 did not complete because the case needs human review.")
+        tc4_reopen(door)
         tc5_simulate_rain()
     finally:
         print(f"\nDone. The temporary DB is kept for a look: {tmp / 'web.db'}")
