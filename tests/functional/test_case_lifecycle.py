@@ -56,14 +56,15 @@ INTAKE_JSON = json.dumps({
     "summary": "Water dripping from the master bathroom ceiling.", "urgency": "normal",
     "mentions_previous_issue": False, "mentioned_recurrence_count": None, "missing_info": [],
     "follow_up_question": "", "preliminary_outcome": "VALID_DEFECT", "mismatch_detected": False,
+    "confidence_score": 0.95,
 })
-SIMILAR_JSON = json.dumps({"cluster_reason": "No earlier cases in this unit."})
-URGENCY = '{"urgency": "normal", "rule": "none"}'  # triage keeps intake urgency
+SIMILAR_JSON = json.dumps({"cluster_reason": "No earlier cases in this unit.", "confidence_score": 0.9})
+URGENCY = '{"urgency": "normal", "rule": "none", "confidence_score": 0.95}'  # triage keeps intake urgency
 VISION_OK = json.dumps({"assessment": "looks_resolved",
                         "observations": "Ceiling board replaced, no staining visible.",
-                        "matches_location": True})
+                        "matches_location": True, "confidence_score": 0.95})
 VISION_UNCLEAR = json.dumps({"assessment": "unclear", "observations": "Photo is blurry.",
-                             "matches_location": False})
+                             "matches_location": False, "confidence_score": 0.95})
 PHRASED_CHECKS = (
     "Look at the repaired ceiling area in the master bathroom for damp patches, staining or bubbling paint.\n"
     "Run the shower for a few minutes, then check the repaired ceiling area for drips or dampness."
@@ -261,11 +262,11 @@ def test_unclear_after_photo_holds_buyer_email(fake_llm, world, tmp_path):
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     s = _step(fake_llm, s, "repair.done", [VISION_UNCLEAR], current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=_photo(tmp_path, "blurry.jpg"))
-    assert s["current_status"] == "REPAIRED"
+    assert s["current_status"] == "PENDING_REVIEW"
     result = s["verification_result"]
-    assert result["needs_technician_input"] is True
+    assert result["needs_human_review"] is True
     assert result["protocol"] is None
-    assert "could not be confirmed as resolved at master bathroom ceiling" in result["technician_message"]
+    assert "unclear verification result" in result["review_reason"]
     assert [m["subject"] for m in _emails(world)] == ["[C-0001] We've received your report"]  # no buyer email
     _assert_emails_safe(world)
 

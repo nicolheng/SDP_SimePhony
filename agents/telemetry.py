@@ -15,6 +15,7 @@ def _new_telemetry() -> dict:
         "llm_timing_ms": 0.0,
         "input_tokens": None,
         "output_tokens": None,
+        "confidence_score": None,
         "guardrail_hits": [],
         "agent_step_events": 0,
     }
@@ -46,13 +47,21 @@ def record_agent_step_event() -> None:
         telemetry["agent_step_events"] += 1
 
 
-def record_llm_telemetry(model: str, timing_ms: int, tokens: dict | None) -> None:
+def record_llm_telemetry(
+    model: str,
+    timing_ms: int,
+    tokens: dict | None,
+    *,
+    confidence_score: float | None = None,
+) -> None:
     telemetry = _CURRENT.get()
     if telemetry is None:
         return
     if model:
         telemetry["model"] = model
     telemetry["llm_timing_ms"] += max(0, timing_ms)
+    if confidence_score is not None:
+        telemetry["confidence_score"] = confidence_score
     if tokens:
         input_tokens = tokens.get("input")
         output_tokens = tokens.get("output")
@@ -74,6 +83,7 @@ def telemetry_payload(
             "model": None,
             "timing_ms": 0.0,
             "tokens": {"input": None, "output": None},
+            "confidence_score": None,
             "fallback_used": fallback_used,
             "fallback_reason": fallback_reason,
             "guardrail_hits": [],
@@ -89,6 +99,7 @@ def telemetry_payload(
             if current["input_tokens"] is not None or current["output_tokens"] is not None
             else None
         ),
+        "confidence_score": current["confidence_score"],
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason,
         "guardrail_hits": list(current["guardrail_hits"]),

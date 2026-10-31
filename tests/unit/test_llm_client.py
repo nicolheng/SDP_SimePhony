@@ -67,7 +67,12 @@ def test_intake_uses_the_vision_limit(fake_llm):
 def test_repair_photo_check_uses_the_vision_limit(fake_llm, tmp_path):
     photo = tmp_path / "repair.jpg"
     photo.write_bytes(b"photo")
-    fake_llm.responses.append(json.dumps({"assessment": "unclear", "observations": "", "matches_location": False}))
+    fake_llm.responses.append(json.dumps({
+        "assessment": "unclear",
+        "observations": "",
+        "matches_location": False,
+        "confidence_score": 0.95,
+    }))
 
     assess_repair_photo({"repair_photo_path": str(photo), "repair_note": "Fixed"})
 

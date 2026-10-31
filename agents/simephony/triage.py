@@ -3,6 +3,7 @@ import re
 from agents.telemetry import record_guardrail_hit, record_llm_telemetry
 from .rules import load_rules
 from .llm_client import get_client, get_models
+from .review import flag_for_human_review
 from .structured_output import StructuredOutputError, chat_json
 
 def _normalize_urgency(value) -> str | None:
@@ -65,10 +66,15 @@ def triage_node(state: dict) -> dict:
         "a stain, a slow or blocked drain, or water pooling on the floor (water pooling is not flooding, "
         "and a leak is not 'near electrical fittings' unless the report names a light, socket, switch or "
         "wiring). "
-        'Output ONLY JSON: {"urgency": "high" | "normal" | "low", "rule": "<rule id, e.g. H2>" or "none"}.'
+        'Output ONLY JSON: {"urgency": "high" | "normal" | "low", "rule": "<rule id, e.g. H2>" or "none", '
+        '"confidence_score": 0.9}. Output a confidence_score between 0.0 and 1.0 representing how certain '
+        "you are about this classification based on the photo and text. Use 1.0 for absolute certainty, "
+        "and below 0.7 if the image is blurry, text is vague, or the defect is ambiguous."
     )
 
     urgency, matched_rule = intake_urgency, None
+    llm_urgency = None
+    confidence_score = 0.0
     try:
         data = chat_json(
             client,
@@ -76,17 +82,24 @@ def triage_node(state: dict) -> dict:
             [{"role": "user", "content": urgency_prompt}],
             {
                 "type": "object",
-                "required": ["urgency", "rule"],
+                "required": ["urgency", "rule", "confidence_score"],
                 "properties": {
                     "urgency": {"type": "string", "enum": ["high", "normal", "low"]},
                     "rule": {"type": "string"},
+                    "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                 },
                 "additionalProperties": False,
             },
             temperature=0.0,
         )
-        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
         parsed = data["parsed"]
+        confidence_score = float(parsed["confidence_score"])
+        record_llm_telemetry(
+            data["model"],
+            data["timing_ms"],
+            data["tokens"],
+            confidence_score=confidence_score,
+        )
         llm_urgency = _normalize_urgency(parsed.get("urgency"))
         rule_id = str(parsed.get("rule") or "").strip().upper()
         # A change counts only with a real rule from the matching list.
@@ -95,12 +108,15 @@ def triage_node(state: dict) -> dict:
                 and (rule_id[0] == "L" or _has_evidence(rule_ids[rule_id], report))):
             urgency, matched_rule = llm_urgency, rule_ids[rule_id]
     except StructuredOutputError:
-        raise
+        confidence_score = 0.0
+        state["_structured_output_error"] = True
     except Exception:
-        pass
+        confidence_score = 0.0
+        state["_structured_output_error"] = True
     if intake_urgency == "high":
         urgency, matched_rule = "high", None  # the model can raise urgency, never lower an intake "high"
-    if urgency != intake_urgency:
+    rule_conflict = llm_urgency is not None and urgency != llm_urgency
+    if rule_conflict:
         record_guardrail_hit("urgency_guardrail_triggered")
 
     # 3. Map category to skill
@@ -117,8 +133,19 @@ def triage_node(state: dict) -> dict:
         "assigned_skill": skill,
         "category": category,
         "justification": justification,
+        "confidence_score": confidence_score,
         "save_error": _save(state.get("case_id"), urgency, justification),
     }
+    if not state.get("_structured_output_error"):
+        flag_for_human_review(
+            state,
+            "TriageAgent",
+            confidence_score,
+            rule_conflict=rule_conflict,
+        )
+    if state.get("needs_human_review"):
+        state["triage_result"]["needs_human_review"] = True
+        state["triage_result"]["review_reason"] = state["review_reason"]
     return state
 
 

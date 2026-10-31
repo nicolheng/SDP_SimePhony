@@ -6,7 +6,8 @@ import pytest
 from agents.simephony.verification import verification_node
 
 pytestmark = pytest.mark.usefixtures("seed_db")
-VISION_OK = json.dumps({"assessment": "looks_resolved", "observations": "Joint resealed, dry.", "matches_location": True})
+VISION_OK = json.dumps({"assessment": "looks_resolved", "observations": "Joint resealed, dry.",
+                        "matches_location": True, "confidence_score": 0.95})
 
 
 def _db():

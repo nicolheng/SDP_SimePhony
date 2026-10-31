@@ -29,6 +29,11 @@ def set_triage_result(case_id: str, urgency: str, reason: str) -> dict:
     return tools.set_triage_result(case_id, urgency, reason)
 
 
+def flag_case_for_human_review(case_id: str, step: str, reason: str, confidence_score: float) -> dict:
+    """Pause automated handling, cancel active bookings, and record the SDP review request."""
+    return tools.flag_case_for_human_review(case_id, step, reason, confidence_score)
+
+
 def check_escalation(case_id: str) -> dict:
     """Earlier same-unit cases, stack units, pending approval for a case in the DB."""
     return tools.check_escalation(case_id)

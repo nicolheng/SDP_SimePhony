@@ -44,6 +44,7 @@ class AgentState(TypedDict):
     verification_result: dict
     recurrence_result: dict
     repair_estimate: dict # hours + reason after a VALID verdict
+    needs_human_review: bool
 
 # 3. Build the LangGraph
 workflow = StateGraph(AgentState)
@@ -88,6 +89,8 @@ def prepare_new_case(state: dict) -> dict:
         "reopen_count": 0,
         "event": "case.created",
         "current_status": "SUBMITTED",
+        "needs_human_review": False,
+        "review_reason": "",
     })
     return state  # recurrence_result is kept so the NEW_CASE decision stays visible
 
@@ -105,6 +108,8 @@ def should_reassign(state: AgentState):
 
 def route_event(state: AgentState) -> str:
     event = state.get("event")
+    if state.get("current_status") == "PENDING_REVIEW":
+        return "unhandled_event"
     if not event or event == "case.created":
         return "intake"
     return {
@@ -128,9 +133,17 @@ workflow.add_node("unhandled_event", unhandled_event)
 
 def after_verification(state: AgentState):
     result = state.get("verification_result") or {}
+    if state.get("needs_human_review") or result.get("needs_human_review"):
+        return END
     if result.get("rejected_reason") or result.get("needs_technician_input"):
         return END  # technician message stays in state for the technician app; no buyer email
     return "comms"
+
+def after_intake(state: AgentState):
+    return END if state.get("needs_human_review") else "similar_defect"
+
+def after_triage(state: AgentState):
+    return END if state.get("needs_human_review") else "booking"
 
 def after_initial_inspection(state: AgentState):
     if (state.get("initial_inspection_result") or {}).get("save_error"):
@@ -159,9 +172,9 @@ def after_recurrence(state: AgentState):
     return "comms"  # escalated to SDP, or the reopen was rejected
 
 workflow.set_conditional_entry_point(route_event)
-workflow.add_edge("intake", "similar_defect")
+workflow.add_conditional_edges("intake", after_intake)
 workflow.add_edge("similar_defect", "triage")
-workflow.add_edge("triage", "booking")
+workflow.add_conditional_edges("triage", after_triage)
 workflow.add_conditional_edges("booking", should_reassign)
 workflow.add_conditional_edges("verification", after_verification)
 workflow.add_conditional_edges("verification_result", after_verification_result)

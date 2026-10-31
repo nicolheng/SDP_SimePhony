@@ -11,9 +11,11 @@ from agents.simephony.workflow import agent_app, route_event
 
 IMAGE = "tests/data/test_cases/images/ceiling-water-leak.jpg"
 INTAKE_JSON = json.dumps({"category": "water_leak", "location_in_unit": "bedroom ceiling",
-                          "missing_info": [], "urgency": "normal"})
-VISION_OK = json.dumps({"assessment": "looks_resolved", "observations": "Ceiling dry.", "matches_location": True})
-VISION_UNCLEAR = json.dumps({"assessment": "unclear", "observations": "Blurry.", "matches_location": False})
+                          "missing_info": [], "urgency": "normal", "confidence_score": 0.95})
+VISION_OK = json.dumps({"assessment": "looks_resolved", "observations": "Ceiling dry.", "matches_location": True,
+                        "confidence_score": 0.95})
+VISION_UNCLEAR = json.dumps({"assessment": "unclear", "observations": "Blurry.", "matches_location": False,
+                             "confidence_score": 0.95})
 
 
 def _run(state):
@@ -71,6 +73,30 @@ def test_unknown_event_ends_without_running_agents(fake_llm, no_side_effects, ev
     no_side_effects.assert_not_called()
 
 
+def test_low_confidence_triage_stops_before_booking(fake_llm, no_side_effects):
+    fake_llm.responses = [
+        INTAKE_JSON,
+        '{"cluster_reason": "No earlier cases.", "confidence_score": 0.9}',
+        '{"urgency": "normal", "rule": "none", "confidence_score": 0.5}',
+    ]
+
+    final = _run({
+        "event": "case.created",
+        "case_id": "C-NEW",
+        "unit_id": "A-12-08",
+        "user_description": "Water dripping from the ceiling.",
+        "current_status": "SUBMITTED",
+        "intake_result": {},
+        "booking_result": {},
+    })
+
+    assert final["needs_human_review"] is True
+    assert final["current_status"] == "PENDING_REVIEW"
+    assert final["booking_result"] == {}
+    assert len(fake_llm.calls) == 3
+    no_side_effects.assert_not_called()
+
+
 def test_repair_done_resolved_reaches_comms(fake_llm, tmp_path, no_side_effects):
     photo = tmp_path / "repair.jpg"
     photo.write_bytes(b"fakejpg")
@@ -87,13 +113,14 @@ def test_repair_done_unclear_skips_comms(fake_llm, tmp_path, no_side_effects):
     photo.write_bytes(b"fakejpg")
     fake_llm.responses = [VISION_UNCLEAR]
     final = _run(_repair_state(str(photo)))
-    assert final["verification_result"]["needs_technician_input"] is True
-    assert final["verification_result"]["technician_message"]
+    assert final["verification_result"]["needs_human_review"] is True
+    assert final["current_status"] == "PENDING_REVIEW"
+    assert "unclear verification result" in final["verification_result"]["review_reason"]
     assert not final["comms_result"]
     no_side_effects.assert_not_called()
 
 
-TRIAGE_KEEP = '{"urgency": "normal", "rule": "none"}'
+TRIAGE_KEEP = '{"urgency": "normal", "rule": "none", "confidence_score": 0.95}'
 
 
 def test_case_reopened_below_threshold_books_a_revisit(fake_llm, no_side_effects, booking_db):
@@ -132,7 +159,7 @@ def test_past_grace_reopen_runs_new_case_chain(fake_llm, no_side_effects, tmp_pa
     })
     # intake, similar_defect, triage: triage is scripted so the shared fake LLM's keyword fallback
     # ("water leak" -> "high urgency") doesn't decide the urgency for this test
-    fake_llm.responses = [INTAKE_JSON, '{"cluster_reason": "No earlier cases."}', "normal"]
+    fake_llm.responses = [INTAKE_JSON, '{"cluster_reason": "No earlier cases.", "confidence_score": 0.9}', "normal"]
     final = _run(state)
     assert final["recurrence_result"]["action"] == "NEW_CASE"
     # intake's vision call got the reopen photo, not the old case photo

@@ -93,6 +93,8 @@ def _make_smart_llm(intake_payload: dict, brief_payload: dict) -> MagicMock:
       3. system_msg contains 'defect intake'              → intake node
       4. fallback                                         → cluster_reason JSON
     """
+    intake_payload = {**intake_payload, "confidence_score": intake_payload.get("confidence_score", 0.95)}
+
     def _create(**kwargs):
         system_msg = next(
             (m.get("content", "") for m in kwargs.get("messages", []) if m.get("role") == "system"),
@@ -101,7 +103,8 @@ def _make_smart_llm(intake_payload: dict, brief_payload: dict) -> MagicMock:
 
         # similar_defect — system prompt explicitly contains 'cluster_reason'
         if "cluster_reason" in system_msg:
-            content = json.dumps({"cluster_reason": "Recurring defect detected across multiple reports."})
+            content = json.dumps({"cluster_reason": "Recurring defect detected across multiple reports.",
+                                  "confidence_score": 0.9})
 
         # initial_inspection — system prompt contains 'Senior Property Inspector'
         elif "Senior Property Inspector" in system_msg:
@@ -113,7 +116,8 @@ def _make_smart_llm(intake_payload: dict, brief_payload: dict) -> MagicMock:
 
         else:
             # Safe fallback
-            content = json.dumps({"cluster_reason": "Recurring defect pattern identified."})
+            content = json.dumps({"cluster_reason": "Recurring defect pattern identified.",
+                                  "confidence_score": 0.9})
 
         return MagicMock(choices=[MagicMock(message=MagicMock(content=content))])
 

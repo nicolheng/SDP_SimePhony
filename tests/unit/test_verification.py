@@ -13,8 +13,13 @@ from agents.simephony.guardrails import scan_for_unsafe_steps, scan_for_liabilit
 HEADER = "The technician's photo appears to show"
 
 
-def _vision(assessment="looks_resolved", matches=True, obs="Patch is dry and painted."):
-    return json.dumps({"assessment": assessment, "observations": obs, "matches_location": matches})
+def _vision(assessment="looks_resolved", matches=True, obs="Patch is dry and painted.", confidence=0.95):
+    return json.dumps({
+        "assessment": assessment,
+        "observations": obs,
+        "matches_location": matches,
+        "confidence_score": confidence,
+    })
 
 
 @pytest.fixture
@@ -78,10 +83,28 @@ def test_vision_location_mismatch_holds_buyer_message(state, fake_llm):
     out = verification_node(state)
     r = out["verification_result"]
     assert r["protocol"] is None
-    assert r["needs_technician_input"] is True
-    assert "Photo shows a kitchen" in r["technician_message"]
+    assert r["needs_human_review"] is True
     assert len(fake_llm.calls) == 1
-    assert out["current_status"] == "REPAIRED"
+    assert out["current_status"] == "PENDING_REVIEW"
+
+
+def test_low_confidence_verification_routes_to_human_review(state, fake_llm):
+    fake_llm.responses = [_vision(confidence=0.5)]
+    state["case_id"] = "C-NEW"
+    out = verification_node(state)
+
+    assert out["needs_human_review"] is True
+    assert out["current_status"] == "PENDING_REVIEW"
+    assert out["verification_result"]["needs_human_review"] is True
+
+
+def test_verification_location_guardrail_routes_to_human_review(state, fake_llm):
+    fake_llm.responses = [_vision("looks_resolved", False, "Photo shows another room.")]
+    state["case_id"] = "C-NEW"
+    out = verification_node(state)
+
+    assert out["needs_human_review"] is True
+    assert out["current_status"] == "PENDING_REVIEW"
 
 
 def test_vision_garbage_treated_as_unclear(state, fake_llm):
@@ -91,7 +114,8 @@ def test_vision_garbage_treated_as_unclear(state, fake_llm):
     assert r["assessment"] == "unclear"
     assert r["protocol"] is None
     assert r["needs_technician_input"] is True
-    assert out["current_status"] == "REPAIRED"
+    assert r["needs_human_review"] is True
+    assert out["current_status"] == "PENDING_REVIEW"
 
 
 def test_vision_unknown_value_treated_as_unclear(state, fake_llm):
@@ -345,9 +369,10 @@ def test_vision_outage_is_logged_and_labelled(state, fake_llm, capsys):
     r = out["verification_result"]
     assert r["assessment"] == "unclear"
     assert r["observations"] == "Photo check unavailable"
-    assert "Photo check unavailable" in r["technician_message"]
+    assert r["needs_human_review"] is True
+    assert "low confidence" in r["review_reason"]
     assert "[VERIFICATION] vision check failed" in capsys.readouterr().out
-    assert out["current_status"] == "REPAIRED"
+    assert out["current_status"] == "PENDING_REVIEW"
 
 
 def test_outcome_not_fixed_on_closed_case_leaves_closed():

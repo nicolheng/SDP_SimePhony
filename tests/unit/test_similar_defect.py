@@ -22,7 +22,7 @@ from agents.simephony.similar_defect import similar_defect_node, _OCCURRENCE_THR
 # ---------------------------------------------------------------------------
 
 def _llm_response(cluster_reason: str = "Recurring issue detected.") -> MagicMock:
-    content = json.dumps({"cluster_reason": cluster_reason})
+    content = json.dumps({"cluster_reason": cluster_reason, "confidence_score": 0.9})
     return MagicMock(choices=[MagicMock(message=MagicMock(content=content))])
 
 

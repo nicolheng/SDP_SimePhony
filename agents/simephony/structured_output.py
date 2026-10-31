@@ -1,5 +1,6 @@
 """Strict JSON output parsing, schema validation, and one corrective LLM retry."""
 import json
+import math
 import time
 from typing import Any
 
@@ -45,6 +46,13 @@ def _validate(value: Any, schema: dict, path: str = "$") -> None:
         raise JSONSchemaValidationError(f"{path} must be {' or '.join(expected_types)}")
     if "enum" in schema and value not in schema["enum"]:
         raise JSONSchemaValidationError(f"{path} must be one of {schema['enum']}")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not math.isfinite(value):
+            raise JSONSchemaValidationError(f"{path} must be a finite number")
+        if "minimum" in schema and value < schema["minimum"]:
+            raise JSONSchemaValidationError(f"{path} must be at least {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise JSONSchemaValidationError(f"{path} must be at most {schema['maximum']}")
     if isinstance(value, dict):
         required = schema.get("required", [])
         missing = [key for key in required if key not in value]

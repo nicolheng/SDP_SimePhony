@@ -44,6 +44,7 @@ def _make_llm_response(payload: dict) -> MagicMock:
 
 def _patch_llm(monkeypatch, response_payload: dict):
     """Patch llm_client.client so intake_node uses our stub."""
+    response_payload.setdefault("confidence_score", 0.95)
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = _make_llm_response(response_payload)
     monkeypatch.setattr("agents.simephony.llm_client.client", mock_client)
@@ -81,6 +82,21 @@ class TestOutputContract:
         result = intake_node(state)
         assert "intake_result" in result
         assert isinstance(result["intake_result"], dict)
+
+    def test_low_confidence_intake_requests_human_review(self, monkeypatch):
+        _patch_llm(monkeypatch, {
+            "category": "water_leak",
+            "urgency": "normal",
+            "missing_info": [],
+            "preliminary_outcome": "VALID_DEFECT",
+            "confidence_score": 0.5,
+        })
+
+        result = intake_node(_base_state(case_id="C-NEW"))
+
+        assert result["needs_human_review"] is True
+        assert result["current_status"] == "PENDING_REVIEW"
+        assert result["intake_result"]["confidence_score"] == 0.5
 
     def test_always_sets_missing_info_list(self, monkeypatch):
         _patch_llm(monkeypatch, {"category": "plumbing", "missing_info": ["Need photo"]})
@@ -233,7 +249,7 @@ class TestImageHandling:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _make_llm_response(
             {"category": "water_leak", "missing_info": [], "urgency": "high",
-             "preliminary_outcome": "VALID_DEFECT"}
+             "preliminary_outcome": "VALID_DEFECT", "confidence_score": 0.95}
         )
         monkeypatch.setattr("agents.simephony.intake.client", mock_client)
 
@@ -300,7 +316,7 @@ def _model_says(fake_llm, **fields):
     base = {"category": "other", "sub_category": "", "location_in_unit": None, "summary": "Ceiling issue",
             "urgency": "normal", "mentions_previous_issue": False, "mentioned_recurrence_count": None,
             "missing_info": [], "follow_up_question": "", "preliminary_outcome": "VALID_DEFECT",
-            "mismatch_detected": False}
+            "mismatch_detected": False, "confidence_score": 0.95}
     fake_llm.responses = [json.dumps({**base, **fields})]
 
 

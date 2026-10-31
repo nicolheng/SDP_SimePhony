@@ -70,12 +70,16 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
             with tools.use_connection(ctx.conn):
                 result = ai()
                 if telemetry["agent_step_events"] == 0:
-                    tools.log_agent_step(
-                        (background_args or {}).get("case_id"),
-                        _agent_label(name),
-                        f"Completed {name} agent step",
-                        telemetry_payload(telemetry),
-                    )
+                    case_id = (background_args or {}).get("case_id")
+                    if case_id:
+                        tools.log_agent_step(
+                            case_id,
+                            _agent_label(name),
+                            f"Completed {name} agent step",
+                            telemetry_payload(telemetry),
+                        )
+                    else:
+                        ctx.pending_agent_telemetry[_agent_label(name)] = telemetry_payload(telemetry)
         except Exception as exc:
             error = exc
     if error is None:
@@ -180,8 +184,13 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
     def ai():
         from agents.simephony.intake import intake_node
         image = _photo_path(ctx, case_id, "original", photo)
-        result = intake_node({"user_description": description, "image_path": image, "decide_only": True})
-        if result.get("_structured_output_error"):
+        result = intake_node({
+            "case_id": case_id,
+            "user_description": description,
+            "image_path": image,
+            "decide_only": True,
+        })
+        if result.get("_structured_output_error") and not result.get("needs_human_review"):
             from agents.simephony.structured_output import StructuredOutputError
             raise StructuredOutputError()
         r = result["intake_result"]
@@ -192,7 +201,11 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
                 "location_in_unit": r.get("location_in_unit") or "", "summary": r.get("summary") or stand["summary"],
                 "urgency": r.get("urgency") or "normal", "missing_info": missing,
                 # a question only when something is actually missing (avoids needless follow-up rounds)
-                "follow_up_question": (r.get("follow_up_question") or stand["follow_up_question"]) if missing else None}
+                "follow_up_question": (r.get("follow_up_question") or stand["follow_up_question"]) if missing else None,
+                "confidence_score": r.get("confidence_score"),
+                "needs_human_review": result.get("needs_human_review", False),
+                "review_reason": result.get("review_reason"),
+                "review_step": "IntakeAgent"}
     return _run(ctx, "intake", ai, lambda: stand,
                 {"case_id": case_id})
 
@@ -223,11 +236,27 @@ def triage(ctx, case: dict, preferred: str | None) -> dict:
                  "user_description": case.get("description") or "", "decide_only": True,
                  "intake_result": {"category": case["category"], "urgency": case.get("urgency"), "summary": case.get("summary")}}
         state = triage_node(state)
+        if state.get("_structured_output_error"):
+            from agents.simephony.structured_output import StructuredOutputError
+            raise StructuredOutputError()
+        if state.get("needs_human_review"):
+            result = state["triage_result"]
+            return {
+                "needs_human_review": True,
+                "review_reason": state.get("review_reason"),
+                "confidence_score": result.get("confidence_score", 0.0),
+                "review_step": "TriageAgent",
+            }
         state = booking_node(state)
         b = state["booking_result"]
         if b.get("booking_status") != "PROPOSED":
             raise RuntimeError(b.get("reason") or b.get("error") or "no technician proposed")
-        return {"technician_id": b["assigned_technician"], "slot": b["start"], "reason": b["reason"]}
+        return {
+            "technician_id": b["assigned_technician"],
+            "slot": b["start"],
+            "reason": b["reason"],
+            "needs_human_review": False,
+        }
     return _run(ctx, "triage", ai, lambda: standins.triage(ctx, case, preferred),
                 {"case_id": case["case_id"]})
 
@@ -264,7 +293,7 @@ def repair_estimate(ctx, case: dict) -> dict | None:
 
 # ---------- VerificationAgent ----------
 
-def verification_guide(ctx, case: dict) -> tuple[dict, str | None]:
+def verification_guide(ctx, case: dict) -> tuple[dict | None, str | None, dict | None]:
     """(guide, note for the SDP trace). The repair photo is checked against the original; if it doesn't look
     resolved, the standard guide is used and the note asks SDP to check the photo before signing off (SDP
     signs before the buyer, so a person always looks at it)."""
@@ -280,11 +309,21 @@ def verification_guide(ctx, case: dict) -> tuple[dict, str | None]:
         if v.get("_structured_output_error"):
             from agents.simephony.structured_output import StructuredOutputError
             raise StructuredOutputError()
+        if v.get("needs_human_review"):
+            return None, v.get("review_reason"), {
+                "needs_human_review": True,
+                "review_reason": v.get("review_reason"),
+                "confidence_score": v.get("confidence_score", 0.0),
+                "review_step": "VerificationAgent",
+            }
         if v.get("needs_technician_input"):
-            return standins.verification_guide(case), f"Photo check: {v['technician_message']} SDP: please check the repair photo before signing off."
-        return v["guide"], f"Photo check: {v['assessment']} ({v.get('observations') or 'no notes'})"
-    return _run(ctx, "verification", ai, lambda: (standins.verification_guide(case), None),
-                {"case_id": case["case_id"]})
+            return standins.verification_guide(case), f"Photo check: {v['technician_message']} SDP: please check the repair photo before signing off.", None
+        return v["guide"], f"Photo check: {v['assessment']} ({v.get('observations') or 'no notes'})", None
+    result = _run(ctx, "verification", ai, lambda: (standins.verification_guide(case), None, None),
+                  {"case_id": case["case_id"]})
+    if len(result) == 2:
+        return result[0], result[1], None
+    return result
 
 
 # ---------- InitialInspectionAgent ----------
@@ -340,22 +379,35 @@ def run_background_steps(case_id: str, steps: list[dict]) -> None:
 
                 ctx = Ctx(conn)
                 case = load_case(ctx, case_id)
+                result = None
                 if name == "intake":
-                    intake(ctx, case["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
+                    result = intake(ctx, case["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
                 elif name == "similar":
-                    similar(ctx, case)
+                    result = similar(ctx, case)
                 elif name == "triage":
-                    triage(ctx, case, case.get("preferred_visit_at"))
+                    result = triage(ctx, case, case.get("preferred_visit_at"))
                 elif name == "estimate":
-                    repair_estimate(ctx, case)
+                    result = repair_estimate(ctx, case)
                 elif name == "verification":
-                    verification_guide(ctx, case)
+                    result = verification_guide(ctx, case)
                 elif name == "inspection":
-                    initial_inspection(ctx, case, case.get("verdict_note"), latest_verification(ctx, case_id))
+                    result = initial_inspection(ctx, case, case.get("verdict_note"), latest_verification(ctx, case_id))
                 elif name == "comms":
-                    comms(ctx, step["kind"], case, step.get("extra"))
+                    result = comms(ctx, step["kind"], case, step.get("extra"))
                 else:
                     raise ValueError(f"Unknown background agent step: {name}")
+                review = result[2] if name == "verification" and isinstance(result, tuple) and len(result) > 2 else result
+                if isinstance(review, dict) and review.get("needs_human_review"):
+                    with tools.use_connection(conn):
+                        review_result = tools.flag_case_for_human_review(
+                            case_id,
+                            review.get("review_step", _agent_label(name)),
+                            review.get("review_reason") or "AI abstained and routed the case to human review.",
+                            float(review.get("confidence_score", 0.0)),
+                        )
+                    if review_result.get("ok") is False:
+                        log.error("Could not route case %s to human review: %s", case_id, review_result["error"])
+                    break
         except WorkflowError:
             log.info("Skipping %s agent step for case %s because the case no longer exists", name, case_id)
         except Exception:

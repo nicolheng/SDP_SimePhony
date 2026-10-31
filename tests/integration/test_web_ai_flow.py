@@ -85,6 +85,43 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
     assert _case(case_id)["status"] == "VISIT_SCHEDULED"
 
 
+def test_initial_intake_event_keeps_telemetry_without_case_id(fake_llm, ai_on):
+    case_id = _report()
+
+    intake_event = next(
+        event for event in _trace(case_id)
+        if event.get("agent") == "IntakeAgent"
+        and event.get("message", "").startswith("Category:")
+    )
+    telemetry = intake_event["data"]
+    assert telemetry["model"] == "llava-llama3"
+    assert telemetry["timing_ms"] > 0
+    assert "tokens" in telemetry
+    assert telemetry["confidence_score"] == 0.95
+
+
+def test_similar_agent_event_includes_confidence_telemetry(fake_llm, monkeypatch):
+    import db
+    from demo_api import ai_agents, workflow
+
+    monkeypatch.setenv("USE_AI_AGENTS", "false")
+    case_id = _report()
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn)
+        ai_agents.similar(ctx, workflow.load_case(ctx, case_id))
+
+    event = next(
+        event for event in _trace(case_id)
+        if event.get("agent") == "SimilarDefectAgent"
+        and event.get("data", {}).get("model")
+    )
+    assert event["data"]["model"] == "qwen2.5:7b"
+    assert event["data"]["timing_ms"] > 0
+    assert event["data"]["confidence_score"] == 0.9
+
+
 def test_repeat_unit_report_approval_and_brief_with_ai(fake_llm, ai_on):
     from demo_api import workflow
     case_id = _report("A-12-08", "B-0118", "Ceiling bocor lagi in the bedroom, third time!")
@@ -178,6 +215,7 @@ def test_agent_step_records_telemetry_and_guardrail_hits(monkeypatch):
     assert telemetry["model"] == "llava-llama3"
     assert telemetry["timing_ms"] >= 0
     assert telemetry["tokens"] is None
+    assert telemetry["confidence_score"] == 0.95
     assert telemetry["fallback_used"] is False
     assert telemetry["fallback_reason"] is None
     assert "category_guardrail_triggered" in telemetry["guardrail_hits"]
