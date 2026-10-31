@@ -199,6 +199,16 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "fallbackUsed": data.get("fallback_used") is True,
             "fallbackStep": data.get("step"),
             "fallbackReason": data.get("reason"),
+            **({
+                "telemetry": {
+                    "model": data.get("model"),
+                    "timing_ms": data.get("timing_ms"),
+                    "tokens": data.get("tokens"),
+                    "fallback_used": data.get("fallback_used") is True,
+                    "fallback_reason": data.get("fallback_reason"),
+                    "guardrail_hits": data.get("guardrail_hits", []),
+                }
+            } if r["type"] == "agent.step" else {}),
         })
 
     buyer_email = {r["buyer_id"]: r["email"] for r in rows("SELECT buyer_id, email FROM buyers")}

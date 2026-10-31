@@ -1,5 +1,6 @@
 import re
 
+from agents.telemetry import record_guardrail_hit, record_llm_telemetry
 from .rules import load_rules
 from .llm_client import get_client, get_models
 from .structured_output import StructuredOutputError, chat_json
@@ -84,8 +85,10 @@ def triage_node(state: dict) -> dict:
             },
             temperature=0.0,
         )
-        llm_urgency = _normalize_urgency(data.get("urgency"))
-        rule_id = str(data.get("rule") or "").strip().upper()
+        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
+        parsed = data["parsed"]
+        llm_urgency = _normalize_urgency(parsed.get("urgency"))
+        rule_id = str(parsed.get("rule") or "").strip().upper()
         # A change counts only with a real rule from the matching list.
         report = f"{user_desc} {(state.get('intake_result') or {}).get('summary') or ''}"
         if (rule_id in rule_ids and llm_urgency == {"H": "high", "L": "low"}[rule_id[0]]
@@ -97,6 +100,8 @@ def triage_node(state: dict) -> dict:
         pass
     if intake_urgency == "high":
         urgency, matched_rule = "high", None  # the model can raise urgency, never lower an intake "high"
+    if urgency != intake_urgency:
+        record_guardrail_hit("urgency_guardrail_triggered")
 
     # 3. Map category to skill
     category = state.get("intake_result", {}).get("category", "other")

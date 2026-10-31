@@ -11,6 +11,7 @@ from tools import find_similar_cases
 
 from .llm_client import client, MODEL_TEXT
 from .structured_output import StructuredOutputError, chat_json
+from agents.telemetry import record_llm_telemetry
 
 # rules.yaml: escalation.occurrence_threshold = 3
 _OCCURRENCE_THRESHOLD = 3
@@ -83,7 +84,8 @@ def similar_defect_node(state: dict) -> dict:
             },
             temperature=0.1,
         )
-        ai_reason = data["cluster_reason"]
+        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
+        ai_reason = data["parsed"]["cluster_reason"]
     except StructuredOutputError:
         raise
     except Exception:

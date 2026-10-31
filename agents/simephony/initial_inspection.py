@@ -21,6 +21,7 @@ def send_email(to: str, subject: str, body: str, case_id: str | None = None) -> 
 
 from .llm_client import client, MODEL_TEXT
 from .structured_output import StructuredOutputError, chat_json
+from agents.telemetry import record_llm_telemetry
 
 # ---------------------------------------------------------------------------
 # rules.yaml constants (mirrored here for prompt enforcement).
@@ -86,7 +87,7 @@ def initial_inspection_node(state: dict) -> dict:
     ]
 
     try:
-        inspection_brief_json = chat_json(
+        completion = chat_json(
             client,
             MODEL_TEXT,
             messages,
@@ -125,6 +126,8 @@ def initial_inspection_node(state: dict) -> dict:
             },
             temperature=0.1,
         )
+        record_llm_telemetry(completion["model"], completion["timing_ms"], completion["tokens"])
+        inspection_brief_json = completion["parsed"]
     except StructuredOutputError:
         inspection_brief_json = {
             "timeline": [{"at": "unknown", "text": "Could not generate timeline"}],

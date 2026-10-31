@@ -1,5 +1,6 @@
 import re
 
+from agents.telemetry import record_guardrail_hit, tracked_chat_completion
 from .llm_client import get_client, get_models
 from . import backend_tools
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
@@ -306,7 +307,7 @@ def _draft(state: dict) -> str:
         prompt = f"There is an update on the resident's {category} case. Tell them we will contact them shortly about the next steps."
 
     def _llm(messages, temperature):
-        return client.chat.completions.create(model=text_model, messages=messages, temperature=temperature)
+        return tracked_chat_completion(client, model=text_model, messages=messages, temperature=temperature)
 
     if template_key in FIXED_OPENINGS:
         message = NEUTRAL_TEMPLATES[template_key]
@@ -324,6 +325,7 @@ def _draft(state: dict) -> str:
     # 4. Guardrail Layer
     is_dangerous, offending_terms = scan_for_liability(message)
     if is_dangerous:
+        record_guardrail_hit("liability_guardrail_triggered")
         try:
             rewrite_response = _llm([
                 {"role": "system", "content": "You are a legal compliance officer. The previous draft admitted liability or promised money. Rewrite it to be strictly neutral and professional. Remove any mentions of fault, apologies for mistakes, or financial compensation."},
@@ -336,6 +338,7 @@ def _draft(state: dict) -> str:
             # Rewrite still unsafe: send a fixed neutral template, no LLM text.
             message = _fallback(state, template_key)
     if scan_for_unsafe_steps(message):
+        record_guardrail_hit("unsafe_steps_guardrail_triggered")
         # LLM text must never tell the buyer to open panels, touch wiring, climb or use tools.
         message = _fallback(state, template_key)
 
