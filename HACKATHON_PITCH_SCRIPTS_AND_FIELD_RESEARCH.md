@@ -57,7 +57,7 @@ Third, **the prototype is built for operational scrutiny**. A health endpoint ch
 3. “I’ll open the case and move through technician acceptance and inspection, record a verdict, book the repair, mark it repaired, then complete developer and buyer sign-off. The case history shows how evidence and status accumulate through the lifecycle.”
 4. “I’ll show `/health` and the sidebar indicator. If time permits, I’ll stop Ollama briefly and show that the health endpoint still responds but reports a degraded state.”
 5. “I’ll open `/api/analytics/weekly-digest` to show the management narrative produced from code-computed statistics.”
-6. “For abstention, I’ll show a low-confidence or guardrail-conflict case in `PENDING_REVIEW` and its `case.review_requested` event. That demonstrates safe routing. The current frontend does not yet have a dedicated approval queue for confidence-review cases; the visible SDP Approvals page is for extra-inspection decisions. We’ll validate and design that human-review interaction with SDP staff rather than misrepresent it.”
+6. “For abstention, I’ll show a low-confidence or guardrail-conflict case in `PENDING_REVIEW` and its `case.review_requested` event. That demonstrates safe routing. On the SDP Approvals page the held case shows the agent's reason and confidence; staff approve it to let the case carry on, or reject it with a reason the buyer sees.”
 
 “The outcome we’re aiming for is practical: faster coordination, clearer accountability, and better visibility into repeat defects—with people retaining control wherever the AI is uncertain.”
 

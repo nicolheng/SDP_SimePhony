@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const ROLES = [
-  { href: "/sdp", label: "Sime Darby Property staff" },
+  { href: "/sdp", label: "Sime Darby Property Staff" },
   { href: "/buyer", label: "Buyer" },
   { href: "/technician", label: "Technician / Subcontractor" },
 ];

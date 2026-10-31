@@ -33,7 +33,8 @@ AGENT_TOOLS = {
     "notify_technician", "send_email", "log_agent_step",
 }
 HUMAN_ACTIONS = {"create_case", "add_photo", "answer_follow_up", "respond_to_assignment", "book_repair", "record_verdict",
-                 "mark_repaired", "record_verification", "record_signoff", "reopen_case", "decide_approval"}
+                 "mark_repaired", "record_verification", "record_signoff", "reopen_case", "decide_approval",
+                 "record_rating", "resolve_review"}
 
 LEAK_INTAKE = {"category": "water_leak", "sub_category": "ceiling_leak", "location_in_unit": "master bedroom ceiling",
                "summary": "Ceiling leak above wardrobe", "urgency": "high", "missing_info": [], "follow_up_question": "",

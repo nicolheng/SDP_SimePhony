@@ -23,7 +23,7 @@ export default function AgentTrace() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <PageTitle title="Agent trace" sub="Live log of every agent step, case event and email. Updates as the demo runs." />
+      <PageTitle title="Agent Trace" sub="Live log of every agent step, case event and email. Updates as the demo runs." />
       <div className="grid gap-6 lg:grid-cols-3">
         <Panel
           className="lg:col-span-2"

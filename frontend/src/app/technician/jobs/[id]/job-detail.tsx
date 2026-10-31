@@ -10,6 +10,7 @@ import { buyerName, recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { EmptyState, MobileHeader, PrimaryButton, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
+import { RepairClockBadge } from "@/components/repair-clock";
 import { SimilarDefects } from "@/components/similar-defects";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
@@ -88,8 +89,9 @@ export function JobDetail() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
+  const now = useDemo((st) => st.now);
 
-  if (!c) return <MobileHeader title="Job not found" back="/technician/jobs" />;
+  if (!c) return <MobileHeader title="Job Not Found" back="/technician/jobs" />;
   if (c.technicianId !== me && c.supportId !== me)
     return (
       <div>
@@ -156,6 +158,11 @@ export function JobDetail() {
                 <li className="flex items-center gap-2">
                   <UserRound className="size-4 text-zinc-400" /> {buyerName(c)}
                 </li>
+                {c.repairClock && !c.repairClock.doneAt && (
+                  <li className="flex items-center gap-2">
+                    <RepairClockBadge c={c} now={now} /> repair due {fmtDate(c.repairClock.dueAt)}
+                  </li>
+                )}
               </ul>
               <div className="mt-3 rounded-xl bg-zinc-50 p-3">
                 <StatusBadge status={c.status} />

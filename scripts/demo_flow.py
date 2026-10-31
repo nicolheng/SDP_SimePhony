@@ -222,21 +222,15 @@ def sync(state: dict, case_id: str) -> dict:
 
 
 def approve_review(state: dict, case_id: str) -> dict:
-    """If an agent was unsure, the case waits in PENDING_REVIEW. The web app has no approve action yet, so the
-    script plays SDP staff: it puts the case back where it was and carries on."""
+    """If an agent was unsure, the case waits in PENDING_REVIEW. The script plays SDP staff pressing Approve in the
+    console (tools.resolve_review, as POST /api/cases/{id}/review-decision does) and carries on from where it resumes."""
     if not state.get("needs_human_review"):
         return state
     import tools
     note(f"HELD for SDP review: {state.get('review_reason')}")
-    with _db() as conn:
-        event = conn.execute("SELECT payload FROM case_events WHERE case_id = ? AND type = 'case.review_requested' "
-                             "ORDER BY created_at DESC, event_id DESC LIMIT 1", (case_id,)).fetchone()
-        previous = json.loads(event["payload"])["previous_status"]
-        conn.execute("UPDATE cases SET status = ? WHERE case_id = ? AND status = 'PENDING_REVIEW'", (previous, case_id))
-        tools._emit(conn, case_id, "case.review_approved", "SDP staff approved the case after reviewing the AI recommendation.",
-                    decided_by="Demo SDP staff")
-    note(f"(script: SDP approves the review, so the case goes back to {previous})")
-    state.update(needs_human_review=False, review_reason="", current_status=previous)
+    r = ok(tools.resolve_review(case_id, True, decided_by="Demo SDP staff"), "approve the held case")
+    note(f"(script: SDP approves the review, so the case resumes at {r['status']})")
+    state.update(needs_human_review=False, review_reason="", current_status=r["status"])
     return state
 
 

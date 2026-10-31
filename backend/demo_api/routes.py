@@ -221,6 +221,17 @@ def developer_signoff(case_id: str, request: Request, background_tasks: Backgrou
     return _run(request, workflow.developer_signoff, case_id, background_tasks=background_tasks)
 
 
+class ReviewDecision(BaseModel):
+    approve: bool
+    note: str = Field(default="", max_length=500)
+
+
+@router.post("/cases/{case_id}/review-decision")
+def review_decision(case_id: str, body: ReviewDecision, request: Request, background_tasks: BackgroundTasks):
+    """SDP staff approve or reject a case an AI agent held for review (PENDING_REVIEW)."""
+    return _run(request, workflow.decide_review, case_id, body.approve, body.note, background_tasks=background_tasks)
+
+
 class Decision(BaseModel):
     approve: bool
 

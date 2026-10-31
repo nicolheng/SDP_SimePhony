@@ -3,6 +3,7 @@
 export type CaseStatus =
   | "SUBMITTED"
   | "INFO_NEEDED"
+  | "PENDING_REVIEW"
   | "VISIT_SCHEDULED"
   | "VALID"
   | "INVALID"
@@ -62,6 +63,9 @@ export type EventType =
   | "feedback.submitted"
   | "case.closed"
   | "email.sent"
+  | "case.review_requested"
+  | "case.review_approved"
+  | "case.review_rejected"
   | "agent.step";
 
 export interface Unit {
@@ -70,6 +74,10 @@ export interface Unit {
   floor: number;
   stack: string; // "08"
   contractor: string;
+  /** Vacant possession date (YYYY-MM-DD); the defect liability period runs from it. */
+  vpDate?: string | null;
+  /** Last day of the defect liability period (vacant possession + RULES.dlpMonths). */
+  dlpExpiry?: string | null;
 }
 
 export interface Technician {
@@ -151,6 +159,10 @@ export interface Case {
   verificationGuide?: VerificationGuide;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
+  /** Why an AI agent held the case for a person to check (PENDING_REVIEW only). */
+  review?: { agent: string; reason: string; confidence: number | null; previousStatus: string; at: string | null };
+  /** The 30-day repair clock: from the buyer's notice (report or latest reopen) to the repair. */
+  repairClock?: { noticeAt: string; dueAt: string; doneAt: string | null };
   /** Buyer's satisfaction rating (1-5), asked after they sign off. */
   rating?: { stars: number; comment: string; at: string } | null;
   /** When the buyer must sign off by (pending sign-off only; computed by the backend). */
@@ -292,6 +304,35 @@ export interface Analytics {
   unitStats: { unitId: string; category: Category; count: number; open: boolean }[];
   /** Buyer ratings given after sign-off. */
   satisfaction?: Satisfaction;
+  /** Defect liability period per block and the 30-day repair clocks. */
+  statutory?: Statutory;
+}
+
+export interface Statutory {
+  dlpMonths: number;
+  repairDays: number;
+  /** Per block, from its units: earliest/latest VP and DLP end, days left for the earliest, and units in each state. */
+  dlp: {
+    block: string;
+    vpDate: string | null;
+    vpDateLast: string | null;
+    dlpExpiry: string | null;
+    dlpExpiryLast: string | null;
+    daysLeft: number | null;
+    state: "active" | "expiring" | "expired" | "unknown";
+    units: number;
+    openCases: number;
+    active: number;
+    expiring: number;
+    expired: number;
+    unknown: number;
+  }[];
+  overdue: { caseId: string; unitId: string; summary: string; status: CaseStatus; dueAt: string; daysOverdue: number }[];
+  /** Open cases due within 7 days. */
+  dueSoon: number;
+  /** Repairs done within the repair period ÷ all repairs done. */
+  onTimeRate: number;
+  repaired: number;
 }
 
 export interface Satisfaction {
@@ -331,6 +372,9 @@ export interface Reference {
 
 export interface Rules {
   gracePeriodDays: number;
+  dlpMonths: number;
+  repairDaysFromNotice: number;
+  dlpExpiringDays: number;
   signoffPeriodDays: number;
   signoffReminderDaysBefore: number;
   occurrenceThreshold: number;

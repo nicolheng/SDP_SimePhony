@@ -1,25 +1,43 @@
 "use client";
 import { RotateCcw, Search } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import { RepairClockBadge } from "@/components/repair-clock";
 import { PageTitle, Panel } from "@/components/sdp-ui";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
-import { BLOCKS, CATEGORY_LABEL, getTechnician, getUnit } from "@/lib/constants";
-import { fmtDate } from "@/lib/dates";
+import { BLOCKS, CATEGORY_LABEL, getTechnician, getUnit, RULES } from "@/lib/constants";
+import { daysBetween, fmtDate } from "@/lib/dates";
 import { isOpen, STATUS_META } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import type { Case, CaseStatus, Category } from "@/lib/types";
 
 const selectCls = "h-9 rounded-lg border border-zinc-300 bg-white px-2.5 text-base outline-none focus:border-brand";
 
-export default function Defects() {
+/** Days until the unit's defect liability period ends (negative once ended), or null without a VP date. */
+function dlpLeft(unitId: string, now: string): number | null {
+  const end = getUnit(unitId).dlpExpiry;
+  return end ? Math.ceil(daysBetween(now, `${end}T23:59:59+08:00`)) : null;
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="text-base text-zinc-500">Loading…</p>}>
+      <Defects />
+    </Suspense>
+  );
+}
+
+/** ?block=A (from the Overview's DLP card) opens the list on one block. */
+function Defects() {
   const cases = useDemo((s) => s.cases);
+  const now = useDemo((s) => s.now);
   const router = useRouter();
+  const params = useSearchParams();
   const [q, setQ] = useState("");
   const [state, setState] = useState<"open" | "closed" | "all">("open");
   const [status, setStatus] = useState<CaseStatus | "">("");
   const [category, setCategory] = useState<Category | "">("");
-  const [block, setBlock] = useState("");
+  const [block, setBlock] = useState(params.get("block") ?? "");
   const [urgency, setUrgency] = useState("");
 
   const rows = useMemo(() => {
@@ -100,7 +118,7 @@ export default function Defects() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-base">
+          <table className="w-full min-w-[940px] text-base">
             <thead>
               <tr className="border-b text-left text-sm uppercase tracking-wide text-zinc-500">
                 <th className="py-2 pr-3 font-medium">Case</th>
@@ -108,6 +126,7 @@ export default function Defects() {
                 <th className="py-2 pr-3 font-medium">Defect</th>
                 <th className="py-2 pr-3 font-medium">Urgency</th>
                 <th className="py-2 pr-3 font-medium">Status</th>
+                <th className="py-2 pr-3 font-medium">30-day clock</th>
                 <th className="py-2 pr-3 font-medium">Technician</th>
                 <th className="py-2 pr-3 font-medium">Reported</th>
                 <th className="py-2 font-medium">Reopens</th>
@@ -117,7 +136,10 @@ export default function Defects() {
               {rows.slice(0, 200).map((c: Case) => (
                 <tr key={c.id} onClick={() => router.push(`/sdp/defects/${c.id}`)} className="cursor-pointer border-b border-zinc-100 hover:bg-zinc-50">
                   <td className="py-2.5 pr-3 font-mono text-sm">{c.id}</td>
-                  <td className="py-2.5 pr-3 font-mono text-sm">{c.unitId}</td>
+                  <td className="py-2.5 pr-3">
+                    <span className="font-mono text-sm">{c.unitId}</span>
+                    <DlpLeft days={dlpLeft(c.unitId, now)} />
+                  </td>
                   <td className="py-2.5 pr-3">
                     {c.summary}
                     <span className="block text-sm text-zinc-500">{CATEGORY_LABEL[c.category]}</span>
@@ -127,6 +149,9 @@ export default function Defects() {
                   </td>
                   <td className="py-2.5 pr-3">
                     <StatusBadge status={c.status} />
+                  </td>
+                  <td className="py-2.5 pr-3">
+                    <RepairClockBadge c={c} now={now} />
                   </td>
                   <td className="py-2.5 pr-3 text-zinc-600">{getTechnician(c.technicianId)?.name ?? "—"}</td>
                   <td className="py-2.5 pr-3 text-zinc-600">{fmtDate(c.createdAt)}</td>
@@ -140,5 +165,14 @@ export default function Defects() {
         </div>
       </Panel>
     </div>
+  );
+}
+
+function DlpLeft({ days }: { days: number | null }) {
+  if (days === null) return null;
+  return (
+    <span className={`block text-xs ${days < 0 ? "text-red-700" : days <= (RULES.dlpExpiringDays ?? 90) ? "text-amber-700" : "text-zinc-500"}`}>
+      {days < 0 ? "DLP ended" : `DLP ${days}d left`}
+    </span>
   );
 }

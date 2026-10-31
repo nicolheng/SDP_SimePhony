@@ -1668,6 +1668,65 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
     return {"ok": True, "both_signed": closed, "status": "CLOSED" if closed else "PENDING_SIGNOFF"}
 
 
+# Where an approved held case resumes. Holding releases the technician and bookings, so a held booking step
+# goes back to where it gets booked again.
+_REVIEW_RESUME = {"SUBMITTED": "SUBMITTED", "INFO_NEEDED": "SUBMITTED", "VISIT_SCHEDULED": "SUBMITTED",
+                  "REOPENED": "REOPENED", "EXTRA_INSPECTION": "REOPENED", "ESCALATION_PENDING": "REOPENED",
+                  "VALID": "VALID", "REPAIR_BOOKED": "VALID", "REPAIRED": "REPAIRED"}
+
+
+def review_request(conn: sqlite3.Connection, case_id: str) -> Optional[dict]:
+    """The latest case.review_requested payload for a case: {message, agent, confidence_score, previous_status, at}."""
+    row = conn.execute(
+        "SELECT payload, created_at FROM case_events WHERE case_id = ? AND type = 'case.review_requested' "
+        "ORDER BY created_at DESC, event_id DESC LIMIT 1", (case_id,)).fetchone()
+    if not row:
+        return None
+    try:
+        payload = json.loads(row["payload"] or "{}")
+    except ValueError:
+        payload = {}
+    return {**payload, "at": row["created_at"]} if isinstance(payload, dict) else {"at": row["created_at"]}
+
+
+@_returns_errors
+def resolve_review(case_id: str, approve: bool, note: str = "", decided_by: Optional[str] = None) -> dict:
+    """SDP staff decide a case an AI agent held in PENDING_REVIEW (flag_case_for_human_review).
+    Approve -> the case resumes from the held step: a new report goes back to SUBMITTED (to be booked), a reopened
+    case to REOPENED, a held repair check to REPAIRED, a held repair booking to VALID.
+    Reject -> a new report becomes INVALID (closed, not a defect); a reopened case goes back to CLOSED; a held
+    repair goes back to VALID so the repair is redone. Returns {ok, status, previous_status, resume}."""
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("PENDING_REVIEW",), "decide the review", "This case isn't waiting for review.")
+        held = review_request(conn, case_id) or {}
+        previous = held.get("previous_status") or "SUBMITTED"
+        resume = _REVIEW_RESUME.get(previous, "SUBMITTED")
+        by = decided_by or SDP_SIGNER
+        note = (note or "").strip()
+        now = _now(conn)
+        if approve:
+            status = resume
+            fields: dict = {"status": status}
+            if status == "SUBMITTED":  # the reviewer accepts the report as it is
+                fields.update(follow_up_question=None, missing_info="[]")
+        elif resume == "REOPENED":
+            status = "CLOSED"
+            fields = {"status": status, "closed_at": now}
+        elif resume in ("REPAIRED", "VALID"):
+            status = "VALID"
+            fields = {"status": status, "repaired_at": None, "repair_note": None}
+        else:
+            status = "INVALID"
+            fields = {"status": status, "inspection_outcome": "NOT_A_DEFECT", "verdict_at": now, "closed_at": now,
+                      "verdict_note": note or "Not accepted as a defect after SDP review."}
+        _save(conn, case_id, **fields)
+        _emit(conn, case_id, "case.review_approved" if approve else "case.review_rejected",
+              f"{by} {'approved' if approve else 'rejected'} the held case" + (f' — "{note}"' if note else ""),
+              decided_by=by, previous_status=previous, status=status, held_by=held.get("agent"))
+    return {"ok": True, "status": status, "previous_status": previous, "resume": resume}
+
+
 @_returns_errors
 def record_rating(case_id: str, rating: int, comment: str = "") -> dict:
     """Buyer's satisfaction with the repair (1-5 stars, optional comment), once per case after they have

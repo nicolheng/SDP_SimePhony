@@ -12,6 +12,7 @@ import db
 import tools
 
 from . import agents, ai_agents, config
+from .analytics import dlp_days_left, dlp_expiry
 from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
@@ -166,6 +167,10 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
         raise WorkflowError("Please describe the problem.")
     if not ctx.conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
         raise WorkflowError("Unknown buyer or unit.")
+    left = dlp_days_left(ctx.units[unit_id].get("vp_date"), ctx.now)
+    if left is not None and left < 0:
+        raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
+                            "so new defects can no longer be reported here. Please contact the developer directly.")
     result = ai_agents.intake(ctx, description, photo)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
@@ -186,21 +191,28 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
 
 
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:
+    """The buyer answers once: their answer is taken as given (it fills what was missing) and the case moves on to
+    booking, even if the IntakeAgent is still unsure. The technician's inspection visit checks the details."""
     description = _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot)["description"]
-    result = ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id)
-    status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
-    if result.get("needs_human_review"):
-        _route_to_human_review(ctx, case_id, result)
-        return
-    if status == "INFO_NEEDED":
-        step(ctx, case_id, "IntakeAgent", "Still missing information")
-        notify_buyer(ctx, case_id, "info_needed")
-        return
-    step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit']}")
+    result = _accept_answer(ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id), answer)
+    _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))
+    unsure = " (IntakeAgent unsure; the inspection visit will confirm)" if result.get("needs_human_review") else ""
+    step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit'] or 'as described'}{unsure}")
     _continue_new_case(ctx, case_id)
 
 
-def _continue_new_case(ctx: Ctx, case_id: str) -> None:
+def _accept_answer(result: dict, answer: str) -> dict:
+    """Intake after a follow-up answer: whatever is still missing is taken from the answer, with no second question."""
+    location = result.get("location_in_unit") or ""
+    if not location and "location_in_unit" in (result.get("missing_info") or []):
+        location = answer.strip().rstrip(".")[:80]
+    summary = result.get("summary") or ""
+    if location and not result.get("location_in_unit") and summary and " in " not in summary:
+        summary = f"{summary} in {location.lower()}"
+    return {**result, "location_in_unit": location, "summary": summary, "missing_info": [], "follow_up_question": None}
+
+
+def _continue_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
     """SimilarDefectAgent then TriageAgent: link related cases and book the inspection visit, at the buyer's
     chosen time (kept in preferred_visit_at) if a technician is free then. On the 3rd occurrence in the unit
     or a stack cluster, SDP is also asked for an extra inspection; the visit still goes ahead (keep_status)."""
@@ -213,7 +225,8 @@ def _continue_new_case(ctx: Ctx, case_id: str) -> None:
     if sim.get("cluster_reason") and sim["refs"]:
         step(ctx, case_id, "SimilarDefectAgent", sim["cluster_reason"])
     c = load_case(ctx, case_id)
-    t = ai_agents.triage(ctx, c, _bookable(ctx, c["preferred_visit_at"]))
+    preferred = _bookable(ctx, c["preferred_visit_at"])
+    t = agents.triage(ctx, c, preferred) if reviewed else ai_agents.triage(ctx, c, preferred)
     if t.get("needs_human_review"):
         _route_to_human_review(ctx, case_id, t)
         return
@@ -262,6 +275,45 @@ def rate_case(ctx: Ctx, case_id: str, rating: int, comment: str) -> None:
     _tool(ctx, tools.record_rating, case_id, rating, comment)
 
 
+def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
+    """SDP staff approve or reject a case an AI agent held for review. An approved case carries on from the held
+    step with the rule-based agents (a person has checked it, so it is not held again)."""
+    r = _tool(ctx, tools.resolve_review, case_id, approve, note)
+    c = load_case(ctx, case_id)
+    said = f': "{note}"' if note else "."
+    if not approve:
+        if r["status"] == "INVALID":
+            _tool(ctx, tools.notify_buyer, case_id, "Update on your report",
+                  f"Case {case_id} ({c['summary']}). Our team reviewed your report and it is not covered as a defect{said} "
+                  "This case is now closed. If the problem changes, please submit a new report.")
+        elif r["status"] == "CLOSED":
+            _tool(ctx, tools.notify_buyer, case_id, "Update on your reopened case",
+                  f"Case {case_id} ({c['summary']}). Our team reviewed your reopen request and the case stays closed{said} "
+                  "Please contact us if you have any questions.")
+        else:  # VALID: the repair is redone
+            _tool(ctx, tools.notify_buyer, case_id, "Your repair needs another visit",
+                  f"Case {case_id} ({c['summary']}). Our team checked the repair and it needs more work. Please book a new repair slot in the app.")
+        return
+    if r["status"] == "SUBMITTED":
+        _continue_new_case(ctx, case_id, reviewed=True)
+    elif r["status"] == "REOPENED":
+        esc = _tool(ctx, tools.check_escalation, case_id)
+        if esc["should_escalate"] and not esc.get("pending_approval_id"):
+            _tool(ctx, tools.request_extra_inspection, case_id, esc["reasons"])
+            notify_buyer(ctx, case_id, "escalated")
+        else:
+            _book_revisit(ctx, case_id, agents.triage(ctx, c, None), esc["occurrence_count"], "Reopened after SDP review")
+    elif r["status"] == "REPAIRED":
+        guide = agents.verification_guide(c)
+        _tool(ctx, tools.start_verification, case_id, guide)
+        step(ctx, case_id, "VerificationAgent",
+             f"Standard {config.CATEGORY_LABEL.get(c['category'], '').lower()} checklist after SDP review; {len(guide['steps'])} checks for the buyer")
+        notify_buyer(ctx, case_id, "verify")
+    elif r["status"] == "VALID":
+        _tool(ctx, tools.notify_buyer, case_id, "Please book your repair",
+              f"Case {case_id} ({c['summary']}). Our team has checked your case. Please choose a repair slot in the app.")
+
+
 def developer_signoff(ctx: Ctx, case_id: str) -> None:
     r = _tool(ctx, tools.record_signoff, case_id, "developer")
     if r["status"] == "CLOSED":
@@ -292,13 +344,21 @@ def _after_reopen(ctx: Ctx, case_id: str, description: str) -> None:
         notify_buyer(ctx, case_id, "escalated")
     else:
         t = ai_agents.triage(ctx, load_case(ctx, case_id), None)
-        _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
-        step(ctx, case_id, "TriageAgent", f"Below escalation threshold; revisit: {t['reason']}")
-        notify_tech(ctx, case_id, "Revisit job",
-                    f"A repaired defect at {c['unit_id']} has come back, and a revisit is booked for you on {fmt_datetime(t['slot'])}.\n\n"
-                    f"{_defect(c)} This is occurrence {esc['occurrence_count']} of this defect in the unit, "
-                    f'so please find the root cause. Buyer says: "{description}"\n\n{ACCEPT_JOB}')
-        notify_buyer(ctx, case_id, "revisit", slot=fmt_datetime(t["slot"]))
+        if t.get("needs_human_review"):
+            _route_to_human_review(ctx, case_id, t)
+            return
+        _book_revisit(ctx, case_id, t, esc["occurrence_count"], description)
+
+
+def _book_revisit(ctx: Ctx, case_id: str, t: dict, occurrence: int, description: str) -> None:
+    c = load_case(ctx, case_id)
+    _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
+    step(ctx, case_id, "TriageAgent", f"Below escalation threshold; revisit: {t['reason']}")
+    notify_tech(ctx, case_id, "Revisit job",
+                f"A repaired defect at {c['unit_id']} has come back, and a revisit is booked for you on {fmt_datetime(t['slot'])}.\n\n"
+                f"{_defect(c)} This is occurrence {occurrence} of this defect in the unit, "
+                f'so please find the root cause. Buyer says: "{description}"\n\n{ACCEPT_JOB}')
+    notify_buyer(ctx, case_id, "revisit", slot=fmt_datetime(t["slot"]))
 
 
 # ---------- technician / subcontractor ----------

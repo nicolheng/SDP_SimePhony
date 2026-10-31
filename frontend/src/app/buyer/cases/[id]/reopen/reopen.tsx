@@ -18,7 +18,7 @@ export function ReopenCase() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
+  if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
 
   if (!canReopen(c, now))
     return (

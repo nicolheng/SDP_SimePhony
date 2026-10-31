@@ -15,6 +15,9 @@ CATEGORY_LABEL: dict[str, str] = RULES["category_labels"]
 # Who repairs what, and roughly how long it takes. Specialised trades go to subcontractors.
 REPAIR_PLAN: dict[str, dict] = RULES["repair_plan"]
 GRACE_PERIOD_DAYS: int = int(RULES["grace_period_days"])
+DLP_MONTHS: int = int(RULES.get("statutory", {}).get("dlp_months", 24))
+REPAIR_DAYS_FROM_NOTICE: int = int(RULES.get("statutory", {}).get("repair_days_from_notice", 30))
+DLP_EXPIRING_DAYS: int = int(RULES.get("statutory", {}).get("dlp_expiring_days", 90))
 SIGNOFF_PERIOD_DAYS: int = int(RULES["signoff_period_days"])
 SIGNOFF_REMINDER_DAYS_BEFORE: int = int(RULES["signoff_reminder_days_before"])
 OCCURRENCE_THRESHOLD: int = int(RULES["escalation"]["occurrence_threshold"])
@@ -42,6 +45,11 @@ SUBCONTRACTORS = [
 ]
 
 
+# Demo vacant possession per block (filled into units.vp_date by migrate.py). Block C's DLP ends soon after the
+# demo date and block B's within months, so the SDP overview shows each DLP state.
+DEMO_VP_DATES = {"A": "2025-04-01", "B": "2025-01-15", "C": "2024-11-20"}
+
+
 def skills_for(category: str) -> list[str]:
     return CATEGORY_TO_SKILL.get(category) or ["general"]
 
@@ -50,6 +58,9 @@ def public_rules() -> dict:
     """The rules the web app uses, served by GET /api/rules (camelCase, like the rest of the API)."""
     return {
         "gracePeriodDays": GRACE_PERIOD_DAYS,
+        "dlpMonths": DLP_MONTHS,
+        "repairDaysFromNotice": REPAIR_DAYS_FROM_NOTICE,
+        "dlpExpiringDays": DLP_EXPIRING_DAYS,
         "signoffPeriodDays": SIGNOFF_PERIOD_DAYS,
         "signoffReminderDaysBefore": SIGNOFF_REMINDER_DAYS_BEFORE,
         "occurrenceThreshold": OCCURRENCE_THRESHOLD,

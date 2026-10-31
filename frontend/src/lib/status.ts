@@ -5,6 +5,7 @@ type Tone = "gray" | "blue" | "amber" | "green" | "red" | "purple";
 export const STATUS_META: Record<CaseStatus, { label: string; buyer: string; tone: Tone }> = {
   SUBMITTED: { label: "Submitted", buyer: "Received", tone: "gray" },
   INFO_NEEDED: { label: "Info needed", buyer: "Action needed", tone: "amber" },
+  PENDING_REVIEW: { label: "Needs review", buyer: "Being checked", tone: "purple" },
   VISIT_SCHEDULED: { label: "Inspection visit", buyer: "Inspection visit booked", tone: "blue" },
   VALID: { label: "Valid", buyer: "Book your repair", tone: "amber" },
   INVALID: { label: "Invalid", buyer: "Not a defect", tone: "gray" },
@@ -17,6 +18,10 @@ export const STATUS_META: Record<CaseStatus, { label: string; buyer: string; ton
   EXTRA_INSPECTION: { label: "Extra inspection", buyer: "Detailed inspection", tone: "purple" },
 };
 
+/** Badge details for any status; an unknown one (e.g. new on the backend) is shown as-is instead of crashing. */
+export const statusMeta = (s: string) =>
+  STATUS_META[s as CaseStatus] ?? { label: s.replace(/_/g, " ").toLowerCase(), buyer: "In progress", tone: "gray" as Tone };
+
 export const TONE_CLASS: Record<Tone, string> = {
   gray: "bg-zinc-100 text-zinc-700 ring-zinc-200",
   blue: "bg-sky-50 text-sky-700 ring-sky-200",
@@ -27,7 +32,7 @@ export const TONE_CLASS: Record<Tone, string> = {
 };
 
 export const OPEN_STATUSES: CaseStatus[] = [
-  "SUBMITTED", "INFO_NEEDED", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED",
+  "SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED",
   "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION",
 ];
 
@@ -40,6 +45,7 @@ export function buyerStepIndex(s: CaseStatus): number {
   switch (s) {
     case "SUBMITTED":
     case "INFO_NEEDED":
+    case "PENDING_REVIEW":
       return 0;
     case "VISIT_SCHEDULED":
     case "REOPENED":
@@ -56,6 +62,8 @@ export function buyerStepIndex(s: CaseStatus): number {
       return 4;
     case "CLOSED":
       return 5;
+    default:
+      return 0;
   }
 }
 
@@ -63,6 +71,7 @@ export function buyerStepIndex(s: CaseStatus): number {
 export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
   SUBMITTED: "We've received your report and our assistant is reviewing it.",
   INFO_NEEDED: "We need a little more information before we can assign a technician.",
+  PENDING_REVIEW: "Our team is checking the details of your case. We'll update you here as soon as the next step is booked.",
   VISIT_SCHEDULED: "A technician will visit to inspect the defect at the booked time.",
   VALID: "The technician confirmed the defect. Please book a repair slot.",
   INVALID: "The technician assessed this as not a defect. This case is closed; submit a new report if the problem changes.",
@@ -78,7 +87,7 @@ export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
 /** Buyer "My Defects" tabs. */
 export const BUYER_TABS = [
   { id: "all", label: "All", statuses: null },
-  { id: "open", label: "Open", statuses: ["SUBMITTED", "INFO_NEEDED", "VISIT_SCHEDULED"] },
+  { id: "open", label: "Open", statuses: ["SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VISIT_SCHEDULED"] },
   { id: "ongoing", label: "Ongoing", statuses: ["VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION"] },
   { id: "closed", label: "Closed", statuses: ["CLOSED", "INVALID"] },
   { id: "previous", label: "Previous", statuses: null },
@@ -96,6 +105,7 @@ export const buyerNeedsAction = (c: { status: CaseStatus; signoff?: { buyer?: un
 export const TECH_EXPLAIN: Record<CaseStatus, string> = {
   SUBMITTED: "New report; the AI agents are still processing it.",
   INFO_NEEDED: "Waiting for the buyer to answer a follow-up question.",
+  PENDING_REVIEW: "SDP staff are checking this case. You'll be notified if a job is booked for you.",
   VISIT_SCHEDULED: "Inspect on site, then mark the defect Valid or Invalid.",
   VALID: "You confirmed the defect. Waiting for the buyer to book a repair slot.",
   INVALID: "You marked this as not a defect. The case is closed.",

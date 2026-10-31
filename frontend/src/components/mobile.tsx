@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { useOffline } from "@/lib/store";
+import { PHONE_SCREEN_ID } from "./overlay";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./role-switcher";
 
@@ -17,9 +18,9 @@ export function MobileFrame({ role, nav, children }: { role: string; nav: ReactN
         <Suspense fallback={<div className="h-8 w-52" />}>
           <RoleSwitcher className="w-52" />
         </Suspense>
-        <span className="hidden md:inline">{role} view (mobile)</span>
+        <span className="hidden md:inline">{role} View (Mobile)</span>
       </div>
-      <div className="relative flex min-h-0 w-full max-w-[420px] flex-1 flex-col overflow-hidden bg-white md:h-[860px] md:flex-none md:rounded-[2.5rem] md:border-[10px] md:border-zinc-900 md:shadow-2xl">
+      <div id={PHONE_SCREEN_ID} className="relative flex min-h-0 w-full max-w-[420px] flex-1 flex-col overflow-hidden bg-white md:h-[860px] md:flex-none md:rounded-[2.5rem] md:border-[10px] md:border-zinc-900 md:shadow-2xl">
         <OfflineBanner />
         <div className="no-scrollbar flex-1 overflow-y-auto">{children}</div>
         <Suspense fallback={<div className="h-16 border-t bg-white" />}>{nav}</Suspense>

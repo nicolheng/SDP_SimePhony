@@ -10,8 +10,8 @@ import { PhotoInput, samplePhoto } from "@/components/photo";
 import { SlotPicker } from "@/components/slot-picker";
 import { UrgencyBadge } from "@/components/status-badge";
 import { fetchVisitSlots, submitReport } from "@/lib/api";
-import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, PROJECT_NAME } from "@/lib/constants";
-import { fmtDateTime } from "@/lib/dates";
+import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, getUnit, PROJECT_NAME } from "@/lib/constants";
+import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
 
 const EXAMPLES = [
@@ -39,6 +39,9 @@ export default function ReportDefect() {
   const [busy, setBusy] = useState(false);
   const [caseId, setCaseId] = useState<string | null>(null);
   const [nonDefect, setNonDefect] = useState<string | null>(null);
+  // Defects can be reported until the unit's defect liability period ends (the backend refuses after).
+  const dlpEnd = getUnit(DEMO_BUYER.unitId).dlpExpiry;
+  const dlpOver = !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
 
   async function submit() {
     if (!photo || !text.trim() || !slot) return;
@@ -80,6 +83,11 @@ export default function ReportDefect() {
           Unit {DEMO_BUYER.unitId} · {DEMO_BUYER.name}
         </p>
         <p className="mt-2 text-xs text-zinc-500">Tell us what&apos;s wrong. Our assistant will categorise it and book the right technician.</p>
+        {dlpOver && (
+          <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
+            Your Defect Liability Period ended on {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be reported in the app. Please contact the developer.
+          </p>
+        )}
       </div>
       <div className="space-y-4 p-4">
         <Section title="1. Photo of the defect *">
@@ -123,7 +131,7 @@ export default function ReportDefect() {
 
         {nonDefect && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{nonDefect}</p>}
 
-        <PrimaryButton disabled={!photo || !text.trim() || !slot || busy} onClick={submit}>
+        <PrimaryButton disabled={!photo || !text.trim() || !slot || busy || dlpOver} onClick={submit}>
           {busy ? "Submitting…" : "Submit Defect"}
         </PrimaryButton>
         {(!photo || !text.trim() || !slot) && <p className="text-center text-xs text-zinc-500">Photo, description and a visit slot are required.</p>}
@@ -139,24 +147,27 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
   // Buyer-facing progress only: no agent names, no related-case details.
   const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent);
   const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
+  const review = c.status === "PENDING_REVIEW";
   const stages: { label: string; state: "done" | "active" | "attention" | "todo" }[] = [
     { label: "Report received", state: "done" },
     { label: "Understanding your report", state: did("IntakeAgent") ? "done" : "active" },
     c.status === "INFO_NEEDED"
       ? { label: "Waiting for one more detail from you", state: "attention" }
-      : { label: "Finding a technician", state: did("TriageAgent") ? "done" : did("IntakeAgent") ? "active" : "todo" },
+      : review
+        ? { label: "Our team is checking your report", state: "attention" }
+        : { label: "Finding a technician", state: did("TriageAgent") ? "done" : did("IntakeAgent") ? "active" : "todo" },
     ...(c.status === "INFO_NEEDED" ? [] : [{ label: "Inspection visit booked", state: booked ? ("done" as const) : ("todo" as const) }]),
   ];
   const tech = getTechnician(c.technicianId);
 
   return (
     <div>
-      <MobileHeader title="Report submitted" back="/buyer" />
+      <MobileHeader title="Report Submitted" back="/buyer" />
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-2 text-sm font-semibold">
             {done ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-brand" />}
-            {done ? (c.status === "INFO_NEEDED" ? "We need one more detail" : "All set") : "Processing your report…"}
+            {done ? (c.status === "INFO_NEEDED" ? "We need one more detail" : review ? "Received: our team is checking it" : "All set") : "Processing your report…"}
           </p>
           <ol className="mt-3 space-y-2.5">
             {stages.map((st) => (

@@ -85,6 +85,17 @@ signoff_reminder_days_before: 3
 # Rules for repeated or clustered defects.
 grace_period_days: 30
 
+# Statutory clocks (Housing Development (Control and Licensing) Regulations 1989, Schedules G/H sale and
+# purchase agreement): the defect liability period runs dlp_months from vacant possession (24 since the 2007
+# amendment; 18 before), and the developer must repair a defect at its own cost within repair_days_from_notice
+# of the buyer's written notice (a report in the app). If it doesn't, the buyer may repair it after telling the
+# developer the cost, and recover that from the sum the developer's lawyer holds as stakeholder.
+# Clause numbers differ between versions of the schedules, so the app doesn't quote them.
+statutory:
+  dlp_months: 24
+  repair_days_from_notice: 30
+  dlp_expiring_days: 90   # flag a block on the SDP overview this many days before its DLP ends
+
 escalation:
   occurrence_threshold: 3
   stack_cluster_threshold: 3

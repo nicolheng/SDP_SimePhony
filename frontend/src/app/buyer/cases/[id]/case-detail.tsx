@@ -15,7 +15,7 @@ import { fmtHours } from "@/lib/agents";
 import { answerFollowUp, canReopen, signoffDeadline } from "@/lib/api";
 import { CATEGORY_LABEL, DEMO_BUYER, REPAIR_PLAN, RULES, workerName } from "@/lib/constants";
 import { addDays, daysBetween, fmtDate, fmtDateTime } from "@/lib/dates";
-import { BUYER_EXPLAIN } from "@/lib/status";
+import { BUYER_EXPLAIN, isOpen } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import type { Case } from "@/lib/types";
 
@@ -106,7 +106,7 @@ export function CaseDetail() {
   const [sending, setSending] = useState(false);
   const [rating, setRating] = useState(false);
 
-  if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
+  if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
   const reopenable = canReopen(c, now);
   const graceEnd = c.closedAt ? addDays(c.closedAt, RULES.gracePeriodDays) : null;
   const daysLeft = c.closedAt ? Math.max(0, Math.ceil(RULES.gracePeriodDays - daysBetween(c.closedAt, now))) : 0;
@@ -137,7 +137,12 @@ export function CaseDetail() {
               </p>
               <div className="mt-3 rounded-xl bg-zinc-50 p-3">
                 <StatusBadge status={c.status} buyer />
-                <p className="mt-1.5 text-sm text-zinc-700">{BUYER_EXPLAIN[c.status]}</p>
+                <p className="mt-1.5 text-sm text-zinc-700">{BUYER_EXPLAIN[c.status] ?? "We're working on your case."}</p>
+                {c.repairClock && !c.repairClock.doneAt && isOpen(c.status) && (
+                  <p className="mt-1.5 text-xs text-zinc-500">
+                    The developer aims to repair confirmed defects by {fmtDate(c.repairClock.dueAt)} ({RULES.repairDaysFromNotice ?? 30} days from your report).
+                  </p>
+                )}
               </div>
             </Section>
 

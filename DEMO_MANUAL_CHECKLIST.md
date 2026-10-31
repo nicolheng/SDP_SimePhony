@@ -45,8 +45,9 @@ Browser checklist for verifying the recent P0/P1 features before the hackathon p
 
 - [ ] Submit a deliberately ambiguous report with an unclear photo and vague description, such as “There's a mark here; I'm not sure what caused it.” Confidence is model-dependent; try another ambiguous example if necessary.
 - [ ] Check `GET http://localhost:8001/api/state` for the case's `PENDING_REVIEW` status and a `case.review_requested` event containing the review reason and confidence.
-- [ ] **Frontend limitation:** the current frontend does not provide an approval queue/action for confidence-review cases. The SDP **Approvals** page and `POST /api/approvals/{approval_id}/decision` are for extra-inspection requests, not low-confidence reviews.
-- [ ] To demonstrate the implemented simulated review-and-continue flow, run `python scripts/web_flow_live.py`. It records the simulated SDP approval and continues routing. Do not use the extra-inspection approval button to represent confidence-review approval.
+- [ ] In the SDP console, the case shows on **Overview** ("held for review") and at the top of **Approvals** under "Held for review", with the agent, its reason and the confidence score. The case page shows the same panel.
+- [ ] **Approve & continue**: the case carries on from the held step (a new report gets its inspection visit booked). **Reject** (reason required, shown to the buyer): a new report closes as not a defect. Both decisions appear in the case history (`case.review_approved` / `case.review_rejected`).
+- [ ] The buyer sees "Being checked" and no AI wording; the SDP **All** tab and the held case's page load without errors.
 
 ## 4. Background processing and responsiveness
 

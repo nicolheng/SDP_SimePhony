@@ -11,7 +11,8 @@ SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / INVALID
 | Status | Meaning |
 |---|---|
 | `SUBMITTED` | Buyer sent photo, description and preferred visit time |
-| `INFO_NEEDED` | IntakeAgent asked the buyer for more detail |
+| `INFO_NEEDED` | IntakeAgent asked the buyer for more detail (one round: the answer is taken as given and the case is booked, never held for review) |
+| `PENDING_REVIEW` | An AI agent was unsure (confidence below 0.7, or a rule conflict) and paused the case for SDP. Technician and bookings are released. SDP approves (the case resumes from the held step with the rule-based agents) or rejects (new report → `INVALID`, reopen → `CLOSED`, repair → `VALID`) via `POST /api/cases/{id}/review-decision` |
 | `VISIT_SCHEDULED` | Inspection visit booked with a technician |
 | `VALID` / `INVALID` | Technician's verdict. `INVALID` is terminal |
 | `REPAIR_BOOKED` | Buyer booked the repair |
@@ -57,7 +58,8 @@ Write tools return `{ok: false, error}` instead of raising when a rule blocks th
 Every event is a row in `case_events`, written by `tools.py`, with a `message` the timeline and SDP trace
 pages show. The web app reads them through `GET /api/state`. Main types: `case.created`, `case.info_needed`,
 `case.assigned`, `booking.requested` / `confirmed` / `rejected` / `escalated`, `verdict.recorded`, `repair.booked`,
-`repair.done`, `verification.requested` / `completed`, `signoff.completed`,  `feedback.submitted`,`signoff.reminder`, `signoff.overdue`,
+`repair.done`, `verification.requested` / `completed`, `signoff.completed`, `feedback.submitted`, `signoff.reminder`, `signoff.overdue`,
+`case.review_requested` / `review_approved` / `review_rejected`,
 `case.closed`, `case.reopened`, `recurrence.detected`, `inspection.requested` / `approved` / `rejected`,
 `email.sent`, `agent.step`.
 

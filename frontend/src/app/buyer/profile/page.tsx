@@ -2,6 +2,7 @@
 import { ArrowLeft, BookOpen, ChevronRight, Headphones, Home, UserRound } from "lucide-react";
 import Link from "next/link";
 import { DEMO_BUYER, getUnit, PROJECT_NAME } from "@/lib/constants";
+import { fmtDate } from "@/lib/dates";
 
 const ITEMS = [
   { group: "My Property", items: [{ href: "/buyer/cases", label: "My Defects", icon: Home }] },
@@ -31,6 +32,14 @@ export default function Profile() {
         </p>
         <p className="text-xs text-zinc-500">{DEMO_BUYER.email}</p>
       </header>
+      {unit.vpDate && unit.dlpExpiry && (
+        <p className="mx-5 mt-4 rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-700 ring-1 ring-zinc-200">
+          Defect Liability Period:{" "}
+          <span className="font-semibold">
+            {fmtDate(`${unit.vpDate}T12:00:00+08:00`)} to {fmtDate(`${unit.dlpExpiry}T12:00:00+08:00`)}
+          </span>
+        </p>
+      )}
       <div className="px-5 py-4">
         {ITEMS.map((g) => (
           <section key={g.group} className="mb-4">

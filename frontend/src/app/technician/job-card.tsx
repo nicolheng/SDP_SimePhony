@@ -2,9 +2,11 @@
 import { CalendarClock, ChevronRight, ClipboardCheck, Hammer, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { PhotoThumb } from "@/components/photo";
+import { RepairClockBadge } from "@/components/repair-clock";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { fmtDateTime } from "@/lib/dates";
 import { TECH_TODO } from "@/lib/status";
+import { useDemo } from "@/lib/store";
 import type { Case } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { jobKind, jobSlot } from "./use-my-jobs";
@@ -12,6 +14,7 @@ import { jobKind, jobSlot } from "./use-my-jobs";
 export function JobCard({ c }: { c: Case }) {
   const kind = jobKind(c);
   const repair = c.status === "REPAIR_BOOKED";
+  const now = useDemo((s) => s.now);
   return (
     <Link href={`/technician/jobs/${c.id}`} className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200">
       <div className="relative shrink-0">
@@ -34,6 +37,7 @@ export function JobCard({ c }: { c: Case }) {
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <StatusBadge status={c.status} />
+          <RepairClockBadge c={c} now={now} className="text-[10px]" />
           {c.bookingStatus === "pending" && TECH_TODO.includes(c.status) && (
             <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-300">
               {c.handover ? "Handed over · accept?" : "New · accept?"}

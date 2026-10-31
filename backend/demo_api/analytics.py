@@ -44,6 +44,87 @@ def stack_clusters(ctx, cases: list[dict]) -> list[dict]:
     return sorted(out, key=lambda d: (-d["confidence"], -len(d["cases"])))
 
 
+def dlp_expiry(vp_date: str | None) -> str | None:
+    """Last day of the defect liability period: vacant possession + dlp_months (rules.yaml statutory)."""
+    if not vp_date:
+        return None
+    y, m, d = (int(x) for x in vp_date[:10].split("-"))
+    m += config.DLP_MONTHS
+    y, m = y + (m - 1) // 12, (m - 1) % 12 + 1
+    return f"{y:04d}-{m:02d}-{min(d, 28 if m == 2 else 30 if m in (4, 6, 9, 11) else 31):02d}"
+
+
+def dlp_days_left(vp_date: str | None, now: str) -> float | None:
+    end = dlp_expiry(vp_date)
+    return days_between(now, f"{end}T23:59:59+08:00") if end else None
+
+
+def repair_clock(case: dict, reopened_at: str | None) -> dict | None:
+    """The 30-day repair clock (rules.yaml statutory.repair_days_from_notice): it starts at the buyer's notice
+    (the report, or the latest reopen) and stops when the repair is done. None for cases found not to be defects."""
+    if case["status"] == "INVALID" or not case.get("created_at"):
+        return None
+    notice = norm(reopened_at) if reopened_at and parse(reopened_at) > parse(case["created_at"]) else norm(case["created_at"])
+    repaired = norm(case.get("repaired_at"))
+    done = repaired if repaired and parse(repaired) >= parse(notice) else None
+    if not done and case["status"] == "CLOSED":  # closed with no repair time recorded (seeded history)
+        done = norm(case.get("closed_at"))
+    return {"noticeAt": notice, "dueAt": add_days(notice, config.REPAIR_DAYS_FROM_NOTICE), "doneAt": done}
+
+
+def statutory(ctx, cases: list[dict], clocks: dict[str, dict]) -> dict:
+    """DLP per block, worked out from each unit's own vacant possession date (a buyer's DLP is their unit's), and
+    the 30-day repair clocks. A block row shows its earliest VP and DLP end, and how many units are in each state."""
+    def state(left: float | None) -> str:
+        return "unknown" if left is None else "expired" if left < 0 else "expiring" if left <= config.DLP_EXPIRING_DAYS else "active"
+
+    blocks: dict[str, dict] = {}
+    for u in ctx.units.values():
+        b = blocks.setdefault(u["block"], {"block": u["block"], "vpDates": [], "units": 0, "openCases": 0,
+                                           "active": 0, "expiring": 0, "expired": 0, "unknown": 0})
+        b["units"] += 1
+        b[state(dlp_days_left(u.get("vp_date"), ctx.now))] += 1
+        if u.get("vp_date"):
+            b["vpDates"].append(u["vp_date"][:10])
+    for c in cases:
+        if c["status"] in OPEN:
+            blocks[ctx.units[c["unit_id"]]["block"]]["openCases"] += 1
+    dlp = []
+    for b in sorted(blocks.values(), key=lambda x: x["block"]):
+        vps = sorted(b.pop("vpDates"))
+        first = vps[0] if vps else None  # the earliest handover ends its DLP first
+        left = dlp_days_left(first, ctx.now)
+        dlp.append({**b, "vpDate": first, "vpDateLast": vps[-1] if vps else None, "dlpExpiry": dlp_expiry(first),
+                    "dlpExpiryLast": dlp_expiry(vps[-1]) if vps else None, "daysLeft": None if left is None else round(left),
+                    "state": state(left)})
+
+    summary = {c["case_id"]: c for c in cases}
+    overdue, due_soon, met, done = [], 0, 0, 0
+    for cid, k in clocks.items():
+        if k["doneAt"]:
+            done += 1
+            met += parse(k["doneAt"]) <= parse(k["dueAt"])
+            continue
+        if summary[cid]["status"] not in OPEN:
+            continue
+        left = days_between(ctx.now, k["dueAt"])
+        if left < 0:
+            c = summary[cid]
+            overdue.append({"caseId": cid, "unitId": c["unit_id"], "summary": c.get("summary") or "", "status": c["status"],
+                            "dueAt": k["dueAt"], "daysOverdue": int(-left) + (1 if -left % 1 else 0)})
+        elif left <= 7:
+            due_soon += 1
+    return {
+        "dlpMonths": config.DLP_MONTHS,
+        "repairDays": config.REPAIR_DAYS_FROM_NOTICE,
+        "dlp": dlp,
+        "overdue": sorted(overdue, key=lambda o: -o["daysOverdue"]),
+        "dueSoon": due_soon,
+        "onTimeRate": met / done if done else 0,
+        "repaired": done,
+    }
+
+
 def satisfaction(ctx) -> dict:
     """Buyer ratings (1-5) given after sign-off: average, spread, response rate, per category and latest comments."""
     rated = [dict(r) for r in ctx.conn.execute(
@@ -67,9 +148,9 @@ def satisfaction(ctx) -> dict:
     }
 
 
-def build_analytics(ctx, issue_rows: list[dict]) -> dict:
+def build_analytics(ctx, issue_rows: list[dict], clocks: dict[str, dict] | None = None) -> dict:
     cases = [dict(r) for r in ctx.conn.execute(
-        "SELECT case_id, unit_id, category, status, urgency, reopen_count, created_at, closed_at FROM cases")]
+        "SELECT case_id, unit_id, category, status, urgency, reopen_count, summary, created_at, closed_at FROM cases")]
     for c in cases:
         c["category"] = c["category"] if c["category"] in config.CATEGORY_LABEL else "other"
     label = config.CATEGORY_LABEL
@@ -152,4 +233,5 @@ def build_analytics(ctx, issue_rows: list[dict]) -> dict:
         "insight": insight,
         "unitStats": list(unit_stats.values()),
         "satisfaction": satisfaction(ctx),
+        "statutory": statutory(ctx, cases, clocks or {}),
     }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PhotoThumb } from "@/components/photo";
+import { ReviewPanel } from "@/components/review-panel";
 import { PageTitle, Panel } from "@/components/sdp-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { decideApproval } from "@/lib/api";
@@ -19,11 +20,24 @@ export default function Approvals() {
   const issues = useDemo((s) => s.systemicIssues);
   const pending = useMemo(() => approvals.filter((a) => a.status === "pending").reverse(), [approvals]);
   const decided = useMemo(() => approvals.filter((a) => a.status !== "pending").reverse(), [approvals]);
+  const held = useMemo(() => cases.filter((c) => c.status === "PENDING_REVIEW"), [cases]);
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageTitle title="Approvals" sub="Extra inspection requests raised by the Recurrence Agent. The agent recommends; SDP staff decide." />
-      {pending.length === 0 && (
+      <PageTitle title="Approvals" sub="Cases the AI agents want a person to decide: held for review when unsure, and extra inspection requests." />
+      {held.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-xl font-semibold">Held for review · {held.length}</h2>
+          <p className="mb-4 text-base text-zinc-600">An AI agent was not confident enough to continue, so it paused these cases. Approve to let the case carry on, or reject it.</p>
+          <div className="space-y-6">
+            {held.map((c) => (
+              <ReviewPanel key={c.id} c={c} showCase />
+            ))}
+          </div>
+        </div>
+      )}
+      {pending.length > 0 && held.length > 0 && <h2 className="mb-3 text-xl font-semibold">Extra inspection requests · {pending.length}</h2>}
+      {pending.length === 0 && held.length === 0 && (
         <Panel>
           <div className="py-8 text-center">
             <ShieldCheck className="mx-auto size-8 text-zinc-300" />

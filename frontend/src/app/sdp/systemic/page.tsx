@@ -20,7 +20,7 @@ export default function SystemicIssues() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <PageTitle title="Systemic issues" sub="Recurring or clustered defects the agents detected — tracked as business issues, not just tickets." />
+      <PageTitle title="Systemic Issues" sub="Recurring or clustered defects the agents detected — tracked as business issues, not just tickets." />
       <div className="grid gap-4 md:grid-cols-2">
         {list.map((si) => (
           <Panel key={si.id}>

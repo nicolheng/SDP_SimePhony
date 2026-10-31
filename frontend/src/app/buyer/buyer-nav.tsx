@@ -15,7 +15,7 @@ export function BuyerNav() {
       items={[
         { href: "/buyer", label: "Home", icon: <Home className="size-5" /> },
         { href: "/buyer/report", label: "Report", icon: <PlusCircle className="size-5" /> },
-        { href: "/buyer/cases", label: "My defects", icon: <ClipboardList className="size-5" />, badge: action },
+        { href: "/buyer/cases", label: "My Defects", icon: <ClipboardList className="size-5" />, badge: action },
         { href: "/buyer/inbox", label: "Inbox", icon: <Bell className="size-5" /> },
       ]}
     />

@@ -24,7 +24,7 @@ const TIPS = [
   { icon: MapPin, text: "Say which room and where (e.g. ceiling above the wardrobe)." },
 ];
 
-const SHOWN: CaseStatus[] = ["SUBMITTED", "INFO_NEEDED", "VISIT_SCHEDULED", "VALID", "INVALID", "REPAIR_BOOKED", "PENDING_SIGNOFF", "CLOSED", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION"];
+const SHOWN: CaseStatus[] = ["SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VISIT_SCHEDULED", "VALID", "INVALID", "REPAIR_BOOKED", "PENDING_SIGNOFF", "CLOSED", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION"];
 
 export default function Manual() {
   return (

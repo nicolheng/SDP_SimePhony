@@ -1,11 +1,11 @@
 "use client";
 import { Loader2, Star } from "lucide-react";
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { rateRepair } from "@/lib/api";
 import { useOffline } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Overlay } from "./overlay";
 
 export const STAR_LABEL = ["", "Very unhappy", "Unhappy", "Okay", "Happy", "Very happy"];
 
@@ -39,8 +39,8 @@ export function RatingDialog({ caseId, onDone }: { caseId: string; onDone: () =>
     }
   }
 
-  return createPortal(
-    <div role="dialog" aria-modal="true" aria-labelledby="rating-title" className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-4">
+  return (
+    <Overlay label="Rate the repair" className="grid place-items-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
         <h2 id="rating-title" className="text-center text-lg font-semibold">
           How happy are you with the repair?
@@ -74,7 +74,6 @@ export function RatingDialog({ caseId, onDone }: { caseId: string; onDone: () =>
           Not now
         </button>
       </div>
-    </div>,
-    document.body,
+    </Overlay>
   );
 }

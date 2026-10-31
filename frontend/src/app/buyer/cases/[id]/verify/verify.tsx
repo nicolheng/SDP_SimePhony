@@ -25,7 +25,7 @@ export function VerifyRepair() {
   const [rating, setRating] = useState(false);
   const offline = useOffline();
 
-  if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
+  if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
   const g = c.verificationGuide;
   const original = c.photos.find((p) => p.kind === "original");
   const repair = [...c.photos].reverse().find((p) => p.kind === "repair");

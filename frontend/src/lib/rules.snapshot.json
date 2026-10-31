@@ -1,5 +1,8 @@
 {
   "gracePeriodDays": 30,
+  "dlpMonths": 24,
+  "repairDaysFromNotice": 30,
+  "dlpExpiringDays": 90,
   "signoffPeriodDays": 14,
   "signoffReminderDaysBefore": 3,
   "occurrenceThreshold": 3,

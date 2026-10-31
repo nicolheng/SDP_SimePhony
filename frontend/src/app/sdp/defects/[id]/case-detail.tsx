@@ -9,12 +9,14 @@ import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { PhotoThumb } from "@/components/photo";
 import { Stars } from "@/components/rating";
+import { RepairClockBadge } from "@/components/repair-clock";
+import { ReviewPanel } from "@/components/review-panel";
 import { Panel } from "@/components/sdp-ui";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { developerSignOff } from "@/lib/api";
 import { CATEGORY_LABEL, getTechnician, getUnit, SDP_STAFF, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
-import { useOffline } from "@/lib/store";
+import { useDemo, useOffline } from "@/lib/store";
 
 export function SdpCaseDetail() {
   const id = useCaseId();
@@ -22,6 +24,7 @@ export function SdpCaseDetail() {
   const events = useCaseEvents(id);
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
+  const now = useDemo((s) => s.now);
   if (!c) return <p className="text-base text-zinc-500">Case {id} not found.</p>;
   const unit = getUnit(c.unitId);
   const tech = getTechnician(c.technicianId);
@@ -37,6 +40,8 @@ export function SdpCaseDetail() {
     ["Repair", c.repairSlot ? fmtDateTime(c.repairSlot) : "—"],
     ["Occurrence in unit", c.occurrence],
     ["Reopened", `${c.reopenCount}×`],
+    ...(c.repairClock ? ([["30-day repair clock", <RepairClockBadge key="clock" c={c} now={now} className="text-sm" />]] as [string, React.ReactNode][]) : []),
+    ...(unit.dlpExpiry ? ([["DLP ends", fmtDate(`${unit.dlpExpiry}T12:00:00+08:00`)]] as [string, React.ReactNode][]) : []),
     ...(c.rating
       ? ([["Buyer rating", <span key="r" className="inline-flex items-center gap-2"><Stars value={c.rating.stars} /> {c.rating.stars}/5</span>]] as [string, React.ReactNode][])
       : []),
@@ -118,6 +123,7 @@ export function SdpCaseDetail() {
         </div>
 
         <div className="space-y-6">
+          {c.status === "PENDING_REVIEW" && <ReviewPanel c={c} />}
           {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && (
             <Panel title="Developer verification">
               <p className="text-base text-zinc-700">

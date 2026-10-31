@@ -6,6 +6,7 @@ import sqlite3
 import db
 
 from . import config
+from .timeutil import add_days, days_between, demo_now, parse
 
 # schema.sql is the source of truth; these definitions only backfill older databases.
 CASE_COLUMNS = {
@@ -28,6 +29,7 @@ CASE_COLUMNS = {
     "buyer_rated_at": "TEXT",
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
+UNIT_COLUMNS = {"vp_date": "TEXT"}  # vacant possession date; the defect liability period runs from it
 ASSIGNMENT_COLUMNS = {"job": "TEXT"}  # inspection visit | detailed inspection | repair
 
 INDEXES = (
@@ -101,6 +103,43 @@ def _infer_assignment_jobs(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('assignment_jobs_inferred', '1')")
 
 
+def _repair_days(n: int) -> int:
+    """Seeded repair time for historical case H-<n>: mostly 4-22 days, about 1 in 7 past the 30-day limit (33-47)."""
+    return 33 + n % 15 if n % 7 == 3 else 4 + (n * 7) % 19
+
+
+def _spread_seed_repair_times(conn: sqlite3.Connection) -> None:
+    """seed.db repairs every historical case exactly 5 days after the report, so the 30-day repair clock showed 100%
+    on time. Once, give closed history cases varied repair times (some late) and move the later milestones
+    (sign-offs, closing, their events) after the repair, keeping each case's own gap between repair and closing."""
+    if conn.execute("SELECT 1 FROM app_meta WHERE key = 'seed_repair_times_spread'").fetchone():
+        return
+    now = demo_now(conn)
+    rows = conn.execute(
+        """SELECT case_id, created_at, repaired_at, closed_at FROM cases
+           WHERE case_id GLOB 'H-[0-9]*' AND status = 'CLOSED' AND COALESCE(reopen_count, 0) = 0
+             AND repaired_at IS NOT NULL AND closed_at IS NOT NULL
+             AND ABS(julianday(repaired_at) - julianday(created_at) - 5) < 0.01""").fetchall()
+    for r in rows:
+        repaired = add_days(r["created_at"], _repair_days(int(r["case_id"][2:])))
+        closed = add_days(repaired, max(1.0, days_between(r["repaired_at"], r["closed_at"])))
+        if parse(closed) >= parse(now):
+            continue  # recent history: keep it as seeded rather than close it in the future
+        cid = r["case_id"]
+        conn.execute(
+            """UPDATE cases SET repaired_at = ?, closed_at = ?,
+                   buyer_signed_at = CASE WHEN buyer_signed_at IS NULL THEN NULL ELSE ? END,
+                   developer_signed_at = CASE WHEN developer_signed_at IS NULL THEN NULL ELSE ? END
+               WHERE case_id = ?""", (repaired, closed, closed, closed, cid))
+        conn.execute("UPDATE case_events SET created_at = ? WHERE case_id = ? AND type IN ('repair.done', 'verification.requested')",
+                     (repaired, cid))
+        conn.execute("""UPDATE case_events SET created_at = ? WHERE case_id = ?
+                        AND type IN ('verification.completed', 'signoff.completed', 'case.closed')""", (closed, cid))
+        conn.execute("UPDATE verifications SET created_at = ?, completed_at = CASE WHEN completed_at IS NULL THEN NULL ELSE ? END WHERE case_id = ?",
+                     (repaired, closed, cid))
+    conn.execute("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('seed_repair_times_spread', '1')")
+
+
 def reset_demo() -> None:
     """Reset demo: copy seed.db over the live DB, delete uploaded photos, and re-apply this migration."""
     db.reset_db()
@@ -116,6 +155,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     """Backfill schema.sql columns on old databases, then repair demo seed data."""
     _add_columns(conn, "cases", CASE_COLUMNS)
     _add_columns(conn, "technicians", TECHNICIAN_COLUMNS)
+    _add_columns(conn, "units", UNIT_COLUMNS)
     _add_columns(conn, "assignment_history", ASSIGNMENT_COLUMNS)
     conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
     for statement in INDEXES:
@@ -134,9 +174,14 @@ def migrate(conn: sqlite3.Connection) -> None:
             (s["technician_id"], s["name"], s["email"], json.dumps(s["skills"]), json.dumps(s["blocks"]), s["company"]),
         )
 
+    # Demo vacant possession dates, handed over block by block (seed.db has none).
+    for block, vp in config.DEMO_VP_DATES.items():
+        conn.execute("UPDATE units SET vp_date = ? WHERE block = ? AND vp_date IS NULL", (vp, block))
+
     # Seeded cases: the technician on a case with a verdict did the inspection.
     conn.execute("UPDATE cases SET inspector_id = technician_id WHERE inspector_id IS NULL AND verdict_at IS NOT NULL")
     _repair_seed_data(conn)
 
     # Demo clock runs on real time; "Skip days" adds to this offset.
     conn.execute("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('clock_offset_days', '0')")
+    _spread_seed_repair_times(conn)

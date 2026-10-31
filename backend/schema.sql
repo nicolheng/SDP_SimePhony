@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS units (
     block       TEXT NOT NULL,             -- e.g. A, B, C
     floor       INTEGER NOT NULL,          -- e.g. 12
     stack       TEXT NOT NULL,             -- e.g. 08
-    contractor  TEXT                       -- e.g. Pembinaan Jaya
+    contractor  TEXT,                      -- e.g. Pembinaan Jaya
+    vp_date     TEXT                       -- vacant possession date (YYYY-MM-DD); the DLP runs from it
 );
 
 CREATE TABLE IF NOT EXISTS buyers (

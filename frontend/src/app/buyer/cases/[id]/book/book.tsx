@@ -32,7 +32,7 @@ export function BookRepair() {
       .catch((e: Error) => setLoadError(e.message));
   }, [id, now, bookings]);
 
-  if (!c) return <MobileHeader title="Case not found" back="/buyer/cases" />;
+  if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
   const plan = REPAIR_PLAN[c.category];
   const blocks = repairBlocks(plan.hours);
   const chosen = options?.find((o) => o.start === start);

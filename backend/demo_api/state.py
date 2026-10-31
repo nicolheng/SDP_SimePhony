@@ -3,8 +3,10 @@ import json
 import re
 from pathlib import Path
 
+import tools
+
 from . import agents, config
-from .analytics import OPEN, build_analytics
+from .analytics import OPEN, build_analytics, dlp_expiry, repair_clock
 from .timeutil import local_day, norm, parse
 from .workflow import UPLOADS_DIR, Ctx, signoff_deadline
 
@@ -83,6 +85,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
     unit_of = {r["case_id"]: r["unit_id"] for r in rows("SELECT case_id, unit_id FROM cases")}
     links = group(rows("SELECT * FROM case_links ORDER BY created_at"), "case_id")
     assignments = group(rows("SELECT * FROM assignment_history ORDER BY created_at, assignment_id"), "case_id")
+    reopened_at = {r["case_id"]: r["at"] for r in rows("SELECT case_id, MAX(created_at) AS at FROM case_events WHERE type = 'case.reopened' GROUP BY case_id")}
+    clocks: dict[str, dict] = {}
 
     def photo_url(path: str) -> str | None:
         if not path:
@@ -167,6 +171,15 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             # Past seeded cases; open H- cases (e.g. still awaiting sign-off) stay in the active lists.
             "historical": cid.startswith("H-") and status not in OPEN,
         }
+        clock = repair_clock(r, reopened_at.get(cid))
+        if clock:
+            c["repairClock"] = clocks[cid] = clock
+        if status == "PENDING_REVIEW":
+            held = tools.review_request(conn, cid) or {}
+            score = held.get("confidence_score")
+            c["review"] = {"agent": held.get("agent") or "AI agent", "reason": held.get("message") or "An AI agent was unsure and asked a person to check.",
+                           "confidence": score if isinstance(score, (int, float)) else None,
+                           "previousStatus": held.get("previous_status") or "SUBMITTED", "at": norm(held.get("at"))}
         if cid in briefs:
             b = _json(briefs[cid]["brief"], None)
             if isinstance(b, dict):
@@ -265,7 +278,7 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
         ],
         "seq": {"case": 0, "event": 0, "si": 0},
         "reference": reference(ctx),
-        "analytics": build_analytics(ctx, issue_rows),
+        "analytics": build_analytics(ctx, issue_rows, clocks),
     }
 
 
@@ -274,7 +287,8 @@ def reference(ctx: Ctx) -> dict:
     Business rules are not here: the web app reads them once from GET /api/rules."""
     return {
         "project": config.PROJECT_NAME,
-        "units": [{"id": u["unit_id"], "block": u["block"], "floor": u["floor"], "stack": u["stack"], "contractor": u["contractor"]} for u in ctx.units.values()],
+        "units": [{"id": u["unit_id"], "block": u["block"], "floor": u["floor"], "stack": u["stack"], "contractor": u["contractor"],
+                   "vpDate": u.get("vp_date"), "dlpExpiry": dlp_expiry(u.get("vp_date"))} for u in ctx.units.values()],
         "buyers": [{"id": b["buyer_id"], "name": b["name"], "email": b["email"], "unitId": b["unit_id"]}
                    for b in ctx.conn.execute("SELECT buyer_id, name, email, unit_id FROM buyers")],
         "sdpStaff": {"name": config.SDP_STAFF_NAME, "title": config.SDP_STAFF_TITLE, "email": config.SDP_STAFF_EMAIL},

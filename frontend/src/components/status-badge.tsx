@@ -1,9 +1,9 @@
-import { STATUS_META, TONE_CLASS } from "@/lib/status";
+import { statusMeta, TONE_CLASS } from "@/lib/status";
 import type { CaseStatus, Urgency } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function StatusBadge({ status, buyer, className }: { status: CaseStatus; buyer?: boolean; className?: string }) {
-  const m = STATUS_META[status];
+  const m = statusMeta(status);
   return (
     <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap", TONE_CLASS[m.tone], className)}>
       {buyer ? m.buyer : m.label}

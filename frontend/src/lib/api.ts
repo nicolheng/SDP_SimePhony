@@ -75,6 +75,11 @@ export async function developerSignOff(caseId: string) {
   await apiAction(`/api/cases/${caseId}/developer-signoff`);
 }
 
+/** Approve or reject a case an AI agent held for a person to check (PENDING_REVIEW). */
+export async function decideReview(caseId: string, approve: boolean, note: string) {
+  await apiAction(`/api/cases/${caseId}/review-decision`, { approve, note });
+}
+
 export async function decideApproval(approvalId: string, approve: boolean) {
   await apiAction(`/api/approvals/${approvalId}/decision`, { approve });
 }

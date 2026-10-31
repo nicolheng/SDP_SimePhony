@@ -92,35 +92,18 @@ def approve_pending_review(case: dict, test_case: str) -> dict:
         return case
 
     import db
-    import tools
     from demo_api import workflow
 
-    ai_mode = os.environ.get("USE_AI_AGENTS", "")
-    try:
-        with db.get_conn() as conn:
-            current = workflow.load_case(workflow.Ctx(conn), case["case_id"])
-            if current["status"] != "PENDING_REVIEW":
-                return current
-            conn.execute(
-                "UPDATE cases SET status = 'SUBMITTED' WHERE case_id = ? AND status = 'PENDING_REVIEW'",
-                (case["case_id"],),
-            )
-            tools._emit(
-                conn,
-                case["case_id"],
-                "case.review_approved",
-                "SDP staff approved the case after reviewing the AI recommendation.",
-                decided_by="Demo SDP staff",
-            )
-            # The demo's human reviewer makes the routing decision using the rules-based path.
-            os.environ["USE_AI_AGENTS"] = "false"
-            ctx = workflow.Ctx(conn)
-            workflow._continue_new_case(ctx, case["case_id"])
-            approved = workflow.load_case(ctx, case["case_id"])
-    finally:
-        os.environ["USE_AI_AGENTS"] = ai_mode
+    # The same action as Approve in the SDP console (POST /api/cases/{id}/review-decision): the case resumes from
+    # the held step, with rules-based routing so it isn't held again.
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn)
+        if workflow.load_case(ctx, case["case_id"])["status"] != "PENDING_REVIEW":
+            return workflow.load_case(ctx, case["case_id"])
+        workflow.decide_review(ctx, case["case_id"], True, "")
+        approved = workflow.load_case(ctx, case["case_id"])
 
-    print(f"      SDP: approved human review for {test_case}; continued with rules-based routing.")
+    print(f"      SDP: approved human review for {test_case}; the case continued to {approved['status']}.")
     return approved
 
 

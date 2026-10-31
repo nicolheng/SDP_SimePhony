@@ -1,11 +1,11 @@
 "use client";
 import { Camera, ImageIcon, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { fmtDateTime } from "@/lib/dates";
 import type { Photo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CameraCapture, canUseCamera } from "./camera-capture";
+import { Overlay } from "./overlay";
 
 const KIND_LABEL: Record<Photo["kind"], string> = {
   original: "Original",
@@ -27,16 +27,15 @@ export function PhotoViewer({ src, caption, onClose }: { src: string; caption?: 
       document.body.style.overflow = overflow;
     };
   }, [onClose]);
-  return createPortal(
-    <div role="dialog" aria-modal="true" aria-label="Photo" onClick={onClose} className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 p-4">
+  return (
+    <Overlay label="Photo" onClick={onClose} className="flex flex-col items-center justify-center bg-black/90 p-4">
       <button type="button" onClick={onClose} className="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/15 text-white" aria-label="Close photo">
         <X className="size-5" />
       </button>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={caption ?? "Photo"} className="max-h-[85vh] max-w-full rounded-lg object-contain" />
+      <img src={src} alt={caption ?? "Photo"} className="max-h-[85%] max-w-full rounded-lg object-contain" />
       {caption && <p className="mt-3 text-sm text-white/80">{caption}</p>}
-    </div>,
-    document.body,
+    </Overlay>
   );
 }
 
