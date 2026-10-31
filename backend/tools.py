@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from email.message import EmailMessage
+from email.utils import formataddr
 from pathlib import Path
 from typing import Optional
 
@@ -39,6 +40,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import db
+import email_render
 if str(db.ROOT) not in sys.path:
     sys.path.insert(0, str(db.ROOT))
 from demo_api import config
@@ -802,8 +804,8 @@ def check_escalation(case_id: str) -> dict:
     cluster = stack_unit_count >= config.STACK_CLUSTER_THRESHOLD
     reasons = []
     if repeated:
-        reasons.append(f"{label} reported in {case['unit_id']} {occurrence} times ({len(same_unit)} earlier case(s), "
-                       f"and this case has been reopened {reopens}×).")
+        reopened = f", and this case has been reopened {reopens}×" if reopens else ""
+        reasons.append(f"{label} reported in {case['unit_id']} {occurrence} times ({len(same_unit)} earlier case(s){reopened}).")
     if cluster:
         reasons.append(f"{stack_unit_count} units in stack {unit['block']}-{unit['stack']} have the same problem: "
                        f"{', '.join([case['unit_id'], *stack_units])}.")
@@ -1083,7 +1085,9 @@ def escalate_booking(case_id: str, reason: str) -> dict:
         _emit(conn, case_id, "booking.escalated", f"No technician available: {reason}. Flagged to SDP for manual booking.")
     email = send_email(
         os.getenv("SDP_STAFF_EMAIL") or config.SDP_STAFF_EMAIL, f"[Action needed] No technician available for {case_id}",
-        f"Case {case_id} (unit {case['unit_id']}, {case['category'] or 'uncategorised'}) needs a manual booking.\n\nReason: {reason}",
+        f"No qualified technician is free for case {case_id} at {case['unit_id']} "
+        f"({config.CATEGORY_LABEL.get(case['category'], 'uncategorised')}: {case['summary'] or 'no summary yet'}), "
+        f"so the TriageAgent could not book it.\n\nReason: {reason}\n\nPlease book a technician manually from the SDP console.",
         case_id,
     )
     return {"ok": True, "booking_status": "NEEDS_STAFF", "email_status": email["status"]}
@@ -1179,7 +1183,10 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
               agent="RecurrenceAgent", approval_id=approval_id, issue_id=issue_id)
     email = send_email(
         os.getenv("SDP_STAFF_EMAIL") or config.SDP_STAFF_EMAIL, f"[Approval needed] Extra inspection for {case_id} ({issue_id})",
-        "\n".join(reasons) + f"\n\nApprove or reject: {config.APP_URL}/sdp/approvals#{approval_id}", case_id,
+        f"Approval is needed for case {case_id} at {case['unit_id']} "
+        f"({config.CATEGORY_LABEL.get(case['category'], case['category'])}: {case['summary'] or 'no summary'}) "
+        f"for a detailed inspection.\n\n"
+        "Why:\n" + "\n".join(f"- {r}" for r in reasons)
     )
     return {"ok": True, "approval_id": approval_id, "issue_id": issue_id, "reused_issue": issue is not None, "email_status": email["status"]}
 
@@ -1215,32 +1222,71 @@ def attach_inspection_brief(case_id: str, brief: dict | str) -> dict:
     return {"ok": True, "status": "EXTRA_INSPECTION"}
 
 
+def _email_disabled_reason() -> Optional[str]:
+    """Why emails are only logged (EMAIL_ENABLED=false or no Gmail login), or None when they can be sent."""
+    if os.getenv("EMAIL_ENABLED", "true").lower() != "true":
+        return "EMAIL_ENABLED is false"
+    if not os.getenv("GMAIL_ADDRESS") or not os.getenv("GMAIL_APP_PASSWORD"):
+        return "GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set"
+    return None
+
+
+def _email_context(to: str, case_id: Optional[str]) -> dict:
+    """Who the email is for (name, role) and its case row, for email_render. Empty when the lookup fails."""
+    try:
+        with _connect() as conn:
+            buyer = conn.execute("SELECT name FROM buyers WHERE email = ?", (to,)).fetchone()
+            worker = conn.execute("SELECT name FROM technicians WHERE email = ?", (to,)).fetchone()
+            case = conn.execute("SELECT * FROM cases WHERE case_id = ?", (case_id,)).fetchone() if case_id else None
+    except Exception:
+        return {}
+    if buyer:
+        name, role = buyer["name"], "buyer"
+    elif worker:
+        name, role = worker["name"], "technician"
+    elif to == (os.getenv("SDP_STAFF_EMAIL") or config.SDP_STAFF_EMAIL):
+        name, role = config.SDP_STAFF_NAME, "staff"
+    else:
+        name, role = None, None
+    return {"name": name, "role": role, "case": dict(case) if case else None}
+
+
+def _smtp_send(to: str, subject: str, body: str, case_id: Optional[str] = None) -> Optional[str]:
+    """Send one email via Gmail SMTP, laid out by email_render (sender name, clean subject, HTML + plain text);
+    EMAIL_REDIRECT_TO sends it to the demo inbox instead. Returns None when sent, otherwise the error."""
+    sender = os.getenv("GMAIL_ADDRESS", "")
+    redirect = os.getenv("EMAIL_REDIRECT_TO", "")
+    try:
+        subject, text, html = email_render.render(
+            subject, body, to=to, redirected=bool(redirect) and redirect != to,
+            app_url=os.getenv("FRONTEND_BASE_URL") or config.APP_URL, **_email_context(to, case_id))
+        msg = EmailMessage()
+        msg["From"] = formataddr((os.getenv("EMAIL_FROM_NAME") or "SimePhony Defect Care", sender))
+        msg["To"] = redirect or to
+        msg["Subject"] = subject
+        msg.set_content(text)
+        msg.add_alternative(html, subtype="html")
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
+            smtp.login(sender, os.getenv("GMAIL_APP_PASSWORD", ""))
+            smtp.send_message(msg)
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
 def send_email(to: str, subject: str, body: str, case_id: Optional[str] = None) -> dict:
     """Send an email via Gmail SMTP, always save it to the outbox and record email.sent. Never raises.
     EMAIL_ENABLED=false only logs; EMAIL_REDIRECT_TO sends every email to one demo inbox.
-    Returns {status: "sent" | "logged, not sent", email_id, error}."""
-    sender = os.getenv("GMAIL_ADDRESS", "")
-    password = os.getenv("GMAIL_APP_PASSWORD", "")
-    redirect = os.getenv("EMAIL_REDIRECT_TO", "")
-    status, error = "logged, not sent", None
-
-    if os.getenv("EMAIL_ENABLED", "true").lower() != "true":
-        error = "EMAIL_ENABLED is false"
-    elif not sender or not password:
-        error = "GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set"
-    else:
-        try:
-            msg = EmailMessage()
-            msg["From"] = sender
-            msg["To"] = redirect or to
-            msg["Subject"] = f"[for {to}] {subject}" if redirect and redirect != to else subject
-            msg.set_content(body)
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
-                smtp.login(sender, password)
-                smtp.send_message(msg)
-            status = "sent"
-        except Exception as e:
-            error = f"{type(e).__name__}: {e}"
+    Inside a web request (use_connection) the email is only queued: routes.py sends it with
+    deliver_queued_emails after the commit, so a rolled-back request sends nothing.
+    Returns {status: "sent" | "queued" | "logged, not sent", email_id, error}."""
+    status, error = "logged, not sent", _email_disabled_reason()
+    if error is None:
+        if _shared_conn.get() is not None:
+            status = "queued"
+        else:
+            error = _smtp_send(to, subject, body, case_id)
+            status = "sent" if error is None else "logged, not sent"
 
     email_id = None
     try:
@@ -1255,6 +1301,25 @@ def send_email(to: str, subject: str, body: str, case_id: Optional[str] = None) 
         email_id = None
         error = f"{error + '; ' if error else ''}outbox write failed: {e}"
     return {"status": status, "email_id": email_id, "error": error}
+
+
+def deliver_queued_emails() -> int:
+    """Send the outbox rows that web requests queued (run after the commit, in the background).
+    Each row is claimed first, so two passes never send the same email. Returns how many were sent."""
+    with db.get_conn() as conn:
+        queued = conn.execute("SELECT email_id, to_addr, subject, body, case_id FROM outbox WHERE status = 'queued' ORDER BY email_id").fetchall()
+    sent = 0
+    for row in queued:
+        with db.get_conn() as conn:
+            claimed = conn.execute("UPDATE outbox SET status = 'sending' WHERE email_id = ? AND status = 'queued'", (row["email_id"],)).rowcount
+        if not claimed:
+            continue
+        error = _email_disabled_reason() or _smtp_send(row["to_addr"], row["subject"], row["body"], row["case_id"])
+        with db.get_conn() as conn:
+            conn.execute("UPDATE outbox SET status = ?, error = ? WHERE email_id = ?",
+                         ("sent" if error is None else "logged, not sent", error, row["email_id"]))
+        sent += error is None
+    return sent
 
 
 @_returns_errors

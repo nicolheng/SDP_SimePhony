@@ -201,7 +201,7 @@ export interface Email {
   to: string;
   subject: string;
   body: string;
-  status: "sent" | "logged, not sent";
+  status: "sent" | "queued" | "logged, not sent";
   at: string;
 }
 

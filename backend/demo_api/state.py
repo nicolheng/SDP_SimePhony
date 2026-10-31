@@ -218,7 +218,7 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
         m = re.match(r"^(B-\d+)@", to or "")
         outbox.append({
             "id": _num(r["email_id"]), "caseId": r["case_id"], "to": buyer_email.get(m.group(1), to) if m else to,
-            "subject": r["subject"], "body": r["body"], "status": "sent" if r["status"] == "sent" else "logged, not sent", "at": norm(r["created_at"]),
+            "subject": r["subject"], "body": r["body"], "status": r["status"] if r["status"] in ("sent", "queued") else "queued" if r["status"] == "sending" else "logged, not sent", "at": norm(r["created_at"]),
         })
 
     approvals_rows = rows("SELECT * FROM approvals ORDER BY created_at")

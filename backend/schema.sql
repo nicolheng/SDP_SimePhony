@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS outbox (
     to_addr    TEXT NOT NULL,
     subject    TEXT NOT NULL,
     body       TEXT NOT NULL,
-    status     TEXT NOT NULL,              -- sent | logged, not sent
+    status     TEXT NOT NULL,              -- sent | queued | sending | logged, not sent
     error      TEXT,
     created_at TEXT NOT NULL               -- ISO 8601
 );
