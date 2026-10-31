@@ -3,7 +3,7 @@
     python scripts/web_flow_live.py              # USE_AI_AGENTS=all, real Ollama (qwen2.5:7b + llava-llama3)
     python scripts/web_flow_live.py --off        # the rule-based stand-ins, for comparison
 
-Runs WEB_TEST_PLAN.md TC1 (door, full path), TC2 (repeat leak -> SDP approves -> brief), TC3 (hand-over) and
+Runs documentation/hackathon/WEB_TEST_PLAN.md TC1 (door, full path), TC2 (repeat leak -> SDP approves -> brief), TC3 (hand-over) and
 TC4 (reopen -> revisit) on a temporary copy of data/seed.db; the live DB, uploads/ and Gmail are untouched.
 After each click it prints the case status, the buyer's new messages and the agents' new trace steps.
 """
