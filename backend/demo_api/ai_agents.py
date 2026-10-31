@@ -36,6 +36,25 @@ def enabled(name: str) -> bool:
     return name in {x.strip() for x in value.split(",")}
 
 
+def warmup_ollama_models() -> None:
+    """Load configured Ollama models with a minimal completion before live requests use them."""
+    if not any(enabled(name) for name in AGENTS):
+        log.info("Ollama warmup skipped because USE_AI_AGENTS is disabled")
+        return
+
+    from agents.simephony.llm_client import get_client, get_models
+
+    client = get_client()
+    vision_model, text_model = get_models()
+    for model in dict.fromkeys((text_model, vision_model)):
+        client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Reply OK."}],
+            max_tokens=1,
+            temperature=0,
+        )
+
+
 def _run(ctx, name: str, ai, fallback, background_args: dict | None = None):
     """Run inline, defer after commit, or use the rule-based result when disabled or unavailable."""
     if not enabled(name):

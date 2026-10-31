@@ -20,6 +20,7 @@ the action (wrong status, technician busy, outside grace period), so an agent ca
 import base64
 import functools
 import json
+import logging
 import os
 import re
 import smtplib
@@ -49,6 +50,7 @@ RULES_PATH = config.RULES_PATH
 PHOTO_KINDS = ("original", "reopen", "verdict", "repair", "verification")
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 SDP_SIGNER = f"{config.SDP_STAFF_NAME}, {config.SDP_STAFF_TITLE}"
+log = logging.getLogger("simephony.tools")
 
 
 class ToolError(Exception):
@@ -425,6 +427,25 @@ def _load_embedder():
         return SentenceTransformer(EMBED_MODEL)
     except Exception:
         return None
+
+
+def warmup_ai_models() -> bool:
+    """Load the sentence-transformers model before requests need embeddings."""
+    if os.getenv("EMBEDDINGS_ENABLED", "true").lower() != "true":
+        log.info("Embedder warmup skipped because EMBEDDINGS_ENABLED is false")
+        return False
+    try:
+        model = _load_embedder()
+        if model is None:
+            _load_embedder.cache_clear()
+            log.warning("Embedder unavailable during startup; it will retry lazy loading on first use")
+            return False
+        model.encode(["SimePhony startup warmup"], convert_to_numpy=True)
+        return True
+    except Exception:
+        _load_embedder.cache_clear()
+        log.exception("Embedder warmup failed; it will retry lazy loading on first use")
+        return False
 
 
 def _embed(text: str) -> Optional[np.ndarray]:
