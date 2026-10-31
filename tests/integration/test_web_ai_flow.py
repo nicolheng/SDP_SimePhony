@@ -144,6 +144,36 @@ def test_agent_fallback_is_saved_and_returned_in_case_events(monkeypatch):
     assert fallback_events[0]["fallbackReason"] == "agent service unavailable"
 
 
+def test_invalid_json_twice_falls_back_without_saving_raw_output(fake_llm, monkeypatch):
+    import db
+    from demo_api import ai_agents, state, workflow
+
+    monkeypatch.setenv("USE_AI_AGENTS", "false")
+    case_id = _report()
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+    raw_output = "not valid JSON -- do not persist"
+    fake_llm.responses.extend([raw_output, raw_output])
+
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn)
+        case = workflow.load_case(ctx, case_id)
+        result = ai_agents.intake(ctx, case["description"], None, True, case_id)
+        response_state = state.build_state(ctx, "http://testserver")
+
+    assert len(fake_llm.calls) == 2
+    assert raw_output not in json.dumps(result)
+    fallback = next(event for event in _trace(case_id) if event.get("data", {}).get("fallback_used"))
+    assert fallback["data"]["fallback_used"] is True
+    assert fallback["data"]["reason"] == "LLM JSON validation failed after 1 retry"
+    visible_fallback = next(
+        event for event in response_state["events"]
+        if event["caseId"] == case_id and event["fallbackUsed"]
+    )
+    assert visible_fallback["fallbackReason"] == "LLM JSON validation failed after 1 retry"
+    assert raw_output not in json.dumps(_case(case_id))
+    assert raw_output not in json.dumps(_trace(case_id))
+
+
 def test_switch_off_uses_the_stand_ins(fake_llm, monkeypatch):
     monkeypatch.delenv("USE_AI_AGENTS", raising=False)
     case_id = _report()

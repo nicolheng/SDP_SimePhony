@@ -1,4 +1,3 @@
-import json
 import sys
 import os
 
@@ -11,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from tools import find_similar_cases
 
 from .llm_client import client, MODEL_TEXT
+from .structured_output import StructuredOutputError, chat_json
 
 # rules.yaml: escalation.occurrence_threshold = 3
 _OCCURRENCE_THRESHOLD = 3
@@ -71,9 +71,21 @@ def similar_defect_node(state: dict) -> dict:
     ]
 
     try:
-        response = client.chat.completions.create(model=MODEL_TEXT, messages=messages, temperature=0.1)
-        raw_text = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
-        ai_reason = json.loads(raw_text).get("cluster_reason", "System detected multiple past cases in the database.")
+        data = chat_json(
+            client,
+            MODEL_TEXT,
+            messages,
+            {
+                "type": "object",
+                "required": ["cluster_reason"],
+                "properties": {"cluster_reason": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            temperature=0.1,
+        )
+        ai_reason = data["cluster_reason"]
+    except StructuredOutputError:
+        raise
     except Exception:
         ai_reason = "System detected multiple past cases in the database."
 

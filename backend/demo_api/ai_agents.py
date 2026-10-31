@@ -55,19 +55,27 @@ def warmup_ollama_models() -> None:
         )
 
 
-def _run(ctx, name: str, ai, fallback, background_args: dict | None = None):
+def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, failure_fallback=None):
     """Run inline, defer after commit, or use the rule-based result when disabled or unavailable."""
     if not enabled(name):
         return fallback()
     if ctx.defer_agents:
         ctx.defer_agent_step(name, **(background_args or {}))
         return fallback()
+    error = None
     try:
         with tools.use_connection(ctx.conn):
-            result = ai()
-        ctx.invalidate()
-        return result
-    except Exception as e:  # never let an agent break the request: use the rule-based stand-in
+            try:
+                result = ai()
+            except Exception as exc:
+                error = exc
+        if error is None:
+            ctx.invalidate()
+            return result
+    except Exception as exc:
+        error = exc
+    if error is not None:
+        e = error
         log.warning("%s agent failed, using the stand-in: %s", name, e)
         print(f"[AI AGENTS] {name} failed, using the stand-in: {e}")
         case_id = (background_args or {}).get("case_id")
@@ -75,6 +83,8 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None):
             _save_fallback(ctx, case_id, name, str(e), type(e).__name__)
         else:
             ctx.pending_agent_fallbacks.append({"step": name, "error_type": type(e).__name__, "reason": str(e)[:500]})
+        if failure_fallback is not None:
+            return failure_fallback()
         return fallback()
 
 
@@ -145,7 +155,11 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
     def ai():
         from agents.simephony.intake import intake_node
         image = _photo_path(ctx, case_id, "original", photo)
-        r = intake_node({"user_description": description, "image_path": image, "decide_only": True})["intake_result"]
+        result = intake_node({"user_description": description, "image_path": image, "decide_only": True})
+        if result.get("_structured_output_error"):
+            from agents.simephony.structured_output import StructuredOutputError
+            raise StructuredOutputError()
+        r = result["intake_result"]
         if r.get("category") in (None, "error"):
             raise RuntimeError(f"intake failed: {r.get('summary')}")
         missing = list(r.get("missing_info") or [])
@@ -196,16 +210,31 @@ def triage(ctx, case: dict, preferred: str | None) -> dict:
 # ---------- RepairEstimateAgent (no stand-in: the category's normal hours apply) ----------
 
 def repair_estimate(ctx, case: dict) -> dict | None:
+    def rule_fallback():
+        from agents.simephony.repair_estimate import repair_estimate_node
+        state = repair_estimate_node({
+            "case_id": case["case_id"],
+            "current_status": case["status"],
+            "intake_result": {"category": case["category"]},
+            "verdict_note": case.get("verdict_note") or "",
+            "reopen_count": case.get("reopen_count") or 0,
+            "_skip_scope_facts": True,
+        })
+        return state["repair_estimate"]
+
     def ai():
         from agents.simephony.repair_estimate import repair_estimate_node
         r = repair_estimate_node({"case_id": case["case_id"], "current_status": case["status"],
                                   "intake_result": {"category": case["category"]},
                                   "verdict_note": case.get("verdict_note") or "",
                                   "reopen_count": case.get("reopen_count") or 0})["repair_estimate"]
+        if r.get("_structured_output_error"):
+            from agents.simephony.structured_output import StructuredOutputError
+            raise StructuredOutputError()
         if r.get("error"):
             raise RuntimeError(r["error"])
         return r
-    return _run(ctx, "estimate", ai, lambda: None, {"case_id": case["case_id"]})
+    return _run(ctx, "estimate", ai, lambda: None, {"case_id": case["case_id"]}, rule_fallback)
 
 
 # ---------- VerificationAgent ----------
@@ -223,6 +252,9 @@ def verification_guide(ctx, case: dict) -> tuple[dict, str | None]:
             "image_path": _photo_path(ctx, case["case_id"], "original"),
             "repair_photo_path": _photo_path(ctx, case["case_id"], "repair")})
         v = state["verification_result"]
+        if v.get("_structured_output_error"):
+            from agents.simephony.structured_output import StructuredOutputError
+            raise StructuredOutputError()
         if v.get("needs_technician_input"):
             return standins.verification_guide(case), f"Photo check: {v['technician_message']} SDP: please check the repair photo before signing off."
         return v["guide"], f"Photo check: {v['assessment']} ({v.get('observations') or 'no notes'})"
@@ -240,11 +272,15 @@ def initial_inspection(ctx, case: dict, verdict_note: str | None, verification: 
     def ai():
         from agents.simephony.initial_inspection import initial_inspection_node
         sim = standins.similar(ctx, case)
-        r = initial_inspection_node({
+        result = initial_inspection_node({
             "case_id": case["case_id"], "unit_id": case["unit_id"], "decide_only": True,
             "intake_result": {"category": case["category"], "urgency": case.get("urgency"), "summary": case.get("summary")},
             "similar_cases_result": {"past_case_count": sim["occurrence"] - 1, "stack_units": sim["stack_units"],
-                                     "timeline": stand["timeline"]}})["initial_inspection_result"]
+                                     "timeline": stand["timeline"]}})
+        if result.get("_structured_output_error"):
+            from agents.simephony.structured_output import StructuredOutputError
+            raise StructuredOutputError()
+        r = result["initial_inspection_result"]
         checklist = [str(x) for x in (r.get("checklist") or []) if str(x).strip()]
         if len(checklist) < 3:
             raise RuntimeError("brief checklist too short")

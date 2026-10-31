@@ -3,6 +3,7 @@ import json
 import re
 import base64
 from .llm_client import client, MODEL_VL
+from .structured_output import StructuredOutputError, chat_json
 
 # ---------------------------------------------------------------------------
 # rules.yaml — SINGLE SOURCE OF TRUTH (mirrored here for prompt enforcement)
@@ -13,6 +14,26 @@ _ALLOWED_CATEGORIES = (
     "electrical", "wall_crack", "structural_crack", "tiles", "flooring",
     "ceiling", "roof", "door_window", "paint", "external_works", "other"
 )
+_INTAKE_SCHEMA = {
+    "type": "object",
+    "required": ["category", "missing_info"],
+    "properties": {
+        "category": {"type": "string", "enum": list(_ALLOWED_CATEGORIES)},
+        "sub_category": {"type": "string"},
+        "location_in_unit": {"type": ["string", "null"]},
+        "summary": {"type": "string"},
+        "urgency": {"type": "string", "enum": ["high", "normal", "low"]},
+        "missing_info": {"type": "array", "items": {"type": "string"}},
+        "follow_up_question": {"type": ["string", "null"]},
+        "preliminary_outcome": {
+            "type": "string",
+        },
+        "mentions_previous_issue": {"type": "boolean"},
+        "mentioned_recurrence_count": {"type": ["integer", "null"]},
+        "mismatch_detected": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
 
 _HIGH_URGENCY_TRIGGERS = (
     "active water leak near electrical fittings",
@@ -163,14 +184,16 @@ def intake_node(state: dict) -> dict:
     ]
 
     try:
-        response = client.chat.completions.create(model=MODEL_VL, messages=messages, temperature=0.0)
-        raw_text = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
-
-        try:
-            parsed_intake = json.loads(raw_text)
-        except json.JSONDecodeError:
-            parsed_intake = {"category": "other", "summary": raw_text, "missing_info": ["AI failed to parse JSON"]}
-
+        parsed_intake = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0)
+    except StructuredOutputError:
+        description = state.get("user_description", "")
+        parsed_intake = {
+            "category": _category_from_keywords(description.lower()) or "other",
+            "summary": description,
+            "missing_info": [],
+            "preliminary_outcome": "VALID_DEFECT",
+        }
+        state["_structured_output_error"] = True
     except Exception as e:
         # Safety net — never let the node crash the workflow.
         print(f"⚠️ Vision model failed: {e}")

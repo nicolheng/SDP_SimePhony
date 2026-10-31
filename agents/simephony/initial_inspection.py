@@ -20,6 +20,7 @@ def send_email(to: str, subject: str, body: str, case_id: str | None = None) -> 
     return backend_tools.send_email(to, subject, body, case_id)
 
 from .llm_client import client, MODEL_TEXT
+from .structured_output import StructuredOutputError, chat_json
 
 # ---------------------------------------------------------------------------
 # rules.yaml constants (mirrored here for prompt enforcement).
@@ -85,13 +86,54 @@ def initial_inspection_node(state: dict) -> dict:
     ]
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_TEXT,
-            messages=messages,
+        inspection_brief_json = chat_json(
+            client,
+            MODEL_TEXT,
+            messages,
+            {
+                "type": "object",
+                "required": ["timeline", "photoComparison", "neighbouringUnits",
+                             "likelyComponents", "checklist"],
+                "properties": {
+                    "timeline": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["at", "text"],
+                            "properties": {"at": {"type": "string"}, "text": {"type": "string"}},
+                            "additionalProperties": False,
+                        },
+                    },
+                    "photoComparison": {"type": "string"},
+                    "neighbouringUnits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["unitId", "cases", "last"],
+                            "properties": {
+                                "unitId": {"type": "string"},
+                                "cases": {"type": "integer"},
+                                "last": {"type": "string"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "likelyComponents": {"type": "array", "items": {"type": "string"}},
+                    "checklist": {"type": "array", "items": {"type": "string"}, "minItems": 3},
+                },
+                "additionalProperties": False,
+            },
             temperature=0.1,
         )
-        raw_text = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
-        inspection_brief_json = json.loads(raw_text)
+    except StructuredOutputError:
+        inspection_brief_json = {
+            "timeline": [{"at": "unknown", "text": "Could not generate timeline"}],
+            "photoComparison": "Check all areas against previous photos.",
+            "neighbouringUnits": [],
+            "likelyComponents": ["General inspection required"],
+            "checklist": ["Verify defect", "Take photos", "Report findings"],
+        }
+        state["_structured_output_error"] = True
     except Exception as e:
         print(f"⚠️ LLM failed to generate brief: {e}")
         inspection_brief_json = {

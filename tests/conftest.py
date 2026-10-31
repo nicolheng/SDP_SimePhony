@@ -62,6 +62,9 @@ class FakeLLM:
             
         combined = (system_msg + " " + user_msg).lower()
 
+        if "safety triage expert" in combined:
+            return json.dumps({"urgency": "normal", "rule": "none"})
+
         # Intake node response
         if "defect intake" in system_msg.lower():
             return json.dumps({
