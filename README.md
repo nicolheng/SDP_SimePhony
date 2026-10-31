@@ -78,6 +78,22 @@ npm run dev
 In the SDP console, **Reset demo** restores the demo data from `data/seed.db`. The buyer app is signed in
 as the demo buyer of unit A-12-08. See [frontend/README.md](frontend/README.md) for a 3-minute demo script.
 
+### Settings
+
+All settings live in `.env`, and [.env.example](.env.example) has the full list. These matter most:
+
+| Setting | What it does |
+|---|---|
+| `USE_AI_AGENTS` | Turns the AI agents on. `true` or `all` runs every agent, `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. |
+| `LLM_BASE_URL`, `LLM_API_KEY` | The AI server. Defaults to local Ollama. |
+| `MODEL_TEXT`, `MODEL_VL` | The text and vision models. Changing a model only needs this `.env` edit. |
+| `LLM_TIMEOUT_TEXT`, `LLM_TIMEOUT_VISION` | Seconds to wait per attempt before retrying once, then falling back to the rules. Raise these if a slow laptop falls back on normal runs. |
+| `LLM_MAX_TOKENS` | Longest JSON answer a model may write, which stops runaway output. |
+| `EMAIL_ENABLED` | Off in `.env.example`, so emails only go to the `outbox` table. Set it to `true` after adding real Gmail details. |
+| `EMBEDDINGS_ENABLED` | `false` skips the embedding model used to search for similar past cases. |
+
+Restart the backend after changing `.env`.
+
 ## Tests
 
 ```bash
