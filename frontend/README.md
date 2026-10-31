@@ -24,17 +24,19 @@ The app needs the backend running. Start it first:
 ```powershell
 # from the repo root, with the venv active
 cd backend
-uvicorn main:app --port 8001
+python main.py
 ```
 
 - All screens read `GET /api/state` from FastAPI, which reads `data/simephony.db` (refreshed every 3 s and on tab focus).
+- Business rules (grace/sign-off periods, thresholds, category labels, repair plan, slot times) are read once from
+  `GET /api/rules`, which serves `rules.yaml`. 
 - Every action (report, verdict, repair booking, mark repaired, sign-off, reopen, approvals, demo controls) is a POST to
   `backend/demo_api/routes.py`; the backend runs the rules + agent stand-ins (`backend/demo_api/agents.py`, `workflow.py`),
   writes the database, and returns the fresh state.
 - Photos are saved to `uploads/` and served at `http://localhost:8001/uploads/...`.
 - **Reset demo** copies `data/seed.db` over `data/simephony.db`.
 - Backend URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:8001`).
-- If the backend is down, the screens show the built-in demo data (`src/lib/seed.ts`) read-only and the SDP sidebar says
+- If the backend is down, the screens show the built-in demo data (`src/lib/seed.ts`, with the rules snapshot) read-only and the SDP sidebar says
   "Backend offline".
 
 ## Demo script (≈3 min)

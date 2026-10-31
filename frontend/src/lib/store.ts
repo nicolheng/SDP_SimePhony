@@ -3,9 +3,9 @@
 // refreshes every few seconds so other open roles/tabs see changes. If the API can't be reached, the built-in demo
 // data is shown read-only so the screens still render.
 import { useSyncExternalStore } from "react";
-import { applyReference } from "./constants";
+import { applyReference, applyRules } from "./constants";
 import { buildSeed } from "./seed";
-import type { DemoState } from "./types";
+import type { DemoState, Rules } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
 const POLL_MS = 3000;
@@ -58,10 +58,15 @@ export async function apiAction<T extends object = object>(path: string, payload
 }
 
 let inFlight = false;
+let rulesLoaded = false;
 export async function refresh() {
   if (inFlight) return;
   inFlight = true;
   try {
+    if (!rulesLoaded) {
+      applyRules(await apiFetch<Rules>("/api/rules"));
+      rulesLoaded = true;
+    }
     setState((await apiFetch("/api/state")).state);
   } catch (err) {
     apiError = err instanceof Error ? err.message : String(err);

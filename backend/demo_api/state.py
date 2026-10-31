@@ -257,23 +257,12 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
 
 
 def reference(ctx: Ctx) -> dict:
-    """Lookup data the screens show: units and buyers from the database, rules and settings from rules.yaml / config.py."""
+    """Lookup data the screens show: units and buyers from the database, settings from config.py.
+    Business rules are not here: the web app reads them once from GET /api/rules."""
     return {
         "project": config.PROJECT_NAME,
         "units": [{"id": u["unit_id"], "block": u["block"], "floor": u["floor"], "stack": u["stack"], "contractor": u["contractor"]} for u in ctx.units.values()],
         "buyers": [{"id": b["buyer_id"], "name": b["name"], "email": b["email"], "unitId": b["unit_id"]}
                    for b in ctx.conn.execute("SELECT buyer_id, name, email, unit_id FROM buyers")],
         "sdpStaff": {"name": config.SDP_STAFF_NAME, "title": config.SDP_STAFF_TITLE, "email": config.SDP_STAFF_EMAIL},
-        "rules": {
-            "gracePeriodDays": config.GRACE_PERIOD_DAYS,
-            "signoffPeriodDays": config.SIGNOFF_PERIOD_DAYS,
-            "signoffReminderDaysBefore": config.SIGNOFF_REMINDER_DAYS_BEFORE,
-            "occurrenceThreshold": config.OCCURRENCE_THRESHOLD,
-            "stackClusterThreshold": config.STACK_CLUSTER_THRESHOLD,
-            "categoryToSkill": config.CATEGORY_TO_SKILL,
-        },
-        "categoryLabel": config.CATEGORY_LABEL,
-        "repairPlan": config.REPAIR_PLAN,
-        "slotTimes": config.SLOT_TIMES,
-        "slotHours": config.SLOT_HOURS,
     }

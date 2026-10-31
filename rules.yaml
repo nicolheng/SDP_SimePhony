@@ -1,5 +1,5 @@
 
-# Shared business rules — single source of truth for agents and backend.
+# Shared business rules — single source of truth for agents, backend and web app.
 # Changes require a PR and agreement during the contracts session.
 
 category_to_skill:
@@ -40,6 +40,47 @@ urgency:
     - minor hairline crack with no signs of movement
     - superficial scratches
     - minor cosmetic tile defects
+
+# Display names for the categories the web app shows (any other category is shown as "other").
+category_labels:
+  water_leak: Water leak
+  plumbing: Plumbing
+  drainage: Drainage
+  sanitary_fittings: Sanitary fittings
+  electrical: Electrical
+  wall_crack: Wall crack
+  structural_crack: Structural crack
+  tiles: Tiles
+  ceiling: Ceiling
+  door_window: Door / window
+  paint: Paint
+  other: Other
+
+# Who repairs what, and roughly how long it takes. Specialised trades go to subcontractors.
+repair_plan:
+  water_leak: {trade: Waterproofing / Plumbing, by: subcontractor, skills: [waterproofing], hours: 4}
+  structural_crack: {trade: Structural, by: subcontractor, skills: [structural], hours: 8}
+  tiles: {trade: Tiling, by: subcontractor, skills: [tiling], hours: 4}
+  plumbing: {trade: Plumbing, by: technician, skills: [plumbing], hours: 2}
+  drainage: {trade: Plumbing, by: technician, skills: [plumbing], hours: 1.5}
+  sanitary_fittings: {trade: Plumbing, by: technician, skills: [plumbing], hours: 1.5}
+  electrical: {trade: Electrical, by: technician, skills: [electrical], hours: 1.5}
+  wall_crack: {trade: Civil / Painting, by: technician, skills: [civil, painting], hours: 2}
+  ceiling: {trade: Ceiling / Civil, by: technician, skills: [civil], hours: 3}
+  door_window: {trade: Carpentry / Glazing, by: technician, skills: [carpentry, glazing], hours: 2}
+  paint: {trade: Painting, by: technician, skills: [painting], hours: 2}
+  other: {trade: General, by: technician, skills: [general], hours: 1}
+
+# Visits and repairs start at fixed Malaysia-time blocks (no Sundays), bookable this many days ahead.
+scheduling:
+  slot_times: ["09:00", "11:00", "14:00", "16:00"]
+  slot_hours: 2
+  booking_window_days: 14
+
+# Buyer has signoff_period_days after the developer's sign-off to sign off, with an in-app reminder
+# signoff_reminder_days_before the deadline; then the case auto-closes (see safety.high_urgency).
+signoff_period_days: 14
+signoff_reminder_days_before: 3
 
 # Rules for repeated or clustered defects.
 grace_period_days: 30

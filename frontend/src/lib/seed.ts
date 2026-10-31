@@ -46,7 +46,7 @@ const WEIGHTED: Category[] = [
 ];
 
 function techFor(category: Category, block: string) {
-  const skills = RULES.categoryToSkill[category];
+  const skills = RULES.categoryToSkill[category] ?? [];
   return TECHNICIANS.find((t) => t.blocks.includes(block) && t.skills.some((s) => skills.includes(s)))?.id;
 }
 

@@ -41,7 +41,7 @@ Activate the venv in every new terminal before running anything below.
 
 ```powershell
 cd backend
-uvicorn main:app --reload --port 8001
+python main.py
 ```
 
 **Expect:**

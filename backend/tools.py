@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,7 +44,7 @@ from demo_api.timeutil import add_days, days_between, demo_now, fmt_date, fmt_da
 
 ROOT = db.ROOT
 UPLOADS_DIR = ROOT / os.getenv("UPLOADS_DIR", "uploads")
-RULES_PATH = ROOT / "rules.yaml"
+RULES_PATH = config.RULES_PATH
 
 PHOTO_KINDS = ("original", "reopen", "verdict", "repair", "verification")
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
@@ -66,11 +65,9 @@ def _returns_errors(fn):
     return wrapper
 
 
-@functools.lru_cache(maxsize=1)
 def load_rules() -> dict:
-    """rules.yaml as a dict (cached; restart to pick up edits)."""
-    with open(RULES_PATH, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """rules.yaml as a dict (loaded once by demo_api.config; restart to pick up edits)."""
+    return config.RULES
 
 
 # ---------- database access ----------

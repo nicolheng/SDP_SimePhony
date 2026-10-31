@@ -1,63 +1,37 @@
-"""Business rules: rules.yaml first, plus the app settings that rules.yaml doesn't cover yet."""
+"""Business rules from rules.yaml (the single source: the web app gets them from GET /api/rules), plus app settings."""
+import json
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-_rules = yaml.safe_load((ROOT / "rules.yaml").read_text(encoding="utf-8")) or {}
+RULES_PATH = ROOT / "rules.yaml"
+RULES: dict = yaml.safe_load(RULES_PATH.read_text(encoding="utf-8")) or {}
+RULES_SNAPSHOT_PATH = ROOT / "frontend" / "src" / "lib" / "rules.snapshot.json"
 
-# ---- from rules.yaml ----
-CATEGORY_TO_SKILL: dict[str, list[str]] = _rules.get("category_to_skill", {})
-GRACE_PERIOD_DAYS: int = int(_rules.get("grace_period_days", 30))
-OCCURRENCE_THRESHOLD: int = int(_rules.get("escalation", {}).get("occurrence_threshold", 3))
-STACK_CLUSTER_THRESHOLD: int = int(_rules.get("escalation", {}).get("stack_cluster_threshold", 3))
+# ---- from rules.yaml (no defaults here: a missing rule should fail loudly, not silently differ) ----
+CATEGORY_TO_SKILL: dict[str, list[str]] = RULES["category_to_skill"]
+CATEGORY_LABEL: dict[str, str] = RULES["category_labels"]
+# Who repairs what, and roughly how long it takes. Specialised trades go to subcontractors.
+REPAIR_PLAN: dict[str, dict] = RULES["repair_plan"]
+GRACE_PERIOD_DAYS: int = int(RULES["grace_period_days"])
+SIGNOFF_PERIOD_DAYS: int = int(RULES["signoff_period_days"])
+SIGNOFF_REMINDER_DAYS_BEFORE: int = int(RULES["signoff_reminder_days_before"])
+OCCURRENCE_THRESHOLD: int = int(RULES["escalation"]["occurrence_threshold"])
+STACK_CLUSTER_THRESHOLD: int = int(RULES["escalation"]["stack_cluster_threshold"])
 # rules.yaml safety.high_urgency.allow_auto_close (false = high-urgency cases are flagged, not auto-closed)
-HIGH_URGENCY_AUTO_CLOSE: bool = bool(_rules.get("safety", {}).get("high_urgency", {}).get("allow_auto_close", False))
+HIGH_URGENCY_AUTO_CLOSE: bool = bool(RULES["safety"]["high_urgency"]["allow_auto_close"])
 
-# ---- not in rules.yaml yet (agreed in the app; candidates to add there) ----
-SIGNOFF_PERIOD_DAYS = 14
-SIGNOFF_REMINDER_DAYS_BEFORE = 3
+SLOT_TIMES: list[str] = RULES["scheduling"]["slot_times"]
+SLOT_HOURS: int = int(RULES["scheduling"]["slot_hours"])
+BOOKING_WINDOW_DAYS: int = int(RULES["scheduling"]["booking_window_days"])
 
-SLOT_TIMES = ["09:00", "11:00", "14:00", "16:00"]  # local (Malaysia) start times
-SLOT_HOURS = 2
-BOOKING_WINDOW_DAYS = 14
-
+# ---- app settings (not business rules) ----
 PROJECT_NAME = "Residensi Harmoni"
 SDP_STAFF_NAME = "Farah Lee"
 SDP_STAFF_TITLE = "SDP Defect Team"
 SDP_STAFF_EMAIL = "sdp.staff@example.com"
 APP_URL = "http://localhost:3000"
-
-CATEGORY_LABEL = {
-    "water_leak": "Water leak",
-    "plumbing": "Plumbing",
-    "drainage": "Drainage",
-    "sanitary_fittings": "Sanitary fittings",
-    "electrical": "Electrical",
-    "wall_crack": "Wall crack",
-    "structural_crack": "Structural crack",
-    "tiles": "Tiles",
-    "ceiling": "Ceiling",
-    "door_window": "Door / window",
-    "paint": "Paint",
-    "other": "Other",
-}
-
-# Who repairs what, and roughly how long it takes. Specialised trades go to subcontractors.
-REPAIR_PLAN = {
-    "water_leak": {"trade": "Waterproofing / Plumbing", "by": "subcontractor", "skills": ["waterproofing"], "hours": 4},
-    "structural_crack": {"trade": "Structural", "by": "subcontractor", "skills": ["structural"], "hours": 8},
-    "tiles": {"trade": "Tiling", "by": "subcontractor", "skills": ["tiling"], "hours": 4},
-    "plumbing": {"trade": "Plumbing", "by": "technician", "skills": ["plumbing"], "hours": 2},
-    "drainage": {"trade": "Plumbing", "by": "technician", "skills": ["plumbing"], "hours": 1.5},
-    "sanitary_fittings": {"trade": "Plumbing", "by": "technician", "skills": ["plumbing"], "hours": 1.5},
-    "electrical": {"trade": "Electrical", "by": "technician", "skills": ["electrical"], "hours": 1.5},
-    "wall_crack": {"trade": "Civil / Painting", "by": "technician", "skills": ["civil", "painting"], "hours": 2},
-    "ceiling": {"trade": "Ceiling / Civil", "by": "technician", "skills": ["civil"], "hours": 3},
-    "door_window": {"trade": "Carpentry / Glazing", "by": "technician", "skills": ["carpentry", "glazing"], "hours": 2},
-    "paint": {"trade": "Painting", "by": "technician", "skills": ["painting"], "hours": 2},
-    "other": {"trade": "General", "by": "technician", "skills": ["general"], "hours": 1},
-}
 
 # Demo subcontractors, added to the technicians table by migrate.py (seed.db has in-house technicians only).
 SUBCONTRACTORS = [
@@ -70,3 +44,38 @@ SUBCONTRACTORS = [
 
 def skills_for(category: str) -> list[str]:
     return CATEGORY_TO_SKILL.get(category) or ["general"]
+
+
+def public_rules() -> dict:
+    """The rules the web app uses, served by GET /api/rules (camelCase, like the rest of the API)."""
+    return {
+        "gracePeriodDays": GRACE_PERIOD_DAYS,
+        "signoffPeriodDays": SIGNOFF_PERIOD_DAYS,
+        "signoffReminderDaysBefore": SIGNOFF_REMINDER_DAYS_BEFORE,
+        "occurrenceThreshold": OCCURRENCE_THRESHOLD,
+        "stackClusterThreshold": STACK_CLUSTER_THRESHOLD,
+        "highUrgencyAutoClose": HIGH_URGENCY_AUTO_CLOSE,
+        "categoryToSkill": CATEGORY_TO_SKILL,
+        "categoryLabel": CATEGORY_LABEL,
+        "repairPlan": REPAIR_PLAN,
+        "slotTimes": SLOT_TIMES,
+        "slotHours": SLOT_HOURS,
+        "bookingWindowDays": BOOKING_WINDOW_DAYS,
+        "urgency": RULES.get("urgency", {}),
+        "verificationProtocols": RULES.get("verification_protocols", {}),
+    }
+
+
+def rules_snapshot_text() -> str:
+    return json.dumps(public_rules(), indent=2, ensure_ascii=False) + "\n"
+
+
+def write_rules_snapshot() -> bool:
+    """Refresh the web app's offline copy of the rules (called on backend start). Returns True if the file changed."""
+    if not RULES_SNAPSHOT_PATH.parent.is_dir():
+        return False  # backend running without the frontend folder
+    text = rules_snapshot_text()
+    if RULES_SNAPSHOT_PATH.exists() and RULES_SNAPSHOT_PATH.read_text(encoding="utf-8") == text:
+        return False
+    RULES_SNAPSHOT_PATH.write_text(text, encoding="utf-8", newline="\n")
+    return True
