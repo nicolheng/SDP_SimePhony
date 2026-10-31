@@ -42,10 +42,11 @@ def test_triage_unsupported_change_keeps_intake_urgency(sample_state, fake_llm, 
 
 
 def test_triage_lowers_when_a_low_rule_matches(sample_state, fake_llm):
-    fake_llm.responses = ["```json\n" + _reply("LOW", "l1") + "\n```"]  # fences and case are tolerated
+    fake_llm.responses = ["```json\n" + _reply("LOW", "l1") + "\n```", _reply("low", "L1")]
     state = _state(sample_state, intake_result={"category": "painting", "urgency": "normal"})
     result = triage_node(state)["triage_result"]
     assert result["urgency"] == "low" and "cosmetic paint defects" in result["justification"]
+    assert len(fake_llm.calls) == 2
 
 
 def test_triage_prompt_says_what_is_not_high(sample_state, fake_llm):

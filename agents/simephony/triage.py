@@ -1,8 +1,8 @@
-import json
 import re
 
 from .rules import load_rules
 from .llm_client import get_client, get_models
+from .structured_output import StructuredOutputError, chat_json
 
 def _normalize_urgency(value) -> str | None:
     """Map a model/intake value to high|normal|low (CONTRACTS, lowercase). None if unrecognised."""
@@ -69,13 +69,21 @@ def triage_node(state: dict) -> dict:
 
     urgency, matched_rule = intake_urgency, None
     try:
-        urgency_resp = client.chat.completions.create(
-            model=text_model,
-            messages=[{"role": "user", "content": urgency_prompt}],
-            temperature=0.0
+        data = chat_json(
+            client,
+            text_model,
+            [{"role": "user", "content": urgency_prompt}],
+            {
+                "type": "object",
+                "required": ["urgency", "rule"],
+                "properties": {
+                    "urgency": {"type": "string", "enum": ["high", "normal", "low"]},
+                    "rule": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            temperature=0.0,
         )
-        raw = urgency_resp.choices[0].message.content.replace("```json", "").replace("```", "").strip()
-        data = json.loads(raw)
         llm_urgency = _normalize_urgency(data.get("urgency"))
         rule_id = str(data.get("rule") or "").strip().upper()
         # A change counts only with a real rule from the matching list.
@@ -83,6 +91,8 @@ def triage_node(state: dict) -> dict:
         if (rule_id in rule_ids and llm_urgency == {"H": "high", "L": "low"}[rule_id[0]]
                 and (rule_id[0] == "L" or _has_evidence(rule_ids[rule_id], report))):
             urgency, matched_rule = llm_urgency, rule_ids[rule_id]
+    except StructuredOutputError:
+        raise
     except Exception:
         pass
     if intake_urgency == "high":

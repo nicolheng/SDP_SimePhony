@@ -9,11 +9,11 @@ the booking uses:
   kept between half and double the normal time, then 1 block = 2 h, 2 = 4 h, 3 or more = 8 h (a day).
 The estimate is saved with tools.set_repair_estimate, so the repair slots the buyer sees fit the job.
 """
-import json
 import math
 
 from . import backend_tools
 from .llm_client import get_client, get_models
+from .structured_output import StructuredOutputError, chat_json
 
 _AREAS = {"small", "medium", "large"}
 _FACT_KEYS = ("parts_to_replace", "multiple_spots", "needs_drying_or_curing")
@@ -61,17 +61,26 @@ def _scope_facts(note: str) -> dict | None:
     client = get_client()
     _, text_model = get_models()
     try:
-        response = client.chat.completions.create(
-            model=text_model, temperature=0.0,
-            messages=[{"role": "system", "content": _SYSTEM},
-                      {"role": "user", "content": f"Technician note: {note}"}],
+        data = chat_json(
+            client,
+            text_model,
+            [{"role": "system", "content": _SYSTEM},
+             {"role": "user", "content": f"Technician note: {note}"}],
+            {
+                "type": "object",
+                "required": ["area", *_FACT_KEYS],
+                "properties": {
+                    "area": {"type": "string", "enum": sorted(_AREAS)},
+                    **{key: {"type": "boolean"} for key in _FACT_KEYS},
+                },
+                "additionalProperties": False,
+            },
+            temperature=0.0,
         )
-        raw = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
-        data = json.loads(raw)
+    except StructuredOutputError:
+        raise
     except Exception as e:
         print(f"[REPAIR ESTIMATE] scope facts unavailable: {e}")
-        return None
-    if data.get("area") not in _AREAS or not all(isinstance(data.get(k), bool) for k in _FACT_KEYS):
         return None
     return {"area": data["area"], **{k: data[k] for k in _FACT_KEYS}}
 
@@ -97,7 +106,14 @@ def repair_estimate_node(state: dict) -> dict:
     category = (state.get("intake_result") or {}).get("category", "other")
     recurring = _recurring(state)
     base = backend_tools.category_repair_hours(category)
-    facts = _scope_facts(state.get("verdict_note") or "")
+    if state.get("_skip_scope_facts"):
+        facts = None
+    else:
+        try:
+            facts = _scope_facts(state.get("verdict_note") or "")
+        except StructuredOutputError:
+            facts = None
+            state["_structured_output_error"] = True
     hours = hours_for(base, facts, recurring) if facts else hours_for(base, {}, False)
     reason = _reason(hours, facts, recurring if facts else False)
 
@@ -114,5 +130,12 @@ def repair_estimate_node(state: dict) -> dict:
             error = saved.get("error")
     if error:
         print(f"[REPAIR ESTIMATE] estimate for {case_id} not saved: {error}")
-    state["repair_estimate"] = {"hours": hours, "reason": reason, "facts": facts, "base_hours": base, "error": error}
+    state["repair_estimate"] = {
+        "hours": hours,
+        "reason": reason,
+        "facts": facts,
+        "base_hours": base,
+        "error": error,
+        **({"_structured_output_error": True} if state.get("_structured_output_error") else {}),
+    }
     return state

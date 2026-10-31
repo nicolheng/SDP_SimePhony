@@ -1,7 +1,7 @@
-import json
 import os
 
 from .llm_client import get_client, get_models
+from .structured_output import StructuredOutputError, chat_json
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 from .intake import encode_image
 from . import backend_tools
@@ -94,24 +94,32 @@ def assess_repair_photo(state: dict) -> dict:
         {"role": "user", "content": content},
     ]
     try:
-        response = client.chat.completions.create(model=vision_model, messages=messages, temperature=0.1)
+        data = chat_json(
+            client,
+            vision_model,
+            messages,
+            {
+                "type": "object",
+                "required": ["assessment", "observations", "matches_location"],
+                "properties": {
+                    "assessment": {"type": "string", "enum": sorted(_ALLOWED)},
+                    "observations": {"type": "string"},
+                    "matches_location": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
+            temperature=0.1,
+        )
+    except StructuredOutputError:
+        return {**_UNCLEAR, "observations": "", "_structured_output_error": True}
     except Exception as e:
         print(f"⚠️ [VERIFICATION] vision check failed: {e}")
         return {**_UNCLEAR, "observations": _UNAVAILABLE}
-    try:
-        raw = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
-        data = json.loads(raw)
-        assessment = data.get("assessment")
-        matches = data.get("matches_location")
-        if assessment not in _ALLOWED or not isinstance(matches, bool):
-            return dict(_UNCLEAR)
-        return {
-            "assessment": assessment,
-            "observations": str(data.get("observations", "")),
-            "matches_location": matches,
-        }
-    except Exception:
-        return dict(_UNCLEAR)
+    return {
+        "assessment": data["assessment"],
+        "observations": data["observations"],
+        "matches_location": data["matches_location"],
+    }
 
 
 def _hold(state: dict, category: str, assessment: str, observations: str, message: str) -> dict:
@@ -210,6 +218,14 @@ def verification_node(state: dict) -> dict:
         )
 
     photo_check = assess_repair_photo(state)
+    if photo_check.get("_structured_output_error"):
+        _hold(
+            state, category, "unclear", "",
+            f"The repair photo could not be confirmed as resolved at {location}. "
+            "Please check the repair or upload a clearer photo.",
+        )
+        state["verification_result"]["_structured_output_error"] = True
+        return state
     if photo_check["assessment"] != "looks_resolved" or not photo_check["matches_location"]:
         obs = photo_check["observations"] or "No clear observations."
         return _hold(
