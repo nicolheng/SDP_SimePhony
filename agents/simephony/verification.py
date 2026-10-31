@@ -319,7 +319,7 @@ def _guide_text(guide) -> str | None:
 
 
 def signoff_ready_node(state: dict) -> dict:
-    """SDP signed the repair off (developer.signed): the buyer can now check it. Loads the guide saved at
+    """SDP signed the repair off (signoff.completed from the developer): the buyer can now check it. Loads the guide saved at
     repair.done and the buyer's sign-off deadline, for CommsAgent. Sign-off order: technician -> SDP -> buyer."""
     result = dict(state.get("verification_result") or {})
     result.pop("rejected_reason", None)

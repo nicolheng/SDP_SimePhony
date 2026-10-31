@@ -59,8 +59,13 @@ def test_route_event_mapping():
     assert route_event({}) == "intake"
     assert route_event({"event": "case.created"}) == "intake"
     assert route_event({"event": "repair.done"}) == "verification"
-    assert route_event({"event": "verification.submitted"}) == "verification_result"
+    assert route_event({"event": "verification.completed"}) == "verification_result"
     assert route_event({"event": "case.reopened"}) == "recurrence"
+
+
+def test_only_the_developer_signoff_starts_an_agent():
+    assert route_event({"event": "signoff.completed", "party": "developer"}) == "signoff_ready"
+    assert route_event({"event": "signoff.completed", "party": "buyer"}) == "unhandled_event"
 
 
 @pytest.mark.parametrize("event", ["signoff.completed", "typo.event"])
@@ -199,7 +204,7 @@ def test_past_grace_new_case_keeps_old_description_when_buyer_gave_none(fake_llm
 
 def _signoff_state(outcome, status="PENDING_SIGNOFF"):
     return {
-        "event": "verification.submitted", "case_id": "C-1", "unit_id": "A-12-08",
+        "event": "verification.completed", "case_id": "C-1", "unit_id": "A-12-08",
         "intake_result": {"category": "water_leak"}, "current_status": status,
         "verification_outcome": outcome, "verification_result": {"protocol": "guide"},
         "comms_result": {},
@@ -246,7 +251,7 @@ def test_repair_done_on_invalid_case_ends_without_email(fake_llm, tmp_path, no_s
 
 
 def test_repair_done_saves_guide_but_buyer_waits_for_sdp(fake_llm, tmp_path, no_side_effects):
-    # Sign-off order technician -> SDP -> buyer: the guide is saved now, sent at developer.signed
+    # Sign-off order technician -> SDP -> buyer: the guide is saved now, sent once SDP signs
     photo = tmp_path / "repair.jpg"
     photo.write_bytes(b"fakejpg")
     fake_llm.responses = [VISION_OK, "Look at the ceiling for stains.", "The repair has been completed."]
@@ -402,7 +407,7 @@ def test_developer_signed_routes_to_signoff_ready_then_comms(fake_llm, no_side_e
         "ok": True, "status": "PENDING_SIGNOFF", "developer_signed": True, "deadline_local": "Mon, 2 Nov, 5:00 pm",
         "guide": {"intro": "Intro.", "steps": ["Step one."], "ifFails": "If it fails, reopen."}})
     fake_llm.responses = ["The developer has approved the repair."]
-    state = {"event": "developer.signed", "case_id": "C-1", "current_status": "PENDING_SIGNOFF",
+    state = {"event": "signoff.completed", "party": "developer", "case_id": "C-1", "current_status": "PENDING_SIGNOFF",
              "intake_result": {"category": "water_leak"}, "comms_result": {}}
     assert route_event(state) == "signoff_ready"
     final = _run(state)

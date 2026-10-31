@@ -485,7 +485,7 @@ def test_invalid_fallback_leaves_out_unsafe_technician_note(fake_llm):
 # --- PR C: escalation after a failed buyer check uses the inspection wording ---
 def test_escalation_after_failed_check_uses_inspection_template(fake_llm):
     fake_llm.responses = ["Please remove the cover of the electrical panel."]  # forces the template
-    _, body = _send({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
+    _, body = _send({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.completed",
                      "verification_result": {"next_event": "case.reopened"},
                      "recurrence_result": {"action": "ESCALATED"}})
     assert body == NEUTRAL_TEMPLATES["ESCALATED"]
@@ -494,13 +494,13 @@ def test_escalation_after_failed_check_uses_inspection_template(fake_llm):
 def test_old_escalation_ignored_after_a_fixed_check(fake_llm):
     # recurrence_result from an earlier reopen must not change a later FIXED confirmation email
     fake_llm.responses = ["Please remove the cover of the electrical panel."]
-    _, body = _send({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
+    _, body = _send({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.completed",
                      "verification_result": {"next_event": None}, "recurrence_result": {"action": "ESCALATED"}})
     assert body == NEUTRAL_TEMPLATES["ESCALATION_PENDING"]
 
 
 def test_subject_after_failed_check_escalation():
-    assert email_subject({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.submitted",
+    assert email_subject({"current_status": "ESCALATION_PENDING", "case_id": "C-1", "event": "verification.completed",
                           "verification_result": {"next_event": "case.reopened"},
                           "recurrence_result": {"action": "ESCALATED"}}) == "[C-1] Your case is being reviewed"
 
@@ -584,7 +584,7 @@ def test_repair_done_tells_buyer_the_developer_reviews_first(fake_llm):
 
 def test_developer_signed_sends_guide_and_deadline(fake_llm):
     fake_llm.responses = ["The developer has approved the repair."]
-    out, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1", "event": "developer.signed",
+    out, body = _send({"current_status": "PENDING_SIGNOFF", "case_id": "C-1", "event": "signoff.completed", "party": "developer",
                        "verification_result": {"protocol": PROTOCOL}, "signoff_deadline_local": "Mon, 2 Nov, 5:00 pm"})
     assert out["comms_result"]["title"] == "Please check the repair and sign off"
     assert body == ("The developer has approved the repair.\n\n"

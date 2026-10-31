@@ -295,11 +295,11 @@ def _repair_and_signoff(n: int, case: str, state: dict, repair_note: str, inbox:
 
     ok(tools.record_signoff(case, "developer"), "developer sign-off")
     step(n + 3, "SDP staff (web app)", "signs off the repair")
-    state = run_event(sync(state, case), "developer.signed")
+    state = run_event(sync(state, case), "signoff.completed", party="developer")
     step(n + 4, "CommsAgent (P2)", "buyer update with the checklist and deadline")
     inbox.show()
 
-    state = run_event(sync(state, case), "verification.submitted", verification_outcome="FIXED")
+    state = run_event(sync(state, case), "verification.completed", verification_outcome="FIXED")
     ok(tools.record_verification(case, "FIXED", "Dry after the shower test"), "record_verification")
     step(n + 5, "Buyer (web app)", "checks the repair: FIXED, signs off")
     step(n + 6, "CommsAgent (P2)", "buyer update")

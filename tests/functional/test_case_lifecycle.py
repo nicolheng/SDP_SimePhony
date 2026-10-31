@@ -1,6 +1,6 @@
 """End-to-end case lifecycle through the compiled graph `agents.simephony.workflow.agent_app`.
 
-One case is driven event by event (case.created -> repair.done -> verification.submitted ->
+One case is driven event by event (case.created -> repair.done -> verification.completed ->
 case.reopened ...). The state returned by one event is carried into the next; between events
 the test only changes what the outside world would change (technician repair note / photo,
 buyer sign-off -> CLOSED + closed_at, the event name). The LLM is the autouse `fake_llm`
@@ -173,12 +173,12 @@ def world(monkeypatch, escalation_db, booking_db):
 
 
 def _closed_case(fake_llm, world, tmp_path) -> dict:
-    """case.created -> repair.done -> verification.submitted FIXED -> buyer signs (CLOSED)."""
+    """case.created -> repair.done -> verification.completed FIXED -> buyer signs (CLOSED)."""
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     s = _step(fake_llm, s, "repair.done", REPAIR_OK, current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=_photo(tmp_path, "after.jpg"))
-    s = _step(fake_llm, s, "developer.signed", [MSG_READY])
-    s = _step(fake_llm, s, "verification.submitted", [MSG_THANKS], verification_outcome="FIXED")
+    s = _step(fake_llm, s, "signoff.completed", [MSG_READY], party="developer")
+    s = _step(fake_llm, s, "verification.completed", [MSG_THANKS], verification_outcome="FIXED")
     return {**s, "current_status": "CLOSED", "closed_at": _days_ago(5)}
 
 
@@ -215,13 +215,13 @@ def test_happy_path_lifecycle_to_escalation(fake_llm, world, tmp_path):
     assert guide not in mail["body"] and mail["body"].endswith(REPAIR_DONE_NOTE)  # SDP signs first
 
     # 2b. SDP signs the repair off -> the buyer gets the guide and their deadline
-    s = _step(fake_llm, s, "developer.signed", [MSG_READY])
+    s = _step(fake_llm, s, "signoff.completed", [MSG_READY], party="developer")
     mail = _emails(world)[-1]
     assert mail["subject"] == "[C-0001] Please check the repair and sign off"
     assert f"sign off by {DEADLINE}" in mail["body"] and guide in mail["body"]
 
     # 3. buyer submits FIXED (SDP signed first) -> the last sign-off closes the case, no guide re-sent
-    s = _step(fake_llm, s, "verification.submitted", [MSG_THANKS], verification_outcome="FIXED")
+    s = _step(fake_llm, s, "verification.completed", [MSG_THANKS], verification_outcome="FIXED")
     assert s["current_status"] == "CLOSED"
     assert s["verification_status"] == "verified"
     assert _emails(world)[-1]["body"] == f"{MSG_THANKS}\n\nYour case is now closed."
@@ -275,7 +275,7 @@ def test_not_fixed_reopens_the_case(fake_llm, world, tmp_path):
     s = _step(fake_llm, _new_case(tmp_path), "case.created", CREATED)
     s = _step(fake_llm, s, "repair.done", REPAIR_OK, current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=_photo(tmp_path, "after.jpg"))
-    s = _step(fake_llm, s, "verification.submitted", [URGENCY, MSG_REOPENED], verification_outcome="NOT_FIXED",
+    s = _step(fake_llm, s, "verification.completed", [URGENCY, MSG_REOPENED], verification_outcome="NOT_FIXED",
               reopen_photo_path=_photo(tmp_path, "still-leaking.jpg"))
     assert s["current_status"] == "VISIT_SCHEDULED"  # below the threshold: revisit booked
     assert s["reopen_count"] == 1
@@ -399,7 +399,7 @@ def test_second_repair_cycle_resends_buyer_guide(fake_llm, world, tmp_path):
               repair_note="Replaced the leaking elbow joint above the shower.",
               repair_photo_path=_photo(tmp_path, "after2.jpg"))
     assert s["current_status"] == "PENDING_SIGNOFF"
-    s = _step(fake_llm, s, "developer.signed", [MSG_READY])  # SDP signs the 2nd repair -> guide again
+    s = _step(fake_llm, s, "signoff.completed", [MSG_READY], party="developer")  # SDP signs the 2nd repair -> guide again
     assert s["verification_result"]["protocol"] in _emails(world)[-1]["body"]
 
 
@@ -423,9 +423,9 @@ def test_live_happy_path_prints_emails(world, tmp_path):
     s = _step(None, s, "repair.done", [], current_status="REPAIRED",
               repair_note=REPAIR_NOTE, repair_photo_path=LIVE_IMAGE)
     if s["current_status"] == "PENDING_SIGNOFF":  # vision is advisory; it may hold the email
-        s = _step(None, s, "developer.signed", [])  # SDP signs first; then the buyer gets the guide
+        s = _step(None, s, "signoff.completed", [], party="developer")  # SDP signs first; then the buyer gets the guide
         assert s["verification_result"]["protocol"] in _emails(world)[-1]["body"]
-        s = _step(None, s, "verification.submitted", [], verification_outcome="FIXED")
+        s = _step(None, s, "verification.completed", [], verification_outcome="FIXED")
     else:
         print("\n[technician message]", s["verification_result"]["technician_message"])
 

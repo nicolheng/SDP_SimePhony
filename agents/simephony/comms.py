@@ -89,7 +89,7 @@ def _template_key(state: dict) -> str:
         return state["comms_key"]  # message_for_kind: the web app named the update
     status = state.get("current_status", "UNKNOWN")
     if status == "PENDING_SIGNOFF" and state.get("event") == "repair.done":
-        return "REPAIR_DONE"  # guide saved; the buyer gets it once SDP has signed (developer.signed)
+        return "REPAIR_DONE"  # guide saved; the buyer gets it once SDP has signed (signoff.completed from the developer)
     if status == "PENDING_SIGNOFF":
         if not (state.get("verification_result") or {}).get("protocol"):
             return "PENDING_SIGNOFF_NO_GUIDE"
@@ -112,7 +112,7 @@ def _template_key(state: dict) -> str:
 def _reopen_action(state: dict) -> str | None:
     """The recurrence decision, only when this update is about the reopen that just happened:
     a buyer reopen, or a failed buyer check (NOT_FIXED) that reopened the case."""
-    reopened_by_check = (state.get("event") == "verification.submitted"
+    reopened_by_check = (state.get("event") == "verification.completed"
                          and (state.get("verification_result") or {}).get("next_event") == "case.reopened")
     if state.get("event") != "case.reopened" and not reopened_by_check:
         return None

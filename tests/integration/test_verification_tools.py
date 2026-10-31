@@ -82,7 +82,7 @@ def test_signoff_ready_loads_saved_guide_and_deadline():
                                         "steps": ["Run the tap for 5 minutes.", "Look under the sink for drips."],
                                         "ifFails": "If any check fails, do not sign off."})
     tools.record_signoff("C-0007", "developer")
-    out = signoff_ready_node({"case_id": "C-0007", "event": "developer.signed", "current_status": "PENDING_SIGNOFF"})
+    out = signoff_ready_node({"case_id": "C-0007", "event": "signoff.completed", "party": "developer", "current_status": "PENDING_SIGNOFF"})
     assert out["verification_result"]["protocol"] == (
         "The photo shows the repair at the kitchen sink.\nRun the tap for 5 minutes.\n"
         "Look under the sink for drips.\nIf any check fails, do not sign off.")
@@ -94,5 +94,5 @@ def test_signoff_ready_before_developer_signed_is_rejected():
     import tools
     from agents.simephony.verification import signoff_ready_node
     tools.start_verification("C-0007", ["Run the tap for 5 minutes."])  # guide saved, SDP not signed yet
-    out = signoff_ready_node({"case_id": "C-0007", "event": "developer.signed", "current_status": "PENDING_SIGNOFF"})
+    out = signoff_ready_node({"case_id": "C-0007", "event": "signoff.completed", "party": "developer", "current_status": "PENDING_SIGNOFF"})
     assert "developer" in out["verification_result"]["rejected_reason"]

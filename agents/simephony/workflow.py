@@ -28,7 +28,8 @@ class AgentState(TypedDict):
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
     # Event-driven fields
-    event: str # case.created | verdict.recorded | repair.done | verification.submitted | case.reopened | booking.rejected
+    event: str # case.created | verdict.recorded | repair.done | verification.completed | signoff.completed | case.reopened | booking.rejected
+    party: str # who a signoff.completed event is from: developer | buyer
     case_id: str
     verdict_note: str
     repair_note: str
@@ -40,7 +41,7 @@ class AgentState(TypedDict):
     verification_outcome: str # FIXED | NOT_FIXED | CANNOT_VERIFY
     verification_status: str
     new_case_escalation: dict # new report: extra inspection asked of SDP too (keep_status)
-    signoff_deadline_local: str # buyer's sign-off deadline once SDP has signed (developer.signed)
+    signoff_deadline_local: str # buyer's sign-off deadline once SDP has signed (signoff.completed from the developer)
     verification_result: dict
     recurrence_result: dict
     repair_estimate: dict # hours + reason after a VALID verdict
@@ -112,13 +113,15 @@ def route_event(state: AgentState) -> str:
         return "unhandled_event"
     if not event or event == "case.created":
         return "intake"
+    if event == "signoff.completed":
+        # SDP signed the repair off: send the buyer the check guide. The buyer's own sign-off needs no agent.
+        return "signoff_ready" if state.get("party") == "developer" else "unhandled_event"
     return {
         "repair.done": "verification",
-        "verification.submitted": "verification_result",
+        "verification.completed": "verification_result",
         "case.reopened": "recurrence",
         "booking.rejected": "booking",  # technician turned the visit down in the app: book someone else
         "verdict.recorded": "repair_estimate",  # VALID: estimate the repair time, then tell the buyer
-        "developer.signed": "signoff_ready",  # SDP signed the repair off: send the buyer the check guide
         "inspection.approved": "initial_inspection",  # SDP approved the extra inspection: brief, then book it
     }.get(event, "unhandled_event")
 

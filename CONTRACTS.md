@@ -56,9 +56,13 @@ Write tools return `{ok: false, error}` instead of raising when a rule blocks th
 
 Every event is a row in `case_events`, written by `tools.py`, with a `message` the timeline and SDP trace
 pages show. The web app reads them through `GET /api/state`. Main types: `case.created`, `case.info_needed`,
-`case.assigned`, `booking.confirmed` / `rejected` / `escalated`, `verdict.recorded`, `repair.booked`,
-`repair.done`, `verification.requested` / `completed`, `signoff.completed`, `case.closed`, `case.reopened`,
-`recurrence.detected`, `inspection.requested` / `approved` / `rejected`, `email.sent`, `agent.step`.
+`case.assigned`, `booking.requested` / `confirmed` / `rejected` / `escalated`, `verdict.recorded`, `repair.booked`,
+`repair.done`, `verification.requested` / `completed`, `signoff.completed`, `signoff.reminder`, `signoff.overdue`,
+`case.closed`, `case.reopened`, `recurrence.detected`, `inspection.requested` / `approved` / `rejected`,
+`email.sent`, `agent.step`.
+
+`signoff.completed` has a `party` of `developer` or `buyer`. The agent graph in
+[`workflow.py`](agents/simephony/workflow.py) uses these same names, and only the developer's sign-off starts an agent.
 
 ## 4. Business rules
 
@@ -90,7 +94,7 @@ All in [`rules.yaml`](rules.yaml): category → skill, urgency rules, grace peri
 | RecurrenceAgent | Reopen logic, `reopen_count`, raises "extra inspection?" to SDP | `case.reopened` | P2 |
 | InitialInspectionAgent | Inspection brief for the technician after SDP approval | `inspection.approved` | P1 |
 
-New-case flow: `SequentialAgent(IntakeAgent → SimilarDefectAgent → TriageAgent)`. The others are event-driven.
+New-case flow: a LangGraph `StateGraph` running IntakeAgent → SimilarDefectAgent → TriageAgent. The others are event-driven.
 
 ### VerificationAgent rules
 
