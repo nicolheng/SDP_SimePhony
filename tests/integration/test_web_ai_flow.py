@@ -152,6 +152,51 @@ def test_llm_down_falls_back_to_the_stand_ins(fake_llm, ai_on):
     assert m["body"].startswith(NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]) and "Requested visit time:" in m["body"]
 
 
+def test_intake_deletes_temporary_browser_photo_after_vision_call(monkeypatch):
+    import db
+    import tools
+    from agents.simephony import intake as intake_agent
+    from demo_api import ai_agents, workflow
+
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+    tools.get_clock()
+    photo_path = None
+
+    def inspect_photo(state):
+        nonlocal photo_path
+        from pathlib import Path
+
+        photo_path = Path(state["image_path"])
+        assert photo_path.is_file()
+        assert photo_path.read_bytes() == b"buyer photo"
+        return {
+            "intake_result": {
+                "category": "water_leak",
+                "sub_category": "Ceiling leak",
+                "location_in_unit": "Bedroom",
+                "summary": "Ceiling leak in bedroom",
+                "urgency": "normal",
+                "missing_info": [],
+                "confidence_score": 0.9,
+            },
+            "needs_human_review": False,
+        }
+
+    monkeypatch.setattr(intake_agent, "intake_node", inspect_photo)
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn)
+        result = ai_agents.intake(
+            ctx,
+            "Water dripping from the bedroom ceiling.",
+            "data:image/png;base64,YnV5ZXIgcGhvdG8=",
+            True,
+        )
+
+    assert result["category"] == "water_leak"
+    assert photo_path is not None
+    assert not photo_path.exists()
+
+
 def test_agent_fallback_is_saved_and_returned_in_case_events(monkeypatch):
     import db
     from agents.simephony import intake as intake_agent
