@@ -25,6 +25,7 @@ import os
 import re
 import smtplib
 import sqlite3
+import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
@@ -38,6 +39,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import db
+if str(db.ROOT) not in sys.path:
+    sys.path.insert(0, str(db.ROOT))
 from demo_api import config
 from demo_api.analytics import cluster_confidence
 from demo_api.migrate import migrate
@@ -115,6 +118,13 @@ def _now(conn: sqlite3.Connection) -> str:
 def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, message: str,
           agent: Optional[str] = None, **payload) -> str:
     """Write a case_events row. `message` is what the timeline and SDP trace pages show."""
+    if event_type == "agent.step":
+        from agents.telemetry import current_telemetry, record_agent_step_event, telemetry_payload
+
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        telemetry = telemetry_payload(current_telemetry())
+        payload["data"] = {**telemetry, **data}
+        record_agent_step_event()
     event_id = db.next_record_id(conn, "case_events")
     body = {"message": message, **({"agent": agent} if agent else {}), **payload}
     conn.execute(

@@ -142,6 +142,51 @@ def test_agent_fallback_is_saved_and_returned_in_case_events(monkeypatch):
     assert fallback_events[0]["agent"] == "IntakeAgent"
     assert fallback_events[0]["fallbackStep"] == "intake"
     assert fallback_events[0]["fallbackReason"] == "agent service unavailable"
+    assert fallback_events[0]["telemetry"]["fallback_used"] is True
+    assert fallback_events[0]["telemetry"]["fallback_reason"] == "agent service unavailable"
+    assert isinstance(fallback_events[0]["telemetry"]["guardrail_hits"], list)
+    event_payload = next(
+        payload for payload in _trace(case_id)
+        if payload.get("data", {}).get("fallback_used")
+    )["data"]
+    assert event_payload["fallback_reason"] == "agent service unavailable"
+    assert "model" in event_payload
+    assert event_payload["timing_ms"] >= 0
+    assert event_payload["tokens"] is None
+    assert isinstance(event_payload["guardrail_hits"], list)
+
+
+def test_agent_step_records_telemetry_and_guardrail_hits(monkeypatch):
+    import db
+    from demo_api import ai_agents, state, workflow
+
+    monkeypatch.setenv("USE_AI_AGENTS", "false")
+    case_id = _report()
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn)
+        result = ai_agents.intake(ctx, "Water leak and a scratch on wall in the bedroom.", None, True, case_id)
+        response_state = state.build_state(ctx, "http://testserver")
+
+    assert result["category"] == "paint"
+    event = next(
+        event for event in _trace(case_id)
+        if event.get("agent") == "IntakeAgent" and event.get("data", {}).get("model")
+    )
+    telemetry = event["data"]
+    assert telemetry["model"] == "llava-llama3"
+    assert telemetry["timing_ms"] >= 0
+    assert telemetry["tokens"] is None
+    assert telemetry["fallback_used"] is False
+    assert telemetry["fallback_reason"] is None
+    assert "category_guardrail_triggered" in telemetry["guardrail_hits"]
+    assert "urgency_guardrail_triggered" in telemetry["guardrail_hits"]
+    response_event = next(
+        event for event in response_state["events"]
+        if event["caseId"] == case_id and event.get("telemetry", {}).get("model")
+    )
+    assert response_event["telemetry"] == telemetry
 
 
 def test_invalid_json_twice_falls_back_without_saving_raw_output(fake_llm, monkeypatch):
@@ -165,11 +210,16 @@ def test_invalid_json_twice_falls_back_without_saving_raw_output(fake_llm, monke
     fallback = next(event for event in _trace(case_id) if event.get("data", {}).get("fallback_used"))
     assert fallback["data"]["fallback_used"] is True
     assert fallback["data"]["reason"] == "LLM JSON validation failed after 1 retry"
+    assert fallback["data"]["model"] == "llava-llama3"
+    assert fallback["data"]["timing_ms"] > 0
+    assert fallback["data"]["tokens"] is None
     visible_fallback = next(
         event for event in response_state["events"]
         if event["caseId"] == case_id and event["fallbackUsed"]
     )
     assert visible_fallback["fallbackReason"] == "LLM JSON validation failed after 1 retry"
+    assert visible_fallback["telemetry"]["model"] == "llava-llama3"
+    assert visible_fallback["telemetry"]["timing_ms"] > 0
     assert raw_output not in json.dumps(_case(case_id))
     assert raw_output not in json.dumps(_trace(case_id))
 

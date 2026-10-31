@@ -1,5 +1,6 @@
 import os
 
+from agents.telemetry import record_guardrail_hit, record_llm_telemetry, tracked_chat_completion
 from .llm_client import get_client, get_models
 from .structured_output import StructuredOutputError, chat_json
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
@@ -110,15 +111,16 @@ def assess_repair_photo(state: dict) -> dict:
             },
             temperature=0.1,
         )
+        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
     except StructuredOutputError:
         return {**_UNCLEAR, "observations": "", "_structured_output_error": True}
     except Exception as e:
         print(f"⚠️ [VERIFICATION] vision check failed: {e}")
         return {**_UNCLEAR, "observations": _UNAVAILABLE}
     return {
-        "assessment": data["assessment"],
-        "observations": data["observations"],
-        "matches_location": data["matches_location"],
+        "assessment": data["parsed"]["assessment"],
+        "observations": data["parsed"]["observations"],
+        "matches_location": data["parsed"]["matches_location"],
     }
 
 
@@ -153,7 +155,8 @@ def _phrase_checks(state: dict, category: str, location: str, checks: list[str])
     client = get_client()
     _, text_model = get_models()
     try:
-        response = client.chat.completions.create(
+        response = tracked_chat_completion(
+            client,
             model=text_model,
             messages=[
                 {"role": "system", "content": (
@@ -169,7 +172,10 @@ def _phrase_checks(state: dict, category: str, location: str, checks: list[str])
             ],
             temperature=0.1,
         )
+        raw_lines = response.choices[0].message.content.splitlines()
         lines = _safe_lines(response.choices[0].message.content)
+        if len(lines) < sum(bool(line.strip()) for line in raw_lines):
+            record_guardrail_hit("verification_guardrail_triggered")
     except Exception:
         lines = []
     return lines

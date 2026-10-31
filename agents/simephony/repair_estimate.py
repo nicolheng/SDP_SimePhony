@@ -14,6 +14,7 @@ import math
 from . import backend_tools
 from .llm_client import get_client, get_models
 from .structured_output import StructuredOutputError, chat_json
+from agents.telemetry import record_llm_telemetry
 
 _AREAS = {"small", "medium", "large"}
 _FACT_KEYS = ("parts_to_replace", "multiple_spots", "needs_drying_or_curing")
@@ -77,12 +78,14 @@ def _scope_facts(note: str) -> dict | None:
             },
             temperature=0.0,
         )
+        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
     except StructuredOutputError:
         raise
     except Exception as e:
         print(f"[REPAIR ESTIMATE] scope facts unavailable: {e}")
         return None
-    return {"area": data["area"], **{k: data[k] for k in _FACT_KEYS}}
+    parsed = data["parsed"]
+    return {"area": parsed["area"], **{k: parsed[k] for k in _FACT_KEYS}}
 
 
 def _recurring(state: dict) -> bool:

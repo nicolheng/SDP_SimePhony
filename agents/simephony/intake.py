@@ -2,6 +2,7 @@ import os
 import json
 import re
 import base64
+from agents.telemetry import record_guardrail_hit, record_llm_telemetry
 from .llm_client import client, MODEL_VL
 from .structured_output import StructuredOutputError, chat_json
 
@@ -184,7 +185,9 @@ def intake_node(state: dict) -> dict:
     ]
 
     try:
-        parsed_intake = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0)
+        completion = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0)
+        record_llm_telemetry(completion["model"], completion["timing_ms"], completion["tokens"])
+        parsed_intake = completion["parsed"]
     except StructuredOutputError:
         description = state.get("user_description", "")
         parsed_intake = {
@@ -215,6 +218,8 @@ def intake_node(state: dict) -> dict:
 
     # 1. Category calibration
     cat = parsed_intake.get("category", "")
+    original_category = cat
+    original_urgency = parsed_intake.get("urgency")
     if ("scratch" in desc_lower and "wall" in desc_lower) or desc_lower.startswith("small scratch"):
         parsed_intake["category"] = "paint"
     elif "hollow" in desc_lower and "tile" in desc_lower:
@@ -263,6 +268,10 @@ def intake_node(state: dict) -> dict:
         # No high/low trigger matched: normal per rules.yaml. The model's own "high" or "low" is not
         # trusted (live qwen rated a hollow tile and "aircond not cold" low).
         parsed_intake["urgency"] = "normal"
+    if parsed_intake.get("category") != original_category:
+        record_guardrail_hit("category_guardrail_triggered")
+    if parsed_intake.get("urgency") != original_urgency:
+        record_guardrail_hit("urgency_guardrail_triggered")
 
     # 4. Blur / missing photo detection
     is_blur_image = False

@@ -1,7 +1,9 @@
 """Strict JSON output parsing, schema validation, and one corrective LLM retry."""
 import json
+import time
 from typing import Any
 
+from agents.telemetry import record_llm_telemetry
 
 class StructuredOutputError(RuntimeError):
     """The model failed to return valid structured output after its single retry."""
@@ -12,6 +14,18 @@ class StructuredOutputError(RuntimeError):
 
 class JSONSchemaValidationError(ValueError):
     """A parsed JSON value does not match the requested JSON schema."""
+
+
+def _usage_value(usage: Any, key: str) -> Any:
+    if isinstance(usage, dict):
+        return usage.get(key)
+    return getattr(usage, key, None) if usage else None
+
+
+def _response_value(response: Any, key: str) -> Any:
+    if isinstance(response, dict):
+        return response.get(key)
+    return getattr(response, key, None)
 
 
 def _validate(value: Any, schema: dict, path: str = "$") -> None:
@@ -54,6 +68,12 @@ def _validate(value: Any, schema: dict, path: str = "$") -> None:
 
 def chat_json(client, model: str, messages: list[dict], schema: dict, temperature: float = 0.0) -> dict:
     """Request JSON mode, validate against a schema, then retry once with validation feedback."""
+    timing_ms = 0
+    input_tokens = 0
+    output_tokens = 0
+    has_token_counts = False
+    has_input_tokens = False
+    has_output_tokens = False
     for attempt in range(2):
         retry_messages = messages
         if attempt:
@@ -69,22 +89,58 @@ def chat_json(client, model: str, messages: list[dict], schema: dict, temperatur
                 },
             ]
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=retry_messages,
-                temperature=temperature,
-                response_format={"type": "json_object"},
-            )
-            content = response.choices[0].message.content
+            start = time.perf_counter()
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=retry_messages,
+                    temperature=temperature,
+                    response_format={"type": "json_object"},
+                )
+            finally:
+                timing_ms += max(1, int((time.perf_counter() - start) * 1000))
+            usage = _response_value(response, "usage")
+            prompt_tokens = _usage_value(usage, "prompt_tokens")
+            completion_tokens = _usage_value(usage, "completion_tokens")
+            prompt_tokens = prompt_tokens if isinstance(prompt_tokens, int) else _response_value(response, "prompt_eval_count")
+            completion_tokens = completion_tokens if isinstance(completion_tokens, int) else _response_value(response, "eval_count")
+            if isinstance(prompt_tokens, int) or isinstance(completion_tokens, int):
+                has_token_counts = True
+                has_input_tokens = has_input_tokens or isinstance(prompt_tokens, int)
+                has_output_tokens = has_output_tokens or isinstance(completion_tokens, int)
+                input_tokens += prompt_tokens if isinstance(prompt_tokens, int) else 0
+                output_tokens += completion_tokens if isinstance(completion_tokens, int) else 0
+            choices = _response_value(response, "choices")
+            message = _response_value(choices[0], "message")
+            content = _response_value(message, "content")
             if not isinstance(content, str):
                 raise JSONSchemaValidationError("$ response content must be a JSON string")
             value = json.loads(content)
             _validate(value, schema)
-            return value
+            tokens = {
+                "input": input_tokens if has_input_tokens else None,
+                "output": output_tokens if has_output_tokens else None,
+            } if has_token_counts else None
+            return {
+                "parsed": value,
+                "model": model,
+                "timing_ms": timing_ms,
+                "tokens": tokens,
+            }
         except (json.JSONDecodeError, JSONSchemaValidationError, TypeError) as error:
             validation_error = str(error)
         except Exception as error:
+            tokens = {
+                "input": input_tokens if has_input_tokens else None,
+                "output": output_tokens if has_output_tokens else None,
+            } if has_token_counts else None
+            record_llm_telemetry(model, timing_ms, tokens)
             if attempt:
                 raise StructuredOutputError() from error
             raise
+    tokens = {
+        "input": input_tokens if has_input_tokens else None,
+        "output": output_tokens if has_output_tokens else None,
+    } if has_token_counts else None
+    record_llm_telemetry(model, timing_ms, tokens)
     raise StructuredOutputError() from JSONSchemaValidationError(validation_error)

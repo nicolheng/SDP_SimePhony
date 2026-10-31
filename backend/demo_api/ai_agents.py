@@ -16,6 +16,7 @@ from pathlib import Path
 
 import db
 import tools
+from agents.telemetry import telemetry_payload, telemetry_scope
 
 from . import agents as standins
 
@@ -63,32 +64,42 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
         ctx.defer_agent_step(name, **(background_args or {}))
         return fallback()
     error = None
-    try:
-        with tools.use_connection(ctx.conn):
-            try:
+    with telemetry_scope() as telemetry:
+        try:
+            with tools.use_connection(ctx.conn):
                 result = ai()
-            except Exception as exc:
-                error = exc
-        if error is None:
-            ctx.invalidate()
-            return result
-    except Exception as exc:
-        error = exc
+                if telemetry["agent_step_events"] == 0:
+                    tools.log_agent_step(
+                        (background_args or {}).get("case_id"),
+                        _agent_label(name),
+                        f"Completed {name} agent step",
+                        telemetry_payload(telemetry),
+                    )
+        except Exception as exc:
+            error = exc
+    if error is None:
+        ctx.invalidate()
+        return result
     if error is not None:
         e = error
         log.warning("%s agent failed, using the stand-in: %s", name, e)
         print(f"[AI AGENTS] {name} failed, using the stand-in: {e}")
         case_id = (background_args or {}).get("case_id")
         if case_id:
-            _save_fallback(ctx, case_id, name, str(e), type(e).__name__)
+            _save_fallback(ctx, case_id, name, str(e), type(e).__name__, telemetry)
         else:
-            ctx.pending_agent_fallbacks.append({"step": name, "error_type": type(e).__name__, "reason": str(e)[:500]})
+            ctx.pending_agent_fallbacks.append({
+                "step": name,
+                "error_type": type(e).__name__,
+                "reason": str(e)[:500],
+                "telemetry": telemetry,
+            })
         if failure_fallback is not None:
             return failure_fallback()
         return fallback()
 
 
-def _save_fallback(ctx, case_id: str, name: str, reason: str, error_type: str) -> bool:
+def _save_fallback(ctx, case_id: str, name: str, reason: str, error_type: str, telemetry: dict | None = None) -> bool:
     try:
         message = f"Used rule-based fallback for {name}: {error_type}"
         with tools.use_connection(ctx.conn):
@@ -96,7 +107,13 @@ def _save_fallback(ctx, case_id: str, name: str, reason: str, error_type: str) -
                 case_id,
                 _agent_label(name),
                 message,
-                {"fallback_used": True, "step": name, "reason": reason[:500]},
+                {
+                    **telemetry_payload(telemetry, fallback_used=True, fallback_reason=reason[:500]),
+                    "fallback_used": True,
+                    "fallback_reason": reason[:500],
+                    "step": name,
+                    "reason": reason[:500],
+                },
             )
         if result.get("ok") is False:
             log.error("Could not save %s fallback status for case %s: %s", name, case_id, result["error"])
@@ -110,7 +127,14 @@ def _save_fallback(ctx, case_id: str, name: str, reason: str, error_type: str) -
 def record_pending_fallbacks(ctx, case_id: str) -> None:
     """Attach pre-case agent failures to the case created from their rule-based result."""
     for fallback in ctx.pending_agent_fallbacks[:]:
-        if _save_fallback(ctx, case_id, fallback["step"], fallback["reason"], fallback["error_type"]):
+        if _save_fallback(
+            ctx,
+            case_id,
+            fallback["step"],
+            fallback["reason"],
+            fallback["error_type"],
+            fallback.get("telemetry"),
+        ):
             ctx.pending_agent_fallbacks.remove(fallback)
 
 
