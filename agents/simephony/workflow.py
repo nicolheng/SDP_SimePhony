@@ -24,7 +24,7 @@ class AgentState(TypedDict):
     comms_result: dict
     initial_inspection_result: dict
     missing_info: list[str]
-    current_status: str # Case status (e.g., SUBMITTED, ASSIGNED, etc.)
+    current_status: str # Case status (e.g., SUBMITTED, VISIT_SCHEDULED, etc.)
     reassignment_count: int # Number of times a technician rejected the booking
     tried_technicians: list[str] # List of technicians who already rejected the case
     # Event-driven fields

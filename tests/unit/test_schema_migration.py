@@ -53,3 +53,24 @@ def test_schema_is_complete_and_migration_backfills_older_databases(tmp_path):
         }
     finally:
         legacy.close()
+
+
+def test_migration_retires_assigned_case_status_idempotently(seed_db):
+    import db
+    from demo_api.migrate import migrate
+
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE cases SET status = 'ASSIGNED', booking_status = 'CONFIRMED' WHERE case_id = 'C-0010'"
+        )
+        migrate(conn)
+        case = conn.execute(
+            "SELECT status, booking_status FROM cases WHERE case_id = 'C-0010'"
+        ).fetchone()
+        assert tuple(case) == ("VISIT_SCHEDULED", "PENDING")
+
+        migrate(conn)
+        case = conn.execute(
+            "SELECT status, booking_status FROM cases WHERE case_id = 'C-0010'"
+        ).fetchone()
+        assert tuple(case) == ("VISIT_SCHEDULED", "PENDING")

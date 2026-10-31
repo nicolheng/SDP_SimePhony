@@ -5,7 +5,6 @@ type Tone = "gray" | "blue" | "amber" | "green" | "red" | "purple";
 export const STATUS_META: Record<CaseStatus, { label: string; buyer: string; tone: Tone }> = {
   SUBMITTED: { label: "Submitted", buyer: "Received", tone: "gray" },
   INFO_NEEDED: { label: "Info needed", buyer: "Action needed", tone: "amber" },
-  ASSIGNED: { label: "Assigned", buyer: "Technician assigned", tone: "blue" },
   VISIT_SCHEDULED: { label: "Inspection visit", buyer: "Inspection visit booked", tone: "blue" },
   VALID: { label: "Valid", buyer: "Book your repair", tone: "amber" },
   INVALID: { label: "Invalid", buyer: "Not a defect", tone: "gray" },
@@ -28,7 +27,7 @@ export const TONE_CLASS: Record<Tone, string> = {
 };
 
 export const OPEN_STATUSES: CaseStatus[] = [
-  "SUBMITTED", "INFO_NEEDED", "ASSIGNED", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED",
+  "SUBMITTED", "INFO_NEEDED", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED",
   "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION",
 ];
 
@@ -42,7 +41,6 @@ export function buyerStepIndex(s: CaseStatus): number {
     case "SUBMITTED":
     case "INFO_NEEDED":
       return 0;
-    case "ASSIGNED":
     case "VISIT_SCHEDULED":
     case "REOPENED":
     case "ESCALATION_PENDING":
@@ -65,7 +63,6 @@ export function buyerStepIndex(s: CaseStatus): number {
 export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
   SUBMITTED: "We've received your report and our assistant is reviewing it.",
   INFO_NEEDED: "We need a little more information before we can assign a technician.",
-  ASSIGNED: "A technician with the right skills has been assigned to your case.",
   VISIT_SCHEDULED: "A technician will visit to inspect the defect at the booked time.",
   VALID: "The technician confirmed the defect. Please book a repair slot.",
   INVALID: "The technician assessed this as not a defect. This case is closed; submit a new report if the problem changes.",
@@ -81,7 +78,7 @@ export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
 /** Buyer "My Defects" tabs. */
 export const BUYER_TABS = [
   { id: "all", label: "All", statuses: null },
-  { id: "open", label: "Open", statuses: ["SUBMITTED", "INFO_NEEDED", "ASSIGNED", "VISIT_SCHEDULED"] },
+  { id: "open", label: "Open", statuses: ["SUBMITTED", "INFO_NEEDED", "VISIT_SCHEDULED"] },
   { id: "ongoing", label: "Ongoing", statuses: ["VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION"] },
   { id: "closed", label: "Closed", statuses: ["CLOSED", "INVALID"] },
   { id: "previous", label: "Previous", statuses: null },
@@ -99,7 +96,6 @@ export const buyerNeedsAction = (c: { status: CaseStatus; signoff?: { buyer?: un
 export const TECH_EXPLAIN: Record<CaseStatus, string> = {
   SUBMITTED: "New report; the AI agents are still processing it.",
   INFO_NEEDED: "Waiting for the buyer to answer a follow-up question.",
-  ASSIGNED: "Assigned to you; the visit is being scheduled.",
   VISIT_SCHEDULED: "Inspect on site, then mark the defect Valid or Invalid.",
   VALID: "You confirmed the defect. Waiting for the buyer to book a repair slot.",
   INVALID: "You marked this as not a defect. The case is closed.",
@@ -117,7 +113,7 @@ export const TECH_TABS = [
   { id: "todo", label: "To do", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "REPAIR_BOOKED"] },
   { id: "inspection", label: "Inspection visits", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION"] },
   { id: "repair", label: "Repair", statuses: ["REPAIR_BOOKED"] },
-  { id: "waiting", label: "Waiting", statuses: ["ASSIGNED", "VALID", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING"] },
+  { id: "waiting", label: "Waiting", statuses: ["VALID", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING"] },
   { id: "completed", label: "Completed", statuses: ["CLOSED", "INVALID"] },
   { id: "history", label: "History", statuses: null },
 ] as const satisfies readonly { id: string; label: string; statuses: readonly CaseStatus[] | null }[];
