@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Check, CircleCheck, Mail } from "lucide-react";
+import { AlertTriangle, Bot, Check, CircleCheck, Mail } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { agentLabel } from "@/lib/agents";
@@ -147,6 +147,15 @@ export function EventTimeline({ events, compact, large }: { events: CaseEvent[];
               )}
             </div>
             <p className={cn("text-zinc-800", large ? "text-base" : "text-sm")}>{e.message}</p>
+            {e.fallbackUsed && (
+              <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-amber-800" role="status">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-semibold">
+                  <AlertTriangle className="size-3.5" aria-hidden="true" />
+                  Used rule-based fallback
+                </span>
+                {e.fallbackReason && <span>Reason: {e.fallbackReason}</span>}
+              </div>
+            )}
           </li>
         );
       })}

@@ -54,6 +54,7 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
     first = _messages(case_id)[-1]
     assert first["title"] == "We've received your report" and "Requested visit time:" in first["body"]  # CommsAgent
     assert any(t.get("agent") == "TriageAgent" and t["message"].startswith("Triage:") for t in _trace(case_id))
+    assert not any((t.get("data") or {}).get("fallback_used") for t in _trace(case_id))
 
     _web(workflow.accept_job, case_id, c["technician_id"])
     _web(workflow.record_verdict, case_id, "VALID", "Pipe joint leaking above the wardrobe; ceiling board soaked.", None)
@@ -107,9 +108,40 @@ def test_llm_down_falls_back_to_the_stand_ins(fake_llm, ai_on):
     case_id = _report()
     c = _case(case_id)
     assert c["status"] == "VISIT_SCHEDULED" and c["category"] == "water_leak"  # intake + triage: the stand-ins
+    assert any((t.get("data") or {}).get("step") == "intake" and (t.get("data") or {}).get("fallback_used")
+               for t in _trace(case_id))
     m = _messages(case_id)[-1]
     # CommsAgent has its own fallback: the fixed safe template, still with the visit time
     assert m["body"].startswith(NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]) and "Requested visit time:" in m["body"]
+
+
+def test_agent_fallback_is_saved_and_returned_in_case_events(monkeypatch):
+    import db
+    from agents.simephony import intake as intake_agent
+    from demo_api import ai_agents, state, workflow
+
+    monkeypatch.setenv("USE_AI_AGENTS", "false")
+    case_id = _report()
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+
+    def failed_intake(_state):
+        raise RuntimeError("agent service unavailable")
+
+    monkeypatch.setattr(intake_agent, "intake_node", failed_intake)
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn)
+        case = workflow.load_case(ctx, case_id)
+        ai_agents.intake(ctx, case["description"], None, True, case_id)
+        response_state = state.build_state(ctx, "http://testserver")
+
+    fallback_events = [
+        event for event in response_state["events"]
+        if event["caseId"] == case_id and event["fallbackUsed"]
+    ]
+    assert len(fallback_events) == 1
+    assert fallback_events[0]["agent"] == "IntakeAgent"
+    assert fallback_events[0]["fallbackStep"] == "intake"
+    assert fallback_events[0]["fallbackReason"] == "agent service unavailable"
 
 
 def test_switch_off_uses_the_stand_ins(fake_llm, monkeypatch):
@@ -117,6 +149,224 @@ def test_switch_off_uses_the_stand_ins(fake_llm, monkeypatch):
     case_id = _report()
     assert fake_llm.calls == []  # no agent ran
     assert "Requested visit time:" not in _messages(case_id)[-1]["body"]
+
+
+def test_api_defers_ai_until_the_action_is_committed(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from starlette.requests import Request
+
+    import tools
+    from demo_api import ai_agents, routes
+
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+    tools.get_clock()
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+        "path": "/api/cases",
+        "query_string": b"",
+        "headers": [],
+    })
+    tasks = BackgroundTasks()
+    response = routes.create_case(
+        routes.NewReport(
+            unit_id="A-1-01",
+            buyer_id="B-0001",
+            description="Water dripping from the master bedroom ceiling.",
+            slot="",
+        ),
+        request,
+        tasks,
+    )
+
+    assert response["caseId"]
+    assert fake_llm.calls == []
+    assert len(tasks.tasks) == 1
+    task = tasks.tasks[0]
+    assert task.func is ai_agents.run_background_steps
+    assert task.args[0] == response["caseId"]
+
+    task.func(*task.args, **task.kwargs)
+    assert fake_llm.calls
+
+
+def test_case_action_succeeds_while_background_agent_is_running(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from threading import Event, Thread
+    from starlette.requests import Request
+
+    import tools
+    from agents.simephony import intake as intake_agent
+    from demo_api import routes
+
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+    tools.get_clock()
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+        "path": "/api/cases",
+        "query_string": b"",
+        "headers": [],
+    })
+    tasks = BackgroundTasks()
+    response = routes.create_case(
+        routes.NewReport(
+            unit_id="A-1-01",
+            buyer_id="B-0001",
+            description="Water dripping from the master bedroom ceiling.",
+            slot="",
+        ),
+        request,
+        tasks,
+    )
+    started, release = Event(), Event()
+    original_intake_node = intake_agent.intake_node
+
+    def blocked_intake_node(state):
+        started.set()
+        assert release.wait(5)
+        return original_intake_node(state)
+
+    monkeypatch.setattr(intake_agent, "intake_node", blocked_intake_node)
+    task = tasks.tasks[0]
+    agent_thread = Thread(target=task.func, args=task.args, kwargs=task.kwargs)
+    agent_thread.start()
+    try:
+        assert started.wait(5)
+        case = _case(response["caseId"])
+        accepted = routes.accept(
+            response["caseId"],
+            routes.Worker(technician_id=case["technician_id"]),
+            request,
+            BackgroundTasks(),
+        )
+        assert "state" in accepted
+    finally:
+        release.set()
+        agent_thread.join(timeout=10)
+
+    assert not agent_thread.is_alive()
+
+
+def test_rain_uses_background_ai_and_state_refresh_sees_results(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from threading import Event, Thread
+    from starlette.requests import Request
+
+    import db
+    import tools
+    from agents.simephony import intake as intake_agent
+    from demo_api import routes
+
+    monkeypatch.setenv("USE_AI_AGENTS", "true")
+    tools.get_clock()
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+        "path": "/api/demo/rain",
+        "query_string": b"",
+        "headers": [],
+    })
+    with db.get_conn() as conn:
+        existing_ids = {row["case_id"] for row in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id IN ('A-13-08', 'A-11-08')"
+        )}
+
+    tasks = BackgroundTasks()
+    response = routes.rain(request, tasks)
+    with db.get_conn() as conn:
+        new_ids = {row["case_id"] for row in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id IN ('A-13-08', 'A-11-08')"
+        )} - existing_ids
+
+    assert new_ids
+    assert len(tasks.tasks) == len(new_ids)
+    assert all(next(c for c in response["state"]["cases"] if c["id"] == case_id)["status"] == "SUBMITTED"
+               for case_id in new_ids)
+
+    started, release = Event(), Event()
+    original_intake_node = intake_agent.intake_node
+
+    def blocked_intake_node(state):
+        started.set()
+        assert release.wait(5)
+        return original_intake_node(state)
+
+    monkeypatch.setattr(intake_agent, "intake_node", blocked_intake_node)
+    first_task = tasks.tasks[0]
+    agent_thread = Thread(target=first_task.func, args=first_task.args, kwargs=first_task.kwargs)
+    agent_thread.start()
+    try:
+        assert started.wait(5)
+        while_running = routes.get_state(request)["state"]
+        assert all(next(c for c in while_running["cases"] if c["id"] == case_id)["status"] == "SUBMITTED"
+                   for case_id in new_ids)
+    finally:
+        release.set()
+        agent_thread.join(timeout=10)
+
+    assert not agent_thread.is_alive()
+    for task in tasks.tasks[1:]:
+        task.func(*task.args, **task.kwargs)
+
+    refreshed_state = routes.get_state(request)["state"]
+    refreshed_cases = [case for case in refreshed_state["cases"] if case["id"] in new_ids]
+    assert all(case["status"] == "VISIT_SCHEDULED" for case in refreshed_cases)
+    assert fake_llm.calls
+    assert any(event["caseId"] in new_ids and event["agent"] == "SimilarDefectAgent"
+               for event in refreshed_state["events"])
+
+
+def test_rain_keeps_rule_based_flow_when_ai_is_off(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from starlette.requests import Request
+
+    import db
+    import tools
+    from demo_api import routes
+
+    monkeypatch.setenv("USE_AI_AGENTS", "false")
+    tools.get_clock()
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+        "path": "/api/demo/rain",
+        "query_string": b"",
+        "headers": [],
+    })
+    with db.get_conn() as conn:
+        existing_ids = {row["case_id"] for row in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id IN ('A-13-08', 'A-11-08')"
+        )}
+
+    tasks = BackgroundTasks()
+    response = routes.rain(request, tasks)
+    with db.get_conn() as conn:
+        new_ids = {row["case_id"] for row in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id IN ('A-13-08', 'A-11-08')"
+        )} - existing_ids
+
+    assert new_ids
+    assert not tasks.tasks
+    assert all(next(c for c in response["state"]["cases"] if c["id"] == case_id)["status"] == "VISIT_SCHEDULED"
+               for case_id in new_ids)
+    assert fake_llm.calls == []
 
 
 @pytest.mark.parametrize("value, name, on", [("", "comms", False), ("all", "intake", True),

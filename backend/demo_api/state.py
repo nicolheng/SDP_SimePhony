@@ -188,6 +188,7 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
     events = []
     for r in rows("SELECT * FROM case_events ORDER BY created_at, event_id"):
         p = _json(r["payload"], {})
+        data = p.get("data") if isinstance(p.get("data"), dict) else {}
         events.append({
             "id": _num(r["event_id"]),
             "caseId": r["case_id"],
@@ -195,6 +196,9 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "at": norm(r["created_at"]),
             "agent": p.get("agent") if r["type"] == "agent.step" else None,
             "message": _event_message(r["type"], p, ctx),
+            "fallbackUsed": data.get("fallback_used") is True,
+            "fallbackStep": data.get("step"),
+            "fallbackReason": data.get("reason"),
         })
 
     buyer_email = {r["buyer_id"]: r["email"] for r in rows("SELECT buyer_id, email FROM buyers")}

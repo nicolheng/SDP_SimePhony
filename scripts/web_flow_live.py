@@ -166,6 +166,50 @@ def tc4_reopen(case_id: str) -> None:
     w.show(1, "Buyer", "Reopen Case with a new photo")
 
 
+def tc5_simulate_rain() -> None:
+    from fastapi import BackgroundTasks
+    from starlette.requests import Request
+
+    import db
+    from demo_api import routes
+
+    banner("TC5 simulate rain: save reports -> run AI intake, recurrence and triage -> refresh state")
+    with db.get_conn() as conn:
+        before = {row["case_id"] for row in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id IN ('A-13-08', 'A-11-08')"
+        )}
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+        "path": "/api/demo/rain",
+        "query_string": b"",
+        "headers": [],
+    })
+    tasks = BackgroundTasks()
+    routes.rain(request, tasks)
+    for task in tasks.tasks:
+        task.func(*task.args, **task.kwargs)
+
+    state = routes.get_state(request)["state"]
+    with db.get_conn() as conn:
+        after = {row["case_id"] for row in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id IN ('A-13-08', 'A-11-08')"
+        )}
+    created = after - before
+    for case in state["cases"]:
+        if case["id"] in created:
+            print(f"      CASE {case['id']} ({case['unitId']}): {case['status']}")
+            for event in state["events"]:
+                if event["caseId"] == case["id"] and event["type"] == "agent.step":
+                    print(f"      TRACE {event.get('agent')}: {event['message']}")
+    if not created:
+        print("      (rain reports already have an active case; no new reports were created)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--off", action="store_true", help="rule-based stand-ins only (USE_AI_AGENTS=false)")
@@ -176,6 +220,7 @@ def main() -> None:
         tc2_repeat_leak()
         tc3_handover()
         tc4_reopen(door)
+        tc5_simulate_rain()
     finally:
         print(f"\nDone. The temporary DB is kept for a look: {tmp / 'web.db'}")
 

@@ -3,12 +3,9 @@
 USE_AI_AGENTS (.env):  "" / false = the rule-based stand-ins in agents.py only (default)
                         true / all = every agent below
                         or a comma list: intake, similar, triage, estimate, verification, inspection, comms
-Each agent runs inside the web request's transaction (tools.use_connection) in decide_only mode: it returns
-its decision and workflow.py writes it, exactly as with the stand-ins. The two things the web app never
-writes are saved by the agents themselves: triage's urgency (set_triage_result) and the repair estimate
-(set_repair_estimate). If an agent fails (e.g. Ollama is down), that step falls back to its stand-in, so the
-app keeps working. The LLM calls run inside the request, so a step can take seconds (text) to a minute or
-two (the vision model) on a laptop.
+Direct workflow callers run agents inline. API requests use rule-based results in their transaction and
+defer the agent computations until after commit, where each step loads current case data on a fresh
+connection. AI results do not replace the rule-based action already returned to the caller.
 """
 import base64
 import logging
@@ -17,6 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import db
 import tools
 
 from . import agents as standins
@@ -38,9 +36,12 @@ def enabled(name: str) -> bool:
     return name in {x.strip() for x in value.split(",")}
 
 
-def _run(ctx, name: str, ai, fallback):
-    """ai() inside the request's transaction; the stand-in if the agent is off or fails."""
+def _run(ctx, name: str, ai, fallback, background_args: dict | None = None):
+    """Run inline, defer after commit, or use the rule-based result when disabled or unavailable."""
     if not enabled(name):
+        return fallback()
+    if ctx.defer_agents:
+        ctx.defer_agent_step(name, **(background_args or {}))
         return fallback()
     try:
         with tools.use_connection(ctx.conn):
@@ -50,7 +51,50 @@ def _run(ctx, name: str, ai, fallback):
     except Exception as e:  # never let an agent break the request: use the rule-based stand-in
         log.warning("%s agent failed, using the stand-in: %s", name, e)
         print(f"[AI AGENTS] {name} failed, using the stand-in: {e}")
+        case_id = (background_args or {}).get("case_id")
+        if case_id:
+            _save_fallback(ctx, case_id, name, str(e), type(e).__name__)
+        else:
+            ctx.pending_agent_fallbacks.append({"step": name, "error_type": type(e).__name__, "reason": str(e)[:500]})
         return fallback()
+
+
+def _save_fallback(ctx, case_id: str, name: str, reason: str, error_type: str) -> bool:
+    try:
+        message = f"Used rule-based fallback for {name}: {error_type}"
+        with tools.use_connection(ctx.conn):
+            result = tools.log_agent_step(
+                case_id,
+                _agent_label(name),
+                message,
+                {"fallback_used": True, "step": name, "reason": reason[:500]},
+            )
+        if result.get("ok") is False:
+            log.error("Could not save %s fallback status for case %s: %s", name, case_id, result["error"])
+            return False
+        return True
+    except Exception:
+        log.exception("Could not save %s fallback status for case %s", name, case_id)
+        return False
+
+
+def record_pending_fallbacks(ctx, case_id: str) -> None:
+    """Attach pre-case agent failures to the case created from their rule-based result."""
+    for fallback in ctx.pending_agent_fallbacks[:]:
+        if _save_fallback(ctx, case_id, fallback["step"], fallback["reason"], fallback["error_type"]):
+            ctx.pending_agent_fallbacks.remove(fallback)
+
+
+def _agent_label(name: str) -> str:
+    return {
+        "intake": "IntakeAgent",
+        "similar": "SimilarDefectAgent",
+        "triage": "TriageAgent",
+        "estimate": "RepairEstimateAgent",
+        "verification": "VerificationAgent",
+        "inspection": "InitialInspectionAgent",
+        "comms": "CommsAgent",
+    }.get(name, name)
 
 
 def _photo_path(ctx, case_id: str | None, kind: str, photo: str | None = None) -> str | None:
@@ -91,7 +135,8 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
                 "urgency": r.get("urgency") or "normal", "missing_info": missing,
                 # a question only when something is actually missing (avoids needless follow-up rounds)
                 "follow_up_question": (r.get("follow_up_question") or stand["follow_up_question"]) if missing else None}
-    return _run(ctx, "intake", ai, lambda: stand)
+    return _run(ctx, "intake", ai, lambda: stand,
+                {"case_id": case_id})
 
 
 # ---------- SimilarDefectAgent ----------
@@ -105,7 +150,7 @@ def similar(ctx, case: dict) -> dict:
                                  "user_description": case.get("description") or case.get("summary") or "",
                                  "intake_result": {"category": case["category"]}, "decide_only": True})["similar_cases_result"]
         return {**stand, "cluster_reason": r.get("cluster_reason")}
-    return _run(ctx, "similar", ai, lambda: stand)
+    return _run(ctx, "similar", ai, lambda: stand, {"case_id": case["case_id"]})
 
 
 # ---------- TriageAgent + BookingAgent ----------
@@ -125,7 +170,8 @@ def triage(ctx, case: dict, preferred: str | None) -> dict:
         if b.get("booking_status") != "PROPOSED":
             raise RuntimeError(b.get("reason") or b.get("error") or "no technician proposed")
         return {"technician_id": b["assigned_technician"], "slot": b["start"], "reason": b["reason"]}
-    return _run(ctx, "triage", ai, lambda: standins.triage(ctx, case, preferred))
+    return _run(ctx, "triage", ai, lambda: standins.triage(ctx, case, preferred),
+                {"case_id": case["case_id"]})
 
 
 # ---------- RepairEstimateAgent (no stand-in: the category's normal hours apply) ----------
@@ -140,7 +186,7 @@ def repair_estimate(ctx, case: dict) -> dict | None:
         if r.get("error"):
             raise RuntimeError(r["error"])
         return r
-    return _run(ctx, "estimate", ai, lambda: None)
+    return _run(ctx, "estimate", ai, lambda: None, {"case_id": case["case_id"]})
 
 
 # ---------- VerificationAgent ----------
@@ -161,7 +207,8 @@ def verification_guide(ctx, case: dict) -> tuple[dict, str | None]:
         if v.get("needs_technician_input"):
             return standins.verification_guide(case), f"Photo check: {v['technician_message']} SDP: please check the repair photo before signing off."
         return v["guide"], f"Photo check: {v['assessment']} ({v.get('observations') or 'no notes'})"
-    return _run(ctx, "verification", ai, lambda: (standins.verification_guide(case), None))
+    return _run(ctx, "verification", ai, lambda: (standins.verification_guide(case), None),
+                {"case_id": case["case_id"]})
 
 
 # ---------- InitialInspectionAgent ----------
@@ -184,7 +231,7 @@ def initial_inspection(ctx, case: dict, verdict_note: str | None, verification: 
             raise RuntimeError("brief checklist too short")
         return {**stand, "checklist": checklist,
                 "likelyComponents": [str(x) for x in (r.get("likelyComponents") or [])] or stand["likelyComponents"]}
-    return _run(ctx, "inspection", ai, lambda: stand)
+    return _run(ctx, "inspection", ai, lambda: stand, {"case_id": case["case_id"]})
 
 
 # ---------- CommsAgent ----------
@@ -199,4 +246,37 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
             from agents.simephony import backend_tools
             extra["guide"] = _guide_text(backend_tools.get_signoff_info(case["case_id"]).get("guide"))
         return message_for_kind(kind, case, extra)
-    return _run(ctx, "comms", ai, lambda: standins.comms(ctx, kind, case, extra))
+    return _run(ctx, "comms", ai, lambda: standins.comms(ctx, kind, case, extra),
+                {"case_id": case["case_id"], "kind": kind, "extra": extra})
+
+
+def run_background_steps(case_id: str, steps: list[dict]) -> None:
+    """Run queued AI computations after the request commits, using fresh DB sessions and current case data."""
+    for step in steps:
+        name = step["name"]
+        try:
+            with db.get_conn() as conn:
+                from .workflow import Ctx, WorkflowError, latest_verification, load_case
+
+                ctx = Ctx(conn)
+                case = load_case(ctx, case_id)
+                if name == "intake":
+                    intake(ctx, case["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
+                elif name == "similar":
+                    similar(ctx, case)
+                elif name == "triage":
+                    triage(ctx, case, case.get("preferred_visit_at"))
+                elif name == "estimate":
+                    repair_estimate(ctx, case)
+                elif name == "verification":
+                    verification_guide(ctx, case)
+                elif name == "inspection":
+                    initial_inspection(ctx, case, case.get("verdict_note"), latest_verification(ctx, case_id))
+                elif name == "comms":
+                    comms(ctx, step["kind"], case, step.get("extra"))
+                else:
+                    raise ValueError(f"Unknown background agent step: {name}")
+        except WorkflowError:
+            log.info("Skipping %s agent step for case %s because the case no longer exists", name, case_id)
+        except Exception:
+            log.exception("Background %s agent step failed for case %s", name, case_id)
