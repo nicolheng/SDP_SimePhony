@@ -155,13 +155,20 @@ def _agent_label(name: str) -> str:
     }.get(name, name)
 
 
-def _photo_path(ctx, case_id: str | None, kind: str, photo: str | None = None) -> str | None:
+def _photo_path(
+    ctx,
+    case_id: str | None,
+    kind: str,
+    temporary_photos: list[str],
+    photo: str | None = None,
+) -> str | None:
     """A file path for the vision model: a data URL from the browser is written to a temp file; otherwise
     the case's latest photo of this kind from uploads/."""
     if photo and photo.startswith("data:image/"):
         header, data = photo.split(",", 1)
         suffix = ".png" if "png" in header else ".jpg"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+            temporary_photos.append(f.name)
             f.write(base64.b64decode(data))
             return f.name
     if photo and Path(photo).is_file():
@@ -174,6 +181,14 @@ def _photo_path(ctx, case_id: str | None, kind: str, photo: str | None = None) -
     return str(path) if path and path.is_file() else None
 
 
+def _cleanup_temp_photos(temporary_photos: list[str]) -> None:
+    for path in temporary_photos:
+        try:
+            os.remove(path)
+        except OSError:
+            log.warning("Could not delete temporary AI photo %s", path, exc_info=True)
+
+
 # ---------- IntakeAgent ----------
 
 def intake(ctx, description: str, photo: str | None, has_photo: bool | None = None, case_id: str | None = None) -> dict:
@@ -183,13 +198,17 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
 
     def ai():
         from agents.simephony.intake import intake_node
-        image = _photo_path(ctx, case_id, "original", photo)
-        result = intake_node({
-            "case_id": case_id,
-            "user_description": description,
-            "image_path": image,
-            "decide_only": True,
-        })
+        temporary_photos = []
+        try:
+            image = _photo_path(ctx, case_id, "original", temporary_photos, photo)
+            result = intake_node({
+                "case_id": case_id,
+                "user_description": description,
+                "image_path": image,
+                "decide_only": True,
+            })
+        finally:
+            _cleanup_temp_photos(temporary_photos)
         if result.get("_structured_output_error") and not result.get("needs_human_review"):
             from agents.simephony.structured_output import StructuredOutputError
             raise StructuredOutputError()
@@ -299,12 +318,16 @@ def verification_guide(ctx, case: dict) -> tuple[dict | None, str | None, dict |
     signs before the buyer, so a person always looks at it)."""
     def ai():
         from agents.simephony.verification import verification_node
-        state = verification_node({
-            "case_id": case["case_id"], "current_status": "REPAIRED", "decide_only": True,
-            "intake_result": {"category": case["category"], "location_in_unit": case.get("location_in_unit")},
-            "user_description": case.get("description") or "", "repair_note": case.get("repair_note") or "",
-            "image_path": _photo_path(ctx, case["case_id"], "original"),
-            "repair_photo_path": _photo_path(ctx, case["case_id"], "repair")})
+        temporary_photos = []
+        try:
+            state = verification_node({
+                "case_id": case["case_id"], "current_status": "REPAIRED", "decide_only": True,
+                "intake_result": {"category": case["category"], "location_in_unit": case.get("location_in_unit")},
+                "user_description": case.get("description") or "", "repair_note": case.get("repair_note") or "",
+                "image_path": _photo_path(ctx, case["case_id"], "original", temporary_photos=temporary_photos),
+                "repair_photo_path": _photo_path(ctx, case["case_id"], "repair", temporary_photos=temporary_photos)})
+        finally:
+            _cleanup_temp_photos(temporary_photos)
         v = state["verification_result"]
         if v.get("_structured_output_error"):
             from agents.simephony.structured_output import StructuredOutputError
