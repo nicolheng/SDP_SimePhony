@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 import db
 
-from . import agents, workflow
+from . import agents, config, workflow
 from .migrate import reset_demo
 from .state import build_state
 from .workflow import Ctx, WorkflowError
@@ -44,6 +44,12 @@ def _run(request: Request, action=None, *args) -> dict:
 def get_state(request: Request):
     """Everything the screens need, read from data/simephony.db (time rules applied first)."""
     return _run(request)
+
+
+@router.get("/rules")
+def get_rules():
+    """Business rules from rules.yaml, the single source the web app reads them from."""
+    return config.public_rules()
 
 
 @router.get("/slots/visit")

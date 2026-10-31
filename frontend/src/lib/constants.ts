@@ -1,47 +1,26 @@
-import type { Buyer, Category, Reference, RepairPlan, Technician, Unit } from "./types";
+import rulesSnapshot from "./rules.snapshot.json";
+import type { Buyer, Reference, Rules, Technician, Unit } from "./types";
 
-// Lookup data the screens show. The values below are the built-in defaults, used only until the first response from
-// the backend (and by the offline demo data in seed.ts). applyReference() then replaces them with what the backend
-// sends: workers and units/buyers from data/simephony.db, rules from rules.yaml and backend/demo_api/config.py.
-// The exports keep their names and are updated in place, so every screen picks up the database values.
+// Lookup data the screens show. Business rules come from the backend's GET /api/rules via
+// applyRules(); rules.snapshot.json is a generated copy of that response, used only until the API
+// answers and by the offline demo data in seed.ts. Workers, units and buyers below are built-in defaults until
+// applyReference() replaces them with data/simephony.db. The exports keep their names and are updated in place, so
+// every screen picks up the backend values.
 
-export const RULES = {
-  gracePeriodDays: 30,
-  /** Buyer has this long after the developer's sign-off to sign off; then the case auto-closes (high urgency: flagged to SDP instead). */
-  signoffPeriodDays: 14,
-  signoffReminderDaysBefore: 3,
-  occurrenceThreshold: 3,
-  stackClusterThreshold: 3,
-  categoryToSkill: {
-    water_leak: ["plumbing", "waterproofing"],
-    plumbing: ["plumbing"],
-    drainage: ["plumbing"],
-    sanitary_fittings: ["plumbing"],
-    electrical: ["electrical"],
-    wall_crack: ["civil"],
-    structural_crack: ["civil"],
-    tiles: ["tiling"],
-    ceiling: ["civil"],
-    door_window: ["carpentry", "glazing"],
-    paint: ["painting"],
-    other: ["general"],
-  } as Record<string, string[]>,
-};
+export const RULES: Rules = rulesSnapshot as Rules;
+export const CATEGORY_LABEL = RULES.categoryLabel;
+export const REPAIR_PLAN = RULES.repairPlan;
+export const SLOT_TIMES = RULES.slotTimes;
+export let SLOT_HOURS = RULES.slotHours;
 
-export const CATEGORY_LABEL: Record<Category, string> = {
-  water_leak: "Water leak",
-  plumbing: "Plumbing",
-  drainage: "Drainage",
-  sanitary_fittings: "Sanitary fittings",
-  electrical: "Electrical",
-  wall_crack: "Wall crack",
-  structural_crack: "Structural crack",
-  tiles: "Tiles",
-  ceiling: "Ceiling",
-  door_window: "Door / window",
-  paint: "Paint",
-  other: "Other",
-};
+/** Adopt the rules from GET /api/rules. */
+export function applyRules(rules: Rules) {
+  Object.assign(CATEGORY_LABEL, rules.categoryLabel);
+  Object.assign(REPAIR_PLAN, rules.repairPlan);
+  SLOT_TIMES.splice(0, SLOT_TIMES.length, ...rules.slotTimes);
+  Object.assign(RULES, rules, { categoryLabel: CATEGORY_LABEL, repairPlan: REPAIR_PLAN, slotTimes: SLOT_TIMES });
+  SLOT_HOURS = rules.slotHours;
+}
 
 export const DEMO_START = "2026-10-19T09:00:00+08:00"; // Monday (offline demo data only)
 export const TZ = "Asia/Kuala_Lumpur";
@@ -122,27 +101,7 @@ export const workerLabel = (id?: string) => {
   return w ? (w.company ? `${w.name} (${w.company})` : w.name) : "—";
 };
 
-/** Who repairs what, and roughly how long it takes. Specialised trades go to subcontractors. */
-export const REPAIR_PLAN: Record<Category, RepairPlan> = {
-  water_leak: { trade: "Waterproofing / Plumbing", by: "subcontractor", skills: ["waterproofing"], hours: 4 },
-  structural_crack: { trade: "Structural", by: "subcontractor", skills: ["structural"], hours: 8 },
-  tiles: { trade: "Tiling", by: "subcontractor", skills: ["tiling"], hours: 4 },
-  plumbing: { trade: "Plumbing", by: "technician", skills: ["plumbing"], hours: 2 },
-  drainage: { trade: "Plumbing", by: "technician", skills: ["plumbing"], hours: 1.5 },
-  sanitary_fittings: { trade: "Plumbing", by: "technician", skills: ["plumbing"], hours: 1.5 },
-  electrical: { trade: "Electrical", by: "technician", skills: ["electrical"], hours: 1.5 },
-  wall_crack: { trade: "Civil / Painting", by: "technician", skills: ["civil", "painting"], hours: 2 },
-  ceiling: { trade: "Ceiling / Civil", by: "technician", skills: ["civil"], hours: 3 },
-  door_window: { trade: "Carpentry / Glazing", by: "technician", skills: ["carpentry", "glazing"], hours: 2 },
-  paint: { trade: "Painting", by: "technician", skills: ["painting"], hours: 2 },
-  other: { trade: "General", by: "technician", skills: ["general"], hours: 1 },
-};
-
 export const SDP_STAFF = { name: "Farah Lee", title: "SDP Defect Team", email: "sdp.staff@example.com" };
-
-export const SLOT_TIMES = ["09:00", "11:00", "14:00", "16:00"];
-/** Each slot is a 2-hour block. */
-export let SLOT_HOURS = 2;
 
 let appliedFrom: unknown = null;
 
@@ -154,8 +113,8 @@ export function applyReference(ref: Reference | undefined, workers: Technician[]
     SUBCONTRACTORS = WORKERS.filter((w) => w.kind === "subcontractor");
   }
   if (!ref) return;
-  // Units, buyers and rules rarely change; only rebuild the indexes when the backend sends a new set.
-  const key = `${ref.units.length}:${ref.buyers.length}:${JSON.stringify(ref.rules)}:${ref.project}`;
+  // Units and buyers rarely change; only rebuild the indexes when the backend sends a new set.
+  const key = `${ref.units.length}:${ref.buyers.length}:${ref.project}`;
   if (key === appliedFrom) return;
   appliedFrom = key;
   PROJECT_NAME = ref.project;
@@ -164,9 +123,4 @@ export function applyReference(ref: Reference | undefined, workers: Technician[]
   buyerById = new Map(ref.buyers.map((b) => [b.id, b]));
   Object.assign(DEMO_BUYER, buyerById.get(DEMO_BUYER.id) ?? {});
   Object.assign(SDP_STAFF, ref.sdpStaff);
-  Object.assign(RULES, ref.rules);
-  Object.assign(CATEGORY_LABEL, ref.categoryLabel);
-  Object.assign(REPAIR_PLAN, ref.repairPlan);
-  SLOT_TIMES.splice(0, SLOT_TIMES.length, ...ref.slotTimes);
-  SLOT_HOURS = ref.slotHours;
 }

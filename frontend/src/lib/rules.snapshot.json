@@ -1,0 +1,286 @@
+{
+  "gracePeriodDays": 30,
+  "signoffPeriodDays": 14,
+  "signoffReminderDaysBefore": 3,
+  "occurrenceThreshold": 3,
+  "stackClusterThreshold": 3,
+  "highUrgencyAutoClose": false,
+  "categoryToSkill": {
+    "water_leak": [
+      "plumbing",
+      "waterproofing"
+    ],
+    "plumbing": [
+      "plumbing"
+    ],
+    "waterproofing": [
+      "waterproofing"
+    ],
+    "drainage": [
+      "plumbing"
+    ],
+    "sanitary_fittings": [
+      "plumbing"
+    ],
+    "electrical": [
+      "electrical"
+    ],
+    "wall_crack": [
+      "civil"
+    ],
+    "structural_crack": [
+      "civil"
+    ],
+    "tiles": [
+      "tiling"
+    ],
+    "flooring": [
+      "flooring"
+    ],
+    "ceiling": [
+      "civil"
+    ],
+    "roof": [
+      "roofing"
+    ],
+    "door_window": [
+      "carpentry",
+      "glazing"
+    ],
+    "paint": [
+      "painting"
+    ],
+    "external_works": [
+      "civil"
+    ],
+    "other": [
+      "general"
+    ]
+  },
+  "categoryLabel": {
+    "water_leak": "Water leak",
+    "plumbing": "Plumbing",
+    "drainage": "Drainage",
+    "sanitary_fittings": "Sanitary fittings",
+    "electrical": "Electrical",
+    "wall_crack": "Wall crack",
+    "structural_crack": "Structural crack",
+    "tiles": "Tiles",
+    "ceiling": "Ceiling",
+    "door_window": "Door / window",
+    "paint": "Paint",
+    "other": "Other"
+  },
+  "repairPlan": {
+    "water_leak": {
+      "trade": "Waterproofing / Plumbing",
+      "by": "subcontractor",
+      "skills": [
+        "waterproofing"
+      ],
+      "hours": 4
+    },
+    "structural_crack": {
+      "trade": "Structural",
+      "by": "subcontractor",
+      "skills": [
+        "structural"
+      ],
+      "hours": 8
+    },
+    "tiles": {
+      "trade": "Tiling",
+      "by": "subcontractor",
+      "skills": [
+        "tiling"
+      ],
+      "hours": 4
+    },
+    "plumbing": {
+      "trade": "Plumbing",
+      "by": "technician",
+      "skills": [
+        "plumbing"
+      ],
+      "hours": 2
+    },
+    "drainage": {
+      "trade": "Plumbing",
+      "by": "technician",
+      "skills": [
+        "plumbing"
+      ],
+      "hours": 1.5
+    },
+    "sanitary_fittings": {
+      "trade": "Plumbing",
+      "by": "technician",
+      "skills": [
+        "plumbing"
+      ],
+      "hours": 1.5
+    },
+    "electrical": {
+      "trade": "Electrical",
+      "by": "technician",
+      "skills": [
+        "electrical"
+      ],
+      "hours": 1.5
+    },
+    "wall_crack": {
+      "trade": "Civil / Painting",
+      "by": "technician",
+      "skills": [
+        "civil",
+        "painting"
+      ],
+      "hours": 2
+    },
+    "ceiling": {
+      "trade": "Ceiling / Civil",
+      "by": "technician",
+      "skills": [
+        "civil"
+      ],
+      "hours": 3
+    },
+    "door_window": {
+      "trade": "Carpentry / Glazing",
+      "by": "technician",
+      "skills": [
+        "carpentry",
+        "glazing"
+      ],
+      "hours": 2
+    },
+    "paint": {
+      "trade": "Painting",
+      "by": "technician",
+      "skills": [
+        "painting"
+      ],
+      "hours": 2
+    },
+    "other": {
+      "trade": "General",
+      "by": "technician",
+      "skills": [
+        "general"
+      ],
+      "hours": 1
+    }
+  },
+  "slotTimes": [
+    "09:00",
+    "11:00",
+    "14:00",
+    "16:00"
+  ],
+  "slotHours": 2,
+  "bookingWindowDays": 14,
+  "urgency": {
+    "default": "normal",
+    "high": [
+      "active water leak near electrical fittings",
+      "electrical sparks or burning smell",
+      "exposed live wiring",
+      "repeated breaker tripping",
+      "ceiling at risk of collapse",
+      "suspected structural movement or major structural crack",
+      "severe water ingress or flooding",
+      "loose glass or window panel at risk of falling",
+      "suspected gas leak"
+    ],
+    "low": [
+      "cosmetic paint defects",
+      "minor hairline crack with no signs of movement",
+      "superficial scratches",
+      "minor cosmetic tile defects"
+    ]
+  },
+  "verificationProtocols": {
+    "water_leak": [
+      "Run the shower or basin in your own unit nearest the repaired spot for 10 minutes.",
+      "Look at the repaired area for new drips, damp patches or spreading stains.",
+      "Touch the repaired surface with a dry hand to check it is not damp.",
+      "Check again after the next heavy rain if the leak only appeared during rain."
+    ],
+    "plumbing": [
+      "Open the repaired tap or valve fully and let the water run for 2 minutes.",
+      "Look under and around the repaired pipe or fitting for drips or pooling.",
+      "Wipe the joint dry with a tissue, wait 5 minutes and check the tissue stays dry.",
+      "Check the water pressure feels normal compared with other taps in the unit."
+    ],
+    "waterproofing": [
+      "Pour or run water over the repaired area (shower floor, balcony) for 10 minutes.",
+      "Check the ceiling or wall below or next to the area for damp patches.",
+      "Look for water pooling instead of draining away."
+    ],
+    "drainage": [
+      "Run the shower or tap that drains to the repaired trap for 3 minutes.",
+      "Check the water drains away without pooling.",
+      "Check for any foul smell near the floor trap."
+    ],
+    "sanitary_fittings": [
+      "Flush the toilet or use the repaired fitting 3 times as normal.",
+      "Check the cistern stops filling after each flush.",
+      "Check the base or fitting does not rock and there is no water around it."
+    ],
+    "electrical": [
+      "Switch the repaired circuit or appliance on and off 3 times as normal.",
+      "Use the repaired socket with a normal appliance for 10 minutes.",
+      "Check the breaker does not trip and there is no sparking, buzzing or burning smell.",
+      "Do not open the distribution board or touch any wiring.",
+      "If you see sparks or smell burning, stop, do not touch anything, and report it."
+    ],
+    "wall_crack": [
+      "Look at the repaired area in good light; the crack line should not be visible.",
+      "Lightly run your hand over the surface; it should feel smooth and level.",
+      "Check again after a few days for hairline cracks returning."
+    ],
+    "structural_crack": [
+      "Look at the repaired area from a safe distance; it should not show new cracks or gaps.",
+      "Check for flaking or spalling concrete around the repair.",
+      "Report immediately if you see the crack widening; do not lean on or load the area."
+    ],
+    "tiles": [
+      "Gently knock on each repaired tile with your knuckle; a hollow, drum-like sound means it is not bonded.",
+      "Walk across the repaired tiles; they should not move, rock or click.",
+      "Look at the grout lines for gaps or cracks."
+    ],
+    "flooring": [
+      "Walk across the repaired area; it should not creak, flex or lift.",
+      "Look for gaps, raised edges or uneven joints."
+    ],
+    "ceiling": [
+      "Look at the repaired ceiling area from below in good light for sagging, cracks or open joints.",
+      "Check for damp patches or stains if the defect involved water."
+    ],
+    "roof": [
+      "After the next rain, check the ceiling below the repaired area for damp or stains.",
+      "Do not go onto the roof yourself."
+    ],
+    "door_window": [
+      "Open and close the repaired door or window 5 times; it should move smoothly without sticking.",
+      "Lock and unlock it; the lock should engage fully.",
+      "Check the gaps around the frame look even and no light or draught comes through."
+    ],
+    "paint": [
+      "Look at the repainted area in daylight for bubbles, peeling or colour differences.",
+      "Lightly touch the surface once dry; it should not be tacky or flaking."
+    ],
+    "cabinetry": [
+      "Open and close each repaired door or drawer 5 times.",
+      "Check hinges and soft-close parts work and doors line up evenly."
+    ],
+    "external_works": [
+      "Look at the repaired area for cracks, gaps or loose parts.",
+      "After rain, check for pooling water around the repaired area."
+    ],
+    "other": [
+      "Use the repaired item as you normally would.",
+      "Check that the problem you originally reported no longer happens."
+    ]
+  }
+}

@@ -297,16 +297,21 @@ export interface Reference {
   units: Unit[];
   buyers: Buyer[];
   sdpStaff: { name: string; title: string; email: string };
-  rules: {
-    gracePeriodDays: number;
-    signoffPeriodDays: number;
-    signoffReminderDaysBefore: number;
-    occurrenceThreshold: number;
-    stackClusterThreshold: number;
-    categoryToSkill: Partial<Record<Category, string[]>> & Record<string, string[]>;
-  };
+}
+
+export interface Rules {
+  gracePeriodDays: number;
+  signoffPeriodDays: number;
+  signoffReminderDaysBefore: number;
+  occurrenceThreshold: number;
+  stackClusterThreshold: number;
+  highUrgencyAutoClose: boolean;
+  categoryToSkill: Partial<Record<Category, string[]>> & Record<string, string[]>;
   categoryLabel: Record<Category, string>;
   repairPlan: Record<Category, RepairPlan>;
   slotTimes: string[];
   slotHours: number;
+  bookingWindowDays: number;
+  urgency: { default: string; high: string[]; low: string[] };
+  verificationProtocols: Record<string, string[]>;
 }
