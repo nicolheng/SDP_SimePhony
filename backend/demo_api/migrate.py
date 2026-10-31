@@ -27,6 +27,24 @@ CASE_COLUMNS = {
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 ASSIGNMENT_COLUMNS = {"job": "TEXT"}  # inspection visit | detailed inspection | repair
 
+INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_cases_unit_status ON cases(unit_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_cases_unit_created ON cases(unit_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_cases_status_signoff ON cases(status, buyer_signed_at, developer_signed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_events_case_created ON case_events(case_id, created_at, event_id)",
+    "CREATE INDEX IF NOT EXISTS idx_assignment_history_case_created "
+    "ON assignment_history(case_id, created_at, assignment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_slots_case_kind_tech_start "
+    "ON slots(case_id, kind, technician_id, start_at)",
+    "CREATE INDEX IF NOT EXISTS idx_slots_technician_start ON slots(technician_id, start_at)",
+    "CREATE INDEX IF NOT EXISTS idx_verifications_case_created "
+    "ON verifications(case_id, created_at DESC, verification_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_case_photos_case_kind_created "
+    "ON case_photos(case_id, kind, created_at DESC, photo_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_approvals_case_status_created "
+    "ON approvals(case_id, status, created_at DESC)",
+)
+
 
 def _add_columns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
     have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -97,6 +115,8 @@ def migrate(conn: sqlite3.Connection) -> None:
     _add_columns(conn, "technicians", TECHNICIAN_COLUMNS)
     _add_columns(conn, "assignment_history", ASSIGNMENT_COLUMNS)
     conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
+    for statement in INDEXES:
+        conn.execute(statement)
     _infer_assignment_jobs(conn)
     conn.execute(
         "UPDATE cases SET status = 'VISIT_SCHEDULED', booking_status = 'PENDING' WHERE status = 'ASSIGNED'"

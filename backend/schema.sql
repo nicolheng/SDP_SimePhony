@@ -194,10 +194,25 @@ CREATE TABLE IF NOT EXISTS buyer_messages (
 CREATE INDEX IF NOT EXISTS idx_cases_unit           ON cases(unit_id);
 CREATE INDEX IF NOT EXISTS idx_cases_status         ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_cases_buyer          ON cases(buyer_id);
+CREATE INDEX IF NOT EXISTS idx_cases_unit_status    ON cases(unit_id, status);
+CREATE INDEX IF NOT EXISTS idx_cases_unit_created   ON cases(unit_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cases_status_signoff ON cases(status, buyer_signed_at, developer_signed_at);
 CREATE INDEX IF NOT EXISTS idx_events_case          ON case_events(case_id);
+CREATE INDEX IF NOT EXISTS idx_events_case_created  ON case_events(case_id, created_at, event_id);
 CREATE INDEX IF NOT EXISTS idx_assignment_history_case ON assignment_history(case_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_history_case_created
+    ON assignment_history(case_id, created_at, assignment_id);
+CREATE INDEX IF NOT EXISTS idx_slots_case_kind_tech_start
+    ON slots(case_id, kind, technician_id, start_at);
+CREATE INDEX IF NOT EXISTS idx_slots_technician_start ON slots(technician_id, start_at);
 CREATE INDEX IF NOT EXISTS idx_si_status            ON systemic_issues(status);
 CREATE INDEX IF NOT EXISTS idx_si_block             ON systemic_issues(block, stack);
 CREATE INDEX IF NOT EXISTS idx_verifications_case   ON verifications(case_id);
+CREATE INDEX IF NOT EXISTS idx_verifications_case_created
+    ON verifications(case_id, created_at DESC, verification_id DESC);
 CREATE INDEX IF NOT EXISTS idx_case_links_case      ON case_links(case_id);
 CREATE INDEX IF NOT EXISTS idx_buyer_messages_case  ON buyer_messages(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_photos_case_kind_created
+    ON case_photos(case_id, kind, created_at DESC, photo_id DESC);
+CREATE INDEX IF NOT EXISTS idx_approvals_case_status_created
+    ON approvals(case_id, status, created_at DESC);
