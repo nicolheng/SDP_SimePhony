@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from agents.telemetry import record_llm_telemetry
+from .llm_client import LLM_MAX_TOKENS, LLM_TIMEOUT_TEXT
 
 class StructuredOutputError(RuntimeError):
     """The model failed to return valid structured output after its single retry."""
@@ -66,7 +67,8 @@ def _validate(value: Any, schema: dict, path: str = "$") -> None:
                 _validate(item, item_schema, f"{path}[{index}]")
 
 
-def chat_json(client, model: str, messages: list[dict], schema: dict, temperature: float = 0.0) -> dict:
+def chat_json(client, model: str, messages: list[dict], schema: dict, temperature: float = 0.0,
+              timeout: float = LLM_TIMEOUT_TEXT) -> dict:
     """Request JSON mode, validate against a schema, then retry once with validation feedback."""
     timing_ms = 0
     input_tokens = 0
@@ -96,6 +98,8 @@ def chat_json(client, model: str, messages: list[dict], schema: dict, temperatur
                     messages=retry_messages,
                     temperature=temperature,
                     response_format={"type": "json_object"},
+                    max_tokens=LLM_MAX_TOKENS,
+                    timeout=timeout,
                 )
             finally:
                 timing_ms += max(1, int((time.perf_counter() - start) * 1000))

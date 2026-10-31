@@ -1,8 +1,5 @@
-import os
 import json
-import base64
 from typing import TypedDict, Optional, Any
-from openai import OpenAI
 from langgraph.graph import StateGraph, END
 
 from .intake import intake_node
@@ -15,15 +12,7 @@ from .recurrence import new_case_escalation_node, recurrence_node, reopen_escala
 from .repair_estimate import repair_estimate_node
 from .initial_inspection import initial_inspection_node
 
-# 1. Setup Qwen Client (Points to local Ollama by default)
-client = OpenAI(
-    base_url=os.getenv("QWEN_BASE_URL", "http://localhost:11434/v1"),
-    api_key=os.getenv("QWEN_API_KEY", "ollama")
-)
-MODEL_VL = os.getenv("QWEN_MODEL_VL", "llava-llama3")
-MODEL_TEXT = os.getenv("QWEN_MODEL_TEXT", "qwen2.5:7b") 
-
-# 2. Define the State (The "Memory" passed between agents)
+# Define the State (The "Memory" passed between agents)
 class AgentState(TypedDict):
     user_description: str
     image_path: Optional[str]
