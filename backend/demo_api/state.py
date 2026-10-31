@@ -204,6 +204,7 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
                     "model": data.get("model"),
                     "timing_ms": data.get("timing_ms"),
                     "tokens": data.get("tokens"),
+                    "confidence_score": data.get("confidence_score"),
                     "fallback_used": data.get("fallback_used") is True,
                     "fallback_reason": data.get("fallback_reason"),
                     "guardrail_hits": data.get("guardrail_hits", []),

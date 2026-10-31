@@ -1045,6 +1045,30 @@ def set_triage_result(case_id: str, urgency: str, reason: str) -> dict:
 
 
 @_returns_errors
+def flag_case_for_human_review(case_id: str, step: str, reason: str, confidence_score: float) -> dict:
+    """Pause automated case handling and record why a decision needs SDP human review."""
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        if case["status"] == "PENDING_REVIEW":
+            return {"ok": True, "status": "PENDING_REVIEW"}
+        if case["status"] in ("CLOSED", "INVALID"):
+            raise ToolError(f"Cannot route case {case_id} to review after it is {case['status']}")
+        _release(conn, case_id, "visit")
+        _release(conn, case_id, "repair")
+        _save(conn, case_id, status="PENDING_REVIEW", technician_id=None, booking_status=None)
+        _emit(
+            conn,
+            case_id,
+            "case.review_requested",
+            reason,
+            agent=step,
+            confidence_score=confidence_score,
+            previous_status=case["status"],
+        )
+    return {"ok": True, "status": "PENDING_REVIEW"}
+
+
+@_returns_errors
 def get_reassignment_options(case_id: str) -> dict:
     """TriageAgent: after a technician hands a job over (respond_to_assignment with accept=false), the
     colleagues who can take it: at the same time if they're free (same_time=true), otherwise their next free

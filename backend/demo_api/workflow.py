@@ -34,6 +34,7 @@ class Ctx:
         self.deferred_agent_steps: list[dict] = []
         self.deferred_rain_cases: list[str] = []
         self.pending_agent_fallbacks: list[dict] = []
+        self.pending_agent_telemetry: dict[str, dict] = {}
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
         self.offset_days = float(row["value"]) if row else 0.0
         self.now = demo_now(conn)
@@ -111,7 +112,8 @@ def _tool(ctx: Ctx, fn, *args, **kwargs):
 
 
 def step(ctx: Ctx, case_id: str | None, agent: str, message: str) -> None:
-    _tool(ctx, tools.log_agent_step, case_id, agent, message)
+    telemetry = ctx.pending_agent_telemetry.pop(agent, None)
+    _tool(ctx, tools.log_agent_step, case_id, agent, message, telemetry)
 
 
 def notify_buyer(ctx: Ctx, case_id: str, kind: str, **extra) -> None:
@@ -136,6 +138,17 @@ def _bookable(ctx: Ctx, slot: str | None) -> str | None:
     return norm(slot) if slot and norm(slot) in agents.upcoming_slots(ctx.now) else None
 
 
+def _route_to_human_review(ctx: Ctx, case_id: str, decision: dict) -> None:
+    _tool(
+        ctx,
+        tools.flag_case_for_human_review,
+        case_id,
+        decision.get("review_step", "AI agent"),
+        decision.get("review_reason") or "AI abstained and routed the case to human review.",
+        float(decision.get("confidence_score") or 0.0),
+    )
+
+
 # ---------- buyer ----------
 
 
@@ -152,6 +165,9 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     c = load_case(ctx, case_id)
     step(ctx, case_id, "IntakeAgent", f"Category: {config.CATEGORY_LABEL.get(c['category'])} › {c['sub_category']}; location: {c['location_in_unit'] or 'missing'}; urgency: {c['urgency']}")
+    if result.get("needs_human_review"):
+        _route_to_human_review(ctx, case_id, result)
+        return {"caseId": case_id}
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", f"Missing info ({', '.join(result['missing_info'])}): asking a follow-up question")
         notify_buyer(ctx, case_id, "info_needed")
@@ -164,6 +180,9 @@ def answer_follow_up(ctx: Ctx, case_id: str, answer: str, slot: str | None) -> N
     description = _tool(ctx, tools.answer_follow_up, case_id, answer, None, slot)["description"]
     result = ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id)
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
+    if result.get("needs_human_review"):
+        _route_to_human_review(ctx, case_id, result)
+        return
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", "Still missing information")
         notify_buyer(ctx, case_id, "info_needed")
@@ -186,6 +205,9 @@ def _continue_new_case(ctx: Ctx, case_id: str) -> None:
         step(ctx, case_id, "SimilarDefectAgent", sim["cluster_reason"])
     c = load_case(ctx, case_id)
     t = ai_agents.triage(ctx, c, _bookable(ctx, c["preferred_visit_at"]))
+    if t.get("needs_human_review"):
+        _route_to_human_review(ctx, case_id, t)
+        return
     _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
     step(ctx, case_id, "TriageAgent", t["reason"])
     esc = _tool(ctx, tools.check_escalation, case_id)
@@ -267,7 +289,12 @@ def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str |
 def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.mark_repaired, case_id, note, photo)
     c = load_case(ctx, case_id)
-    guide, photo_note = ai_agents.verification_guide(ctx, c)
+    guide, photo_note, review = ai_agents.verification_guide(ctx, c)
+    if review and review.get("needs_human_review"):
+        _route_to_human_review(ctx, case_id, review)
+        return
+    if guide is None:
+        raise WorkflowError(f"Verification guide unavailable for case {case_id}.")
     _tool(ctx, tools.start_verification, case_id, guide)
     if photo_note:
         step(ctx, case_id, "VerificationAgent", photo_note)

@@ -60,7 +60,14 @@ def similar_defect_node(state: dict) -> dict:
     messages = [
         {
             "role": "system",
-            "content": 'You are a defect analysis expert. Output ONLY valid JSON: {"cluster_reason": "string"}'
+            "content": (
+                "You are a defect analysis expert. Explain whether the supplied case history suggests a "
+                "recurring defect cluster. Do not make escalation decisions; the application applies those "
+                "rules. Output ONLY valid JSON with cluster_reason and confidence_score. The confidence_score "
+                "must be between 0.0 and 1.0 and reflect your certainty in the explanation, based only on "
+                "the provided history and report. Use a lower score when evidence is limited or ambiguous. "
+                'Schema: {"cluster_reason": "string", "confidence_score": 0.9}'
+            )
         },
         {
             "role": "user",
@@ -71,6 +78,7 @@ def similar_defect_node(state: dict) -> dict:
         }
     ]
 
+    confidence_score = None
     try:
         data = chat_json(
             client,
@@ -78,14 +86,24 @@ def similar_defect_node(state: dict) -> dict:
             messages,
             {
                 "type": "object",
-                "required": ["cluster_reason"],
-                "properties": {"cluster_reason": {"type": "string"}},
+                "required": ["cluster_reason", "confidence_score"],
+                "properties": {
+                    "cluster_reason": {"type": "string"},
+                    "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                },
                 "additionalProperties": False,
             },
             temperature=0.1,
         )
-        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
-        ai_reason = data["parsed"]["cluster_reason"]
+        parsed = data["parsed"]
+        confidence_score = float(parsed["confidence_score"])
+        record_llm_telemetry(
+            data["model"],
+            data["timing_ms"],
+            data["tokens"],
+            confidence_score=confidence_score,
+        )
+        ai_reason = parsed["cluster_reason"]
     except StructuredOutputError:
         raise
     except Exception:
@@ -106,10 +124,12 @@ def similar_defect_node(state: dict) -> dict:
         "related": [{"case_id": c["case_id"], "unit_id": c.get("unit_id"), "reason": c.get("reason") or "Related case",
                      "score": c.get("score"), "at": c.get("created_at")} for c in history_data],
         "cluster_reason": ai_reason,
+        "confidence_score": confidence_score,
         "ai_analysis": {
             "is_recurring": total_occurrences > 1,
             "recurrence_count": total_occurrences,
             "cluster_reason": ai_reason,
+            "confidence_score": confidence_score,
             "recommendation": recommendation
         }
     }

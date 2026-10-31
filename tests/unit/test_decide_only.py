@@ -12,7 +12,7 @@ from agents.simephony import backend_tools
 def writes(monkeypatch):
     fakes = {name: MagicMock(return_value={"ok": True}) for name in (
         "save_intake_result", "save_similar_cases", "assign_technician", "start_verification",
-        "attach_inspection_brief", "send_email", "notify_buyer")}
+        "attach_inspection_brief", "send_email", "notify_buyer", "flag_case_for_human_review")}
     for name, fake in fakes.items():
         monkeypatch.setattr(backend_tools, name, fake)
     return fakes
@@ -34,6 +34,7 @@ def test_similar_decide_only_returns_links_without_saving(fake_llm, writes, monk
                                               "intake_result": {"category": "water_leak"}, "decide_only": True})
     writes["save_similar_cases"].assert_not_called()
     r = out["similar_cases_result"]
+    assert r["confidence_score"] == 0.9
     assert r["related"] == [{"case_id": "H-0001", "unit_id": "A-12-08", "reason": "same unit", "score": 1.0,
                              "at": "2026-05-01T00:00:00Z"}]
     assert r["cluster_reason"]
@@ -54,7 +55,12 @@ def test_verification_decide_only_returns_guide_without_saving(fake_llm, writes,
     from agents.simephony.verification import verification_node
     photo = tmp_path / "after.jpg"
     photo.write_bytes(b"jpg")
-    fake_llm.responses = [json.dumps({"assessment": "looks_resolved", "observations": "Dry.", "matches_location": True})]
+    fake_llm.responses = [json.dumps({
+        "assessment": "looks_resolved",
+        "observations": "Dry.",
+        "matches_location": True,
+        "confidence_score": 0.95,
+    })]
     out = verification_node({"case_id": "C-1", "current_status": "REPAIRED", "decide_only": True,
                              "intake_result": {"category": "electrical", "location_in_unit": "kitchen"},
                              "repair_note": "Replaced the socket.", "repair_photo_path": str(photo)})

@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS cases (
     case_id              TEXT PRIMARY KEY,          -- e.g. C-0001 or H-0001
     unit_id              TEXT NOT NULL REFERENCES units(unit_id),
     buyer_id             TEXT NOT NULL REFERENCES buyers(buyer_id),
-    status               TEXT NOT NULL DEFAULT 'SUBMITTED', -- SUBMITTED, INFO_NEEDED, ASSIGNED, VISIT_SCHEDULED, VALID, INVALID, REPAIR_BOOKED, REPAIRED, PENDING_SIGNOFF, CLOSED, REOPENED, ESCALATION_PENDING, EXTRA_INSPECTION
+    status               TEXT NOT NULL DEFAULT 'SUBMITTED', -- SUBMITTED, INFO_NEEDED, PENDING_REVIEW, ASSIGNED, VISIT_SCHEDULED, VALID, INVALID, REPAIR_BOOKED, REPAIRED, PENDING_SIGNOFF, CLOSED, REOPENED, ESCALATION_PENDING, EXTRA_INSPECTION
     category             TEXT,                      -- water_leak, electrical, wall_crack, tiles, paint, etc.
     sub_category         TEXT,                      -- ceiling_leak, pipe_burst, tripping_breaker, etc.
     location_in_unit     TEXT,                      -- master bedroom ceiling, kitchen, etc.

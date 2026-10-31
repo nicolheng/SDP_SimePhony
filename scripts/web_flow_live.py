@@ -87,7 +87,14 @@ def banner(title: str) -> None:
     print("\n" + "=" * 78 + f"\n  {title}\n" + "=" * 78)
 
 
-def tc1_door_happy_path() -> str:
+def skip_pending_review(case: dict, test_case: str) -> bool:
+    if case["status"] != "PENDING_REVIEW":
+        return False
+    print(f"      SKIP: {test_case} is pending human review; no technician job is available.")
+    return True
+
+
+def tc1_door_happy_path() -> str | None:
     from demo_api import workflow
     import tools
     banner("TC1 door defect: report -> visit -> VALID + estimate -> repair -> SDP signs -> buyer checks -> CLOSED")
@@ -95,6 +102,8 @@ def tc1_door_happy_path() -> str:
                   photo("door_misaligned.jpg"), None)["caseId"]
     w = Watch(case_id)
     c = w.show(1, "Buyer", "reports a door that won't close (door_misaligned.jpg)")
+    if skip_pending_review(c, "TC1 door happy path"):
+        return None
     web(workflow.accept_job, case_id, c["technician_id"])
     w.show(2, f"Technician {c['technician_id']}", "accepts the visit")
     web(workflow.record_verdict, case_id, "VALID",
@@ -121,7 +130,9 @@ def tc2_repeat_leak() -> None:
     case_id = web(workflow.submit_report, "A-12-08", "B-0118", "Siling bilik tidur utama bocor lagi, ini kali ketiga!",
                   photo("water_leak_again.jpg"), None)["caseId"]
     w = Watch(case_id)
-    w.show(1, "Buyer", "reports the leak again (water_leak_again.jpg)")
+    c = w.show(1, "Buyer", "reports the leak again (water_leak_again.jpg)")
+    if skip_pending_review(c, "TC2 repeat leak"):
+        return
     with db.get_conn() as conn:
         row = conn.execute("SELECT approval_id FROM approvals WHERE case_id = ? AND status = 'pending'", (case_id,)).fetchone()
     if not row:
@@ -146,6 +157,8 @@ def tc3_handover() -> None:
                   photo("bathroom_pooling.jpg"), None)["caseId"]
     w = Watch(case_id)
     c = w.show(1, "Buyer", "reports a leaking kitchen sink pipe")
+    if skip_pending_review(c, "TC3 handover"):
+        return
     try:
         web(workflow.hand_over, case_id, c["technician_id"], "Called to an emergency.")
         w.show(2, f"Technician {c['technician_id']}", "hands the visit over")
@@ -219,7 +232,10 @@ def main() -> None:
         door = tc1_door_happy_path()
         tc2_repeat_leak()
         tc3_handover()
-        tc4_reopen(door)
+        if door:
+            tc4_reopen(door)
+        else:
+            print("\nTC4 skipped: TC1 did not complete because the case needs human review.")
         tc5_simulate_rain()
     finally:
         print(f"\nDone. The temporary DB is kept for a look: {tmp / 'web.db'}")

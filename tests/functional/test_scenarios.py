@@ -117,6 +117,7 @@ def test_initial_inspection():
                 "is_recurring": True,
                 "recurrence_count": 3,
                 "cluster_reason": "Same unit A-12-08, previous ceiling leak incidents H-0001 and H-0002.",
+                "confidence_score": 0.9,
                 "recommendation": "flag_for_extra_inspection"
             }
         },
@@ -206,4 +207,3 @@ run_workflow(
 )
 
 print("\n🎉 Planted Story Test Finished!")
-

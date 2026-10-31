@@ -5,10 +5,11 @@ from .llm_client import LLM_TIMEOUT_VISION, get_client, get_models
 from .structured_output import StructuredOutputError, chat_json
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 from .intake import image_data_url
+from .review import flag_for_human_review
 from . import backend_tools
 
 _ALLOWED = {"looks_resolved", "unclear", "not_resolved"}
-_UNCLEAR = {"assessment": "unclear", "observations": "", "matches_location": False}
+_UNCLEAR = {"assessment": "unclear", "observations": "", "matches_location": False, "confidence_score": 0.0}
 _UNAVAILABLE = "Photo check unavailable"
 _VALID_OUTCOMES = {"FIXED", "NOT_FIXED", "CANNOT_VERIFY"}
 
@@ -47,9 +48,12 @@ _VISION_SYSTEM = (
     "original defect report. Output ONLY valid JSON with exactly these keys: "
     '{"assessment": "looks_resolved" | "unclear" | "not_resolved", '
     '"observations": "one or two short sentences describing what you see", '
-    '"matches_location": true | false}. '
+    '"matches_location": true | false, "confidence_score": 0.9}. '
     "matches_location is true only if the repair photo shows the location and defect type described. "
-    "If the photo is blurry, unrelated or you are not sure, use \"unclear\"."
+    "If the photo is blurry, unrelated or you are not sure, use \"unclear\". Output a confidence_score "
+    "between 0.0 and 1.0 representing how certain you are about this classification based on the photo "
+    "and text. Use 1.0 for absolute certainty, and below 0.7 if the image is blurry, text is vague, "
+    "or the defect is ambiguous."
 )
 
 
@@ -101,27 +105,36 @@ def assess_repair_photo(state: dict) -> dict:
             messages,
             {
                 "type": "object",
-                "required": ["assessment", "observations", "matches_location"],
+                "required": ["assessment", "observations", "matches_location", "confidence_score"],
                 "properties": {
                     "assessment": {"type": "string", "enum": sorted(_ALLOWED)},
                     "observations": {"type": "string"},
                     "matches_location": {"type": "boolean"},
+                    "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                 },
                 "additionalProperties": False,
             },
             temperature=0.1,
             timeout=LLM_TIMEOUT_VISION,
         )
-        record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
+        parsed = data["parsed"]
+        confidence_score = float(parsed["confidence_score"])
+        record_llm_telemetry(
+            data["model"],
+            data["timing_ms"],
+            data["tokens"],
+            confidence_score=confidence_score,
+        )
     except StructuredOutputError:
         return {**_UNCLEAR, "observations": "", "_structured_output_error": True}
     except Exception as e:
         print(f"⚠️ [VERIFICATION] vision check failed: {e}")
         return {**_UNCLEAR, "observations": _UNAVAILABLE}
     return {
-        "assessment": data["parsed"]["assessment"],
-        "observations": data["parsed"]["observations"],
-        "matches_location": data["parsed"]["matches_location"],
+        "assessment": parsed["assessment"],
+        "observations": parsed["observations"],
+        "matches_location": parsed["matches_location"],
+        "confidence_score": confidence_score,
     }
 
 
@@ -232,6 +245,31 @@ def verification_node(state: dict) -> dict:
             "Please check the repair or upload a clearer photo.",
         )
         state["verification_result"]["_structured_output_error"] = True
+        flag_for_human_review(state, "VerificationAgent", 0.0)
+        state["verification_result"]["needs_human_review"] = True
+        state["verification_result"]["review_reason"] = state["review_reason"]
+        return state
+    confidence_score = float(photo_check.get("confidence_score", 0.0))
+    rule_conflict = photo_check["assessment"] == "looks_resolved" and not photo_check["matches_location"]
+    model_abstained = photo_check["assessment"] == "unclear"
+    if confidence_score < 0.7 or rule_conflict or model_abstained:
+        flag_for_human_review(
+            state,
+            "VerificationAgent",
+            confidence_score,
+            rule_conflict=rule_conflict,
+            abstain_reason="unclear verification result" if model_abstained else None,
+        )
+        state["verification_result"] = {
+            "category": category,
+            "assessment": photo_check["assessment"],
+            "observations": photo_check["observations"],
+            "protocol": None,
+            "needs_technician_input": False,
+            "needs_human_review": True,
+            "review_reason": state["review_reason"],
+            "confidence_score": confidence_score,
+        }
         return state
     if photo_check["assessment"] != "looks_resolved" or not photo_check["matches_location"]:
         obs = photo_check["observations"] or "No clear observations."
@@ -257,6 +295,7 @@ def verification_node(state: dict) -> dict:
         "category": category,
         "assessment": photo_check["assessment"],
         "observations": photo_check["observations"],
+        "confidence_score": confidence_score,
         "protocol": "\n".join([intro] + lines + [IF_FAILS]),
         "guide": guide,
         "needs_technician_input": False,

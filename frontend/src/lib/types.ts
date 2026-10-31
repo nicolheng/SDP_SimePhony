@@ -181,6 +181,7 @@ export interface CaseEvent {
     model: string | null;
     timing_ms: number;
     tokens: { input: number | null; output: number | null };
+    confidence_score: number | null;
     fallback_used: boolean;
     fallback_reason: string | null;
     guardrail_hits: string[];

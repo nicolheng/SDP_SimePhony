@@ -4,6 +4,7 @@ import re
 import base64
 from agents.telemetry import record_guardrail_hit, record_llm_telemetry
 from .llm_client import client, LLM_TIMEOUT_VISION, MODEL_VL
+from .review import flag_for_human_review
 from .structured_output import StructuredOutputError, chat_json
 
 # ---------------------------------------------------------------------------
@@ -17,7 +18,7 @@ _ALLOWED_CATEGORIES = (
 )
 _INTAKE_SCHEMA = {
     "type": "object",
-    "required": ["category", "missing_info"],
+    "required": ["category", "missing_info", "confidence_score"],
     "properties": {
         "category": {"type": "string", "enum": list(_ALLOWED_CATEGORIES)},
         "sub_category": {"type": "string"},
@@ -32,6 +33,7 @@ _INTAKE_SCHEMA = {
         "mentions_previous_issue": {"type": "boolean"},
         "mentioned_recurrence_count": {"type": ["integer", "null"]},
         "mismatch_detected": {"type": "boolean"},
+        "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
     },
     "additionalProperties": False,
 }
@@ -162,7 +164,8 @@ def intake_node(state: dict) -> dict:
         '  "missing_info": [],\n'
         '  "follow_up_question": "",\n'
         '  "preliminary_outcome": "VALID_DEFECT",\n'
-        '  "mismatch_detected": false\n'
+        '  "mismatch_detected": false,\n'
+        '  "confidence_score": 0.9\n'
         "}\n\n"
         "RULES:\n"
         "1. category MUST be one of the allowed categories:\n"
@@ -184,6 +187,9 @@ def intake_node(state: dict) -> dict:
         f"   - high:\n{high_triggers_str}\n"
         f"   - low:\n{low_triggers_str}\n"
         "   - default is 'normal' for all standard leaks, doors, tiles, drainage, AC.\n"
+        "Output a confidence_score between 0.0 and 1.0 representing how certain you are about this "
+        "classification based on the photo and text. Use 1.0 for absolute certainty, and below 0.7 "
+        "if the image is blurry, text is vague, or the defect is ambiguous.\n"
     )
 
     messages = [
@@ -193,8 +199,14 @@ def intake_node(state: dict) -> dict:
 
     try:
         completion = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0, timeout=LLM_TIMEOUT_VISION)
-        record_llm_telemetry(completion["model"], completion["timing_ms"], completion["tokens"])
         parsed_intake = completion["parsed"]
+        confidence_score = parsed_intake.get("confidence_score")
+        record_llm_telemetry(
+            completion["model"],
+            completion["timing_ms"],
+            completion["tokens"],
+            confidence_score=confidence_score,
+        )
     except StructuredOutputError:
         description = state.get("user_description", "")
         parsed_intake = {
@@ -202,6 +214,7 @@ def intake_node(state: dict) -> dict:
             "summary": description,
             "missing_info": [],
             "preliminary_outcome": "VALID_DEFECT",
+            "confidence_score": 0.0,
         }
         state["_structured_output_error"] = True
     except Exception as e:
@@ -210,7 +223,8 @@ def intake_node(state: dict) -> dict:
         parsed_intake = {
             "category": "error",
             "summary": "Image processing failed",
-            "missing_info": ["Please upload a clear, real photo"]
+            "missing_info": ["Please upload a clear, real photo"],
+            "confidence_score": 0.0,
         }
         state["intake_result"] = parsed_intake
         state["missing_info"] = parsed_intake["missing_info"]
@@ -279,6 +293,10 @@ def intake_node(state: dict) -> dict:
         record_guardrail_hit("category_guardrail_triggered")
     if parsed_intake.get("urgency") != original_urgency:
         record_guardrail_hit("urgency_guardrail_triggered")
+    rule_conflict = (
+        parsed_intake.get("category") != original_category
+        or parsed_intake.get("urgency") != original_urgency
+    )
 
     # 4. Blur / missing photo detection
     is_blur_image = False
@@ -314,4 +332,11 @@ def intake_node(state: dict) -> dict:
     # decide_only: the caller (the web app) saves the intake itself
     state["intake_save"] = ({"ok": False, "error": "decide_only: the caller saves"} if state.get("decide_only")
                             else _save(state.get("case_id"), parsed_intake))
+    if not state.get("_structured_output_error"):
+        flag_for_human_review(
+            state,
+            "IntakeAgent",
+            float(parsed_intake.get("confidence_score", 0.0)),
+            rule_conflict=rule_conflict,
+        )
     return state

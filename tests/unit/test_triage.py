@@ -11,8 +11,8 @@ def _state(sample_state, **kw):
     return state
 
 
-def _reply(urgency, rule="none"):
-    return json.dumps({"urgency": urgency, "rule": rule})
+def _reply(urgency, rule="none", confidence=0.95):
+    return json.dumps({"urgency": urgency, "rule": rule, "confidence_score": confidence})
 
 
 def test_triage_raises_urgency_when_a_high_rule_matches(sample_state, fake_llm):
@@ -71,6 +71,30 @@ def test_triage_llm_exception_falls_back_to_intake_urgency(sample_state, fake_ll
     result = triage_node(state)["triage_result"]
     assert result["urgency"] == "high"
     assert result["assigned_skill"] == "electrical"
+
+
+def test_low_confidence_triage_abstains_for_human_review(sample_state, fake_llm):
+    fake_llm.responses = [_reply("normal", confidence=0.5)]
+    state = _state(sample_state, case_id="C-NEW",
+                   intake_result={"category": "water_leak", "urgency": "normal"})
+
+    result = triage_node(state)
+
+    assert result["needs_human_review"] is True
+    assert result["current_status"] == "PENDING_REVIEW"
+    assert result["triage_result"]["confidence_score"] == 0.5
+
+
+def test_triage_guardrail_disagreement_abstains_for_human_review(sample_state, fake_llm):
+    fake_llm.responses = [_reply("high", confidence=0.95)]
+    state = _state(sample_state, case_id="C-NEW",
+                   intake_result={"category": "water_leak", "urgency": "normal"})
+
+    result = triage_node(state)
+
+    assert result["triage_result"]["urgency"] == "normal"
+    assert result["needs_human_review"] is True
+    assert "rule conflict" in result["review_reason"]
 
 
 def test_triage_missing_intake_urgency_defaults_normal(sample_state, fake_llm):

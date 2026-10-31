@@ -110,9 +110,9 @@ def test_agent_new_case_escalates_without_blocking_the_visit(fake_llm):
         json.dumps({"category": "water_leak", "sub_category": "ceiling_leak", "location_in_unit": "bedroom ceiling",
                     "summary": "Ceiling leak again", "urgency": "normal", "mentions_previous_issue": True,
                     "mentioned_recurrence_count": None, "missing_info": [], "follow_up_question": "",
-                    "preliminary_outcome": "VALID_DEFECT", "mismatch_detected": False}),
-        json.dumps({"cluster_reason": "Fourth leak in this unit."}),
-        json.dumps({"urgency": "normal", "rule": "none"}),
+                    "preliminary_outcome": "VALID_DEFECT", "mismatch_detected": False, "confidence_score": 0.95}),
+        json.dumps({"cluster_reason": "Fourth leak in this unit.", "confidence_score": 0.9}),
+        json.dumps({"urgency": "normal", "rule": "none", "confidence_score": 0.95}),
         "We have received your report and requested a technician visit.",
     ]
     final = agent_app.invoke({"event": "case.created", "case_id": case_id, "unit_id": "A-12-08",

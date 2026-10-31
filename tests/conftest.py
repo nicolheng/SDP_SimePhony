@@ -63,7 +63,7 @@ class FakeLLM:
         combined = (system_msg + " " + user_msg).lower()
 
         if "safety triage expert" in combined:
-            return json.dumps({"urgency": "normal", "rule": "none"})
+            return json.dumps({"urgency": "normal", "rule": "none", "confidence_score": 0.95})
 
         # Intake node response
         if "defect intake" in system_msg.lower():
@@ -73,11 +73,13 @@ class FakeLLM:
                 "mentions_previous_issue": False, "mentioned_recurrence_count": None,
                 "missing_info": [], "follow_up_question": "",
                 "preliminary_outcome": "VALID_DEFECT", "mismatch_detected": False,
+                "confidence_score": 0.95,
             })
         
         # similar_defect cluster_reason response
         if "cluster_reason" in system_msg:
-            return json.dumps({"cluster_reason": "System detected multiple past cases in the database."})
+            return json.dumps({"cluster_reason": "System detected multiple past cases in the database.",
+                               "confidence_score": 0.9})
         
         # initial_inspection brief response
         if "Senior Property Inspector" in system_msg:
