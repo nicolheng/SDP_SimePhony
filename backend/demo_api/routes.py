@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import db
+import tools
 from agents.simephony.analytics import generate_weekly_digest
 
 from . import agents, config, ai_agents, workflow
@@ -45,6 +46,12 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
             )
             if case_id:
                 background_tasks.add_task(ai_agents.run_background_steps, case_id, ctx.deferred_agent_steps)
+        # Emails queued by this request (tools.send_email) are sent only now that it has committed.
+        if conn.execute("SELECT 1 FROM outbox WHERE status = 'queued' LIMIT 1").fetchone():
+            if background_tasks:
+                background_tasks.add_task(tools.deliver_queued_emails)
+            else:
+                tools.deliver_queued_emails()
         return {**extra, "state": build_state(Ctx(conn), _base(request))}
 
 

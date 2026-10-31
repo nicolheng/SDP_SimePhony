@@ -127,6 +127,15 @@ def notify_tech(ctx: Ctx, case_id: str, subject: str, body: str, worker_id: str 
         _tool(ctx, tools.notify_technician, case_id, subject, body, worker_id)
 
 
+ACCEPT_JOB = "Please accept the job in the app, or hand it over to a colleague if you can't make it."
+
+
+def _defect(c: dict) -> str:
+    """The technician email's defect line: "Defect: Ceiling leak (master bedroom ceiling), case C-0017." """
+    where = f" ({c['location_in_unit']})" if c.get("location_in_unit") else ""
+    return f"Defect: {c.get('summary') or config.CATEGORY_LABEL.get(c.get('category'), 'reported defect')}{where}, case {c['case_id']}."
+
+
 def _intake_json(result: dict) -> dict:
     """The intake stand-in's result in the AI Intake JSON shape that tools.save_intake_result stores."""
     return {k: result.get(k) for k in ("category", "sub_category", "location_in_unit", "summary", "urgency", "missing_info")} | {
@@ -216,8 +225,10 @@ def _continue_new_case(ctx: Ctx, case_id: str) -> None:
         _tool(ctx, tools.request_extra_inspection, case_id, esc["reasons"], keep_status=True)
         step(ctx, case_id, "RecurrenceAgent", f"Repeat defect on a new report: extra inspection requested; visit kept. {' '.join(esc['reasons'])}")
     notify_buyer(ctx, case_id, "received", slot=fmt_datetime(t["slot"]), escalated=escalated)
+    repeat = "\n\nThis defect has been reported in the unit before, so SDP has also been asked to approve a detailed inspection." if escalated else ""
     notify_tech(ctx, case_id, "New inspection visit: please accept",
-                f"{c['unit_id']}: {c['summary']}. Inspection visit {fmt_datetime(t['slot'])}. Accept it in the app, or hand it over if you can't make it.")
+                f"You have a new inspection visit at {c['unit_id']} on {fmt_datetime(t['slot'])}.\n\n{_defect(c)} "
+                f"Urgency: {c.get('urgency') or 'normal'}.{repeat}\n\n{ACCEPT_JOB}")
 
 
 def book_repair(ctx: Ctx, case_id: str, start: str) -> None:
@@ -227,7 +238,9 @@ def book_repair(ctx: Ctx, case_id: str, start: str) -> None:
     w = ctx.worker(r["technician_id"])
     step(ctx, case_id, "TriageAgent", f"{plan['trade']} repair ({r['duration']}) allocated to {ctx.worker_label(r['technician_id'])}, "
          f"{'specialist subcontractor' if w['kind'] == 'subcontractor' else 'in-house technician'}, first available at {fmt_datetime(r['start'])}")
-    notify_tech(ctx, case_id, "Repair booked: please accept", f"{c['unit_id']}: {c['summary']}. Repair {fmt_datetime(r['start'])}, estimated {r['duration']}.")
+    notify_tech(ctx, case_id, "Repair booked: please accept",
+                f"A {plan['trade'].lower()} repair at {c['unit_id']} has been booked for you on {fmt_datetime(r['start'])}, "
+                f"estimated {r['duration']}.\n\n{_defect(c)} The defect was confirmed as valid at the inspection visit.\n\n{ACCEPT_JOB}")
     notify_buyer(ctx, case_id, "repair_booked", slot=fmt_datetime(r["start"]), duration=r["duration"])
 
 
@@ -236,7 +249,9 @@ def submit_verification(ctx: Ctx, case_id: str, result: str, note: str, photo: s
     step(ctx, case_id, "VerificationAgent", f"Recorded result {result}{' with photo evidence' if photo else ''}")
     if result == "FIXED":
         c = load_case(ctx, case_id)
-        notify_tech(ctx, case_id, "Buyer signed off your repair", f"{c['unit_id']}: {c['summary']}.")
+        notify_tech(ctx, case_id, "Buyer signed off your repair",
+                    f"The buyer at {c['unit_id']} has checked your repair and signed it off as fixed.\n\n{_defect(c)}\n\n"
+                    "No further action is needed from you. Thank you for the repair.")
         if r["status"] == "CLOSED":
             notify_buyer(ctx, case_id, "closed")
     elif result == "NOT_FIXED":
@@ -259,7 +274,10 @@ def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> 
 def _after_reopen(ctx: Ctx, case_id: str, description: str) -> None:
     """RecurrenceAgent: escalate to SDP on the 3rd occurrence or a stack cluster, otherwise book a revisit."""
     c = load_case(ctx, case_id)
-    notify_tech(ctx, case_id, "A case you repaired was reopened", f"{c['unit_id']}: {c['summary']}. Buyer says: {description}")
+    notify_tech(ctx, case_id, "A case you repaired was reopened",
+                f"The buyer at {c['unit_id']} has reopened a case you repaired.\n\n{_defect(c)}\n"
+                f'Buyer says: "{description}"\n\n'
+                "No action is needed yet. A revisit will be booked, or SDP will arrange a detailed inspection, and you will be emailed if you are assigned.")
     notify_buyer(ctx, case_id, "reopened")
 
     esc = _tool(ctx, tools.check_escalation, case_id)
@@ -272,7 +290,10 @@ def _after_reopen(ctx: Ctx, case_id: str, description: str) -> None:
         t = ai_agents.triage(ctx, load_case(ctx, case_id), None)
         _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
         step(ctx, case_id, "TriageAgent", f"Below escalation threshold; revisit: {t['reason']}")
-        notify_tech(ctx, case_id, "Revisit job", f"{c['unit_id']}: {c['summary']} came back. Visit {fmt_datetime(t['slot'])}.")
+        notify_tech(ctx, case_id, "Revisit job",
+                    f"A repaired defect at {c['unit_id']} has come back, and a revisit is booked for you on {fmt_datetime(t['slot'])}.\n\n"
+                    f"{_defect(c)} This is occurrence {esc['occurrence_count']} of this defect in the unit, "
+                    f'so please find the root cause. Buyer says: "{description}"\n\n{ACCEPT_JOB}')
         notify_buyer(ctx, case_id, "revisit", slot=fmt_datetime(t["slot"]))
 
 
@@ -321,10 +342,14 @@ def hand_over(ctx: Ctx, case_id: str, worker_id: str, reason: str) -> dict:
     job, prev = r["job"], ctx.worker(worker_id)["name"]
     support = before.get("support_id")
     if before["status"] == "EXTRA_INSPECTION" and support and not opt["same_time"]:
-        notify_tech(ctx, case_id, "Joint inspection moved", f"{before['unit_id']}: now {fmt_datetime(opt['start'])} with {ctx.worker(opt['technician_id'])['name']}.",
-                    worker_id=support)
+        notify_tech(ctx, case_id, "Joint inspection moved",
+                    f"The joint detailed inspection at {before['unit_id']} has moved to {fmt_datetime(opt['start'])}, "
+                    f"because {prev} can't make it. It will now be led by {ctx.worker_label(opt['technician_id'])}.\n\n"
+                    f"{_defect(before)}\n\nPlease make sure you are free at the new time.", worker_id=support)
+    when = "at the same time" if opt["same_time"] else "at a new time"
     notify_tech(ctx, case_id, "Job handed over to you: please accept",
-                f"{before['unit_id']}: {before['summary']}. {job.capitalize()} {fmt_datetime(opt['start'])}, handed over by {prev}.")
+                f"{prev} can't make it, so a {job} at {before['unit_id']} has been handed over to you, {when}: "
+                f"{fmt_datetime(opt['start'])}.\n\n{_defect(before)}\n\n{ACCEPT_JOB}")
     notify_buyer(ctx, case_id, "reassigned", job=job, previous=prev, slot=fmt_datetime(opt["start"]),
                  same_time=opt["same_time"], old_slot=fmt_datetime(r["start"]) if r["start"] else "")
     return {"technicianId": opt["technician_id"], "sameTime": opt["same_time"], "start": opt["start"]}
@@ -352,11 +377,20 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
     _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"], None, sub["technician_id"] if sub else None)
     tech = ctx.worker(t["technician_id"])
     checklist = "\n".join(f"{i + 1}. {x}" for i, x in enumerate(brief["checklist"]))
-    notify_tech(ctx, case_id, "Extra inspection brief (you lead)", checklist)
+    row = ctx.conn.execute("SELECT reasons FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+    why = " ".join(json.loads(row["reasons"] or "[]")) if row else ""
+    why = f"SDP approved this detailed inspection. {why}".strip()
+    partner = f", together with {ctx.worker_label(sub['technician_id'])}" if sub else ""
+    notify_tech(ctx, case_id, "Extra inspection brief (you lead)",
+                f"You are leading a detailed inspection at {c['unit_id']} on {fmt_datetime(t['slot'])}{partner}.\n\n"
+                f"{_defect(c)}\n{why}\n\nPlease complete this checklist on site, then record the result in the app:\n{checklist}")
     if sub:
         step(ctx, case_id, "TriageAgent", f"Joint inspection: {tech['name']} (in-house, lead) with {ctx.worker_label(sub['technician_id'])} "
              f"({config.REPAIR_PLAN.get(c['category'], config.REPAIR_PLAN['other'])['trade']} subcontractor)")
-        notify_tech(ctx, case_id, f"Joint extra inspection with {tech['name']}", f"{fmt_datetime(t['slot'])} at {c['unit_id']}.\n\n{checklist}",
+        notify_tech(ctx, case_id, f"Joint extra inspection with {tech['name']}",
+                    f"You are joining a detailed inspection at {c['unit_id']} on {fmt_datetime(t['slot'])}, "
+                    f"led by {tech['name']} (in-house technician), who records the result.\n\n"
+                    f"{_defect(c)}\n{why}\n\nChecklist for the visit:\n{checklist}",
                     worker_id=sub["technician_id"])
     notify_buyer(ctx, case_id, "extra_inspection", slot=fmt_datetime(t["slot"]))
 
