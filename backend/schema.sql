@@ -1,5 +1,5 @@
 -- SimePhony database schema
--- Covers all 15 tables for multi-agent defect management, history, vector search, approvals, and communication.
+-- Covers all 17 tables for multi-agent defect management, history, vector search, approvals, and communication.
 
 CREATE TABLE IF NOT EXISTS units (
     unit_id     TEXT PRIMARY KEY,          -- e.g. A-12-08 or A-1-08
@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS technicians (
     name          TEXT NOT NULL,
     email         TEXT NOT NULL,
     skills        TEXT NOT NULL,           -- JSON array of skills (e.g. ["plumbing", "civil"])
-    blocks        TEXT NOT NULL            -- JSON array of covered blocks (e.g. ["A", "B"])
+    blocks        TEXT NOT NULL,           -- JSON array of covered blocks (e.g. ["A", "B"])
+    kind          TEXT DEFAULT 'technician',
+    company       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS slots (
@@ -50,6 +52,13 @@ CREATE TABLE IF NOT EXISTS cases (
     preferred_visit_at   TEXT,                      -- ISO 8601 visit time the buyer picked when reporting
     assignment_attempts INTEGER DEFAULT 0,          -- number of technician assignment attempts
     booking_status       TEXT,                      -- nullable booking negotiation status
+    inspector_id         TEXT,                      -- technician who did the inspection visit (kept after repair reassignment)
+    support_id           TEXT,                      -- subcontractor joining an approved extra inspection
+    repair_hours         REAL,                      -- estimated repair duration when booked
+    repair_estimate_reason TEXT,                    -- why RepairEstimateAgent set repair_hours
+    signoff_reminder_at  TEXT,                      -- in-app sign-off reminder sent
+    auto_closed_at       TEXT,                      -- closed automatically after the sign-off period
+    signoff_overdue_at   TEXT,                      -- high urgency past sign-off period: flagged to SDP
     triage_reason        TEXT,                      -- why TriageAgent picked this technician and slot
     verdict_note         TEXT,                      -- technician's reason for VALID / INVALID
     verdict_at           TEXT,                      -- ISO 8601 time of verdict
@@ -65,6 +74,10 @@ CREATE TABLE IF NOT EXISTS cases (
     developer_signed_by  TEXT,                      -- name of SDP staff who signed
     verification_status  TEXT DEFAULT 'pending',    -- pending, verified, not_verified
     inspection_outcome   TEXT,                      -- VALID_DEFECT, NOT_A_DEFECT, DUPLICATE, etc.
+    handed_over_from     TEXT,                      -- worker who handed the current job over
+    handover_reason      TEXT,
+    handed_over_at       TEXT,
+    handover_prev_slot   TEXT,                      -- job start before hand-over
     created_at           TEXT NOT NULL,             -- ISO 8601 creation timestamp
     closed_at            TEXT                       -- ISO 8601 resolution timestamp
 );
@@ -76,7 +89,13 @@ CREATE TABLE IF NOT EXISTS assignment_history (
     slot_id         TEXT REFERENCES slots(slot_id),
     outcome         TEXT NOT NULL,                   -- ACCEPTED | REJECTED
     rejected_reason TEXT,
+    job             TEXT,                            -- inspection visit | detailed inspection | repair
     created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
 );
 
 CREATE TABLE IF NOT EXISTS case_photos (

@@ -34,17 +34,6 @@ def get_conn(path: Path | None = None):
 def init_schema(path: Path | None = None) -> None:
     with get_conn(path) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        case_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(cases)")
-        }
-        if "assignment_attempts" not in case_columns:
-            conn.execute(
-                "ALTER TABLE cases ADD COLUMN assignment_attempts INTEGER DEFAULT 0"
-            )
-        if "booking_status" not in case_columns:
-            conn.execute("ALTER TABLE cases ADD COLUMN booking_status TEXT")
-        if "preferred_visit_at" not in case_columns:
-            conn.execute("ALTER TABLE cases ADD COLUMN preferred_visit_at TEXT")
 
 
 def next_record_id(conn: sqlite3.Connection, table: str) -> str:
