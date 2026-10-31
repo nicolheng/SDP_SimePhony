@@ -26,6 +26,7 @@ def test_health_reports_component_statuses(monkeypatch):
 
     tools.get_clock()
     monkeypatch.setenv("USE_AI_AGENTS", "all")
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
     monkeypatch.setattr(tools, "embedder_health", lambda: {
         "status": "ok",
         "message": "Loaded (all-MiniLM-L6-v2)",
