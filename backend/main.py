@@ -1,4 +1,6 @@
 """FastAPI app: REST endpoints for the buyer, technician and SDP apps, plus /uploads static files."""
+import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,9 +13,12 @@ load_dotenv()
 
 import db  # noqa: E402  (after load_dotenv so env paths apply)
 from demo_api import config  # noqa: E402
+import tools  # noqa: E402
+from demo_api import ai_agents  # noqa: E402
 from demo_api.migrate import migrate, reset_demo  # noqa: E402
 from demo_api.routes import router as app_router  # noqa: E402
 
+log = logging.getLogger("simephony.startup")
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
 SAMPLE_PHOTOS_DIR = UPLOADS_DIR.parent / "data" / "sample_photos"
 
@@ -31,6 +36,22 @@ async def lifespan(app: FastAPI):
     with db.get_conn() as conn:
         migrate(conn)
     UPLOADS_DIR.mkdir(exist_ok=True)
+    log.info("Warming up AI models (embedder/Ollama)...")
+    warmup_started = time.perf_counter()
+    embedder_ready = tools.warmup_ai_models()
+    ollama_enabled = any(ai_agents.enabled(name) for name in ai_agents.AGENTS)
+    ollama_ready = not ollama_enabled
+    try:
+        ai_agents.warmup_ollama_models()
+        ollama_ready = True
+    except Exception as exc:
+        log.warning("Ollama not reachable at startup, will attempt lazy load on first request: %s", exc)
+    elapsed = time.perf_counter() - warmup_started
+    if embedder_ready and ollama_ready:
+        log.info("AI models warmed up successfully in %.2f seconds", elapsed)
+    else:
+        log.info("AI model warmup completed in %.2f seconds (embedder ready: %s; Ollama ready: %s)",
+                 elapsed, embedder_ready, ollama_ready)
     yield
 
 
