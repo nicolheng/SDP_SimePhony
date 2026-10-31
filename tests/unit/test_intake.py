@@ -385,7 +385,7 @@ def test_no_save_without_a_case_in_the_db(fake_llm, monkeypatch, case_id):
 def test_save_refusal_is_recorded_not_raised(fake_llm, monkeypatch):
     from agents.simephony import backend_tools
     monkeypatch.setattr(backend_tools, "save_intake_result",
-                        lambda c, i: {"ok": False, "error": "Cannot save intake result: case C-1 is ASSIGNED"})
+                        lambda c, i: {"ok": False, "error": "Cannot save intake result: case C-1 is VISIT_SCHEDULED"})
     _model_says(fake_llm, category="water_leak")
     out = _intake_node({"case_id": "C-1", "user_description": "Ceiling bocor"})
-    assert "ASSIGNED" in out["intake_save"]["error"]
+    assert "VISIT_SCHEDULED" in out["intake_save"]["error"]

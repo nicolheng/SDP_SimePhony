@@ -7,7 +7,7 @@ from collections import defaultdict
 from . import config
 from .timeutil import MYT, add_days, days_between, parse
 
-OPEN = {"SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "ASSIGNED", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED",
+OPEN = {"SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VISIT_SCHEDULED", "VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED",
         "ESCALATION_PENDING", "EXTRA_INSPECTION"}
 
 # Clusters below this confidence go on the watchlist instead of being called systemic.

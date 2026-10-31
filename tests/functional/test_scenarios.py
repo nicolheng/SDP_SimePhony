@@ -62,7 +62,7 @@ if __name__ == "__main__":
     print("="*30)
     
     # Happy Path Check
-    if res1 and res1.get("current_status") == "ASSIGNED":
+    if res1 and res1.get("current_status") == "VISIT_SCHEDULED":
         print("✅ Happy Path: PASSED")
     else:
         print("❌ Happy Path: FAILED")

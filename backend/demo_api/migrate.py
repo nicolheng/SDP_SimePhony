@@ -98,6 +98,9 @@ def migrate(conn: sqlite3.Connection) -> None:
     _add_columns(conn, "assignment_history", ASSIGNMENT_COLUMNS)
     conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
     _infer_assignment_jobs(conn)
+    conn.execute(
+        "UPDATE cases SET status = 'VISIT_SCHEDULED', booking_status = 'PENDING' WHERE status = 'ASSIGNED'"
+    )
 
     # Seeded technicians are in-house; add the demo subcontractors once.
     conn.execute("UPDATE technicians SET kind = 'technician' WHERE kind IS NULL")

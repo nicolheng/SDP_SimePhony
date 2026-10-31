@@ -3,7 +3,6 @@
 export type CaseStatus =
   | "SUBMITTED"
   | "INFO_NEEDED"
-  | "ASSIGNED"
   | "VISIT_SCHEDULED"
   | "VALID"
   | "INVALID"

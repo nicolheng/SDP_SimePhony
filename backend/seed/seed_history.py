@@ -229,8 +229,6 @@ def seed_history():
             if current_booking_status is None:
                 if status in ("VISIT_SCHEDULED", "REPAIR_BOOKED"):
                     current_booking_status = "CONFIRMED"
-                elif status == "ASSIGNED":
-                    current_booking_status = "PENDING"
 
             # Calculate realistic timestamps if not explicitly passed
             t_verdict = verdict_at.isoformat() if verdict_at else None
@@ -265,7 +263,7 @@ def seed_history():
                 attempt_count,
                 current_booking_status,
                 triage_reason or f"Assigned to {technician_id} based on skill '{category}' and availability in Block {unit_id.split('-')[0]}",
-                verdict_note or ("Technician inspected: verified valid defect requiring rectification." if status not in ("INVALID", "SUBMITTED", "INFO_NEEDED", "ASSIGNED", "VISIT_SCHEDULED") else None),
+                verdict_note or ("Technician inspected: verified valid defect requiring rectification." if status not in ("INVALID", "SUBMITTED", "INFO_NEEDED", "VISIT_SCHEDULED") else None),
                 t_verdict,
                 repair_note or ("Completed repair works and tested functionality." if status in ("REPAIRED", "PENDING_SIGNOFF", "CLOSED", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION") else None),
                 t_repaired,
@@ -308,7 +306,7 @@ def seed_history():
 
             t += timedelta(hours=2)
             events_to_insert.append((case_id, "case.assigned", json.dumps({"technician_id": technician_id}), t.isoformat()))
-            if status in ("ASSIGNED", "VISIT_SCHEDULED", "REPAIR_BOOKED"):
+            if status in ("VISIT_SCHEDULED", "REPAIR_BOOKED"):
                 events_to_insert.append((
                     case_id,
                     "booking.requested",
@@ -563,6 +561,7 @@ def seed_history():
 
             tech_id = pick_technician_for(cat, block)
             urgency = "high" if cat in ("water_leak", "electrical", "structural_crack") and random.random() < 0.35 else "normal"
+            booking_status = None
 
             if days_ago < 10:
                 roll = random.random()
@@ -575,7 +574,8 @@ def seed_history():
                     close_time = None
                     reopen_cnt = 0
                 elif roll < 0.40:
-                    status = "ASSIGNED"
+                    status = "VISIT_SCHEDULED"
+                    booking_status = "PENDING"
                     outcome = None
                     verification_status = "pending"
                     buyer_signed, developer_signed = 0, 0
@@ -670,6 +670,7 @@ def seed_history():
                 description=desc,
                 urgency=urgency,
                 status=status,
+                booking_status=booking_status,
                 technician_id=tech_id,
                 reopen_count=reopen_cnt,
                 created_at=ct,
@@ -696,7 +697,7 @@ def seed_history():
             ("C-0007", "C-12-01", "plumbing", "pipe_leak", "kitchen sink", "Slow dripping under kitchen sink drain pipe", "REPAIRED", "normal", "T-02", 0, -4, None, "pending", "VALID_DEFECT", 0, 0),
             ("C-0008", "B-3-08", "water_leak", "ceiling_leak", "bathroom", "Ceiling moisture mark reappeared after rain", "REOPENED", "high", "T-01", 1, -6, None, "not_verified", "VALID_DEFECT", 0, 0),
             ("C-0009", "C-8-06", "sanitary_fittings", "loose_fitting", "master bathroom", "Toilet flush button sticking and constantly running", "SUBMITTED", "normal", "T-02", 0, 0, None, "pending", None, 0, 0),
-            ("C-0010", "A-2-05", "electrical", "faulty_socket", "living room", "Power socket sparks when TV plugged in", "ASSIGNED", "high", "T-03", 0, -1, None, "pending", None, 0, 0),
+            ("C-0010", "A-2-05", "electrical", "faulty_socket", "living room", "Power socket sparks when TV plugged in", "VISIT_SCHEDULED", "high", "T-03", 0, -1, None, "pending", None, 0, 0),
             ("C-0011", "B-11-03", "structural_crack", "beam_crack", "balcony", "Noticed 2mm diagonal crack on balcony beam", "ESCALATION_PENDING", "high", "T-04", 2, -3, None, "pending", "VALID_DEFECT", 0, 0),
             ("C-0013", "A-3-02", "water_leak", "wall_seepage", "living room", "Wall dampness reported without photo or exact room", "INFO_NEEDED", "normal", "T-01", 0, -1, None, "pending", None, 0, 0),
             ("C-0014", "A-12-08", "water_leak", "ceiling_leak", "bathroom ceiling", "Ceiling leak needs a technician visit", "VISIT_SCHEDULED", "high", "T-02", 0, 0, None, "pending", None, 0, 0),
@@ -787,6 +788,7 @@ def seed_history():
                 verification_result="NOT_FIXED" if status == "REOPENED" else None,
                 verification_note="The stain came back after the heavy rain on Sunday, in the same place as before." if status == "REOPENED" else None,
                 assignment_attempts=2 if cid == "C-0014" else None,
+                booking_status="PENDING" if cid == "C-0010" else None,
                 assignment_slot_id=assignment_slot_id,
             )
             if cid == "C-0014":
