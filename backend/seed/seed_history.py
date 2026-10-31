@@ -159,7 +159,7 @@ def seed_history():
     conn = db.connect(SEED_DB_PATH)
     cursor = conn.cursor()
 
-    # Re-apply schema to make sure all 15 tables are initialized
+    # Re-apply schema to make sure all 17 tables are initialized
     db.init_schema(SEED_DB_PATH)
 
     random.seed(20261019)

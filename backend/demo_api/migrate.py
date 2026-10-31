@@ -1,4 +1,4 @@
-"""Add what the web app needs on top of schema.sql. Idempotent; runs at API startup and after Reset demo."""
+"""Keep existing databases aligned with schema.sql and apply demo data repairs."""
 import json
 import shutil
 import sqlite3
@@ -7,8 +7,10 @@ import db
 
 from . import config
 
-# column -> SQL type, added only if missing
+# schema.sql is the source of truth; these definitions only backfill older databases.
 CASE_COLUMNS = {
+    "assignment_attempts": "INTEGER DEFAULT 0",
+    "preferred_visit_at": "TEXT",
     "inspector_id": "TEXT",          # technician who did the inspection visit (kept after the repair is reassigned)
     "support_id": "TEXT",            # subcontractor joining an approved extra inspection
     "repair_hours": "REAL",          # estimated repair duration when booked
@@ -90,6 +92,7 @@ def reset_demo() -> None:
 
 
 def migrate(conn: sqlite3.Connection) -> None:
+    """Backfill schema.sql columns on old databases, then repair demo seed data."""
     _add_columns(conn, "cases", CASE_COLUMNS)
     _add_columns(conn, "technicians", TECHNICIAN_COLUMNS)
     _add_columns(conn, "assignment_history", ASSIGNMENT_COLUMNS)
