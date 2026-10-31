@@ -14,4 +14,4 @@ human-approved extra inspection.
 | [3. Flow](03-flow.md) | How a defect moves from report to sign-off, and how recurring defects escalate |
 
 For the detailed rules, see [`CONTRACTS.md`](../CONTRACTS.md) (statuses, tools, events) and
-[`rules.yaml`](../rules.yaml) (business rules). To run the project, see [`GETTING_STARTED.md`](../GETTING_STARTED.md).
+[`rules.yaml`](../rules.yaml) (business rules). To run the project, see the main [`README.md`](../README.md).

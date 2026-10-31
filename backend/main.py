@@ -85,7 +85,9 @@ def health():
         checks["database"] = {"status": "error", "message": str(exc)}
 
     try:
-        request = urllib.request.Request("http://localhost:11434/api/tags")
+        # /api/tags sits beside the OpenAI-compatible /v1 path, not under it
+        server = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/").removesuffix("/v1")
+        request = urllib.request.Request(f"{server}/api/tags")
         with urllib.request.urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
         models = payload.get("models", []) if isinstance(payload, dict) else []

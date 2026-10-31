@@ -43,7 +43,7 @@ def warmup_ollama_models() -> None:
         log.info("Ollama warmup skipped because USE_AI_AGENTS is disabled")
         return
 
-    from agents.simephony.llm_client import get_client, get_models
+    from agents.simephony.llm_client import LLM_TIMEOUT_VISION, get_client, get_models
 
     client = get_client()
     vision_model, text_model = get_models()
@@ -53,6 +53,7 @@ def warmup_ollama_models() -> None:
             messages=[{"role": "user", "content": "Reply OK."}],
             max_tokens=1,
             temperature=0,
+            timeout=LLM_TIMEOUT_VISION,  # warmup is a cold start, so allow the longer limit
         )
 
 
