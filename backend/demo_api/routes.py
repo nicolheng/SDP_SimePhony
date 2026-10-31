@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import db
+from agents.simephony.analytics import generate_weekly_digest
 
 from . import agents, config, ai_agents, workflow
 from .migrate import reset_demo
@@ -60,6 +61,12 @@ def get_state(request: Request):
 def get_rules():
     """Business rules from rules.yaml, the single source the web app reads them from."""
     return config.public_rules()
+
+
+@router.get("/analytics/weekly-digest")
+def weekly_digest():
+    """Generate an LLM narrative from defect metrics computed directly from the database."""
+    return {"digest": generate_weekly_digest()}
 
 
 @router.get("/slots/visit")
