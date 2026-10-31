@@ -121,7 +121,7 @@ class DemoLLM:
         t = self._text(messages)
         s = self.scenario
         if "defect intake" in t:
-            return json.dumps(s["intake"])
+            return json.dumps({**s["intake"], "confidence_score": 0.9})
         # before cluster_reason: the inspection prompt quotes the similar-case result
         if "Senior Property Inspector" in t:
             return json.dumps(s.get("brief") or {
@@ -131,12 +131,14 @@ class DemoLLM:
                 "checklist": ["Trace the water path from the unit above", "Pressure-test the riser joint",
                               "Photograph the ceiling void before and after"]})
         if "cluster_reason" in t:
-            return json.dumps({"cluster_reason": s.get("cluster", "No earlier cases of this defect in the unit.")})
+            return json.dumps({"cluster_reason": s.get("cluster", "No earlier cases of this defect in the unit."),
+                               "confidence_score": 0.9})
         if "safety triage expert" in t:
-            return json.dumps({"urgency": s.get("intake", {}).get("urgency", "normal"), "rule": "none"})
+            return json.dumps({"urgency": s.get("intake", {}).get("urgency", "normal"), "rule": "none",
+                               "confidence_score": 0.9})
         if "repair photo checker" in t:
             return json.dumps({"assessment": "looks_resolved", "observations": s.get("photo_seen", "Repair looks complete."),
-                               "matches_location": True})
+                               "matches_location": True, "confidence_score": 0.9})
         if "verification checks for a home buyer" in t:
             return "\n".join(line[2:] for line in t.splitlines() if line.startswith("- "))
         if "inspection note and report the scope" in t:
@@ -219,6 +221,25 @@ def sync(state: dict, case_id: str) -> dict:
     return state
 
 
+def approve_review(state: dict, case_id: str) -> dict:
+    """If an agent was unsure, the case waits in PENDING_REVIEW. The web app has no approve action yet, so the
+    script plays SDP staff: it puts the case back where it was and carries on."""
+    if not state.get("needs_human_review"):
+        return state
+    import tools
+    note(f"HELD for SDP review: {state.get('review_reason')}")
+    with _db() as conn:
+        event = conn.execute("SELECT payload FROM case_events WHERE case_id = ? AND type = 'case.review_requested' "
+                             "ORDER BY created_at DESC, event_id DESC LIMIT 1", (case_id,)).fetchone()
+        previous = json.loads(event["payload"])["previous_status"]
+        conn.execute("UPDATE cases SET status = ? WHERE case_id = ? AND status = 'PENDING_REVIEW'", (previous, case_id))
+        tools._emit(conn, case_id, "case.review_approved", "SDP staff approved the case after reviewing the AI recommendation.",
+                    decided_by="Demo SDP staff")
+    note(f"(script: SDP approves the review, so the case goes back to {previous})")
+    state.update(needs_human_review=False, review_reason="", current_status=previous)
+    return state
+
+
 def new_case_chain(n: int, case_id: str, unit_id: str, description: str, photo: str, inbox: Inbox) -> dict:
     """IntakeAgent -> SimilarDefectAgent -> TriageAgent -> BookingAgent -> new-case escalation -> CommsAgent."""
     from agents.simephony.booking import booking_node
@@ -236,6 +257,7 @@ def new_case_chain(n: int, case_id: str, unit_id: str, description: str, photo: 
     step(n, "IntakeAgent (P1)", f"category {i.get('category')}, location '{i.get('location_in_unit')}', urgency {i.get('urgency')}")
     saved = state.get("intake_save") or {}
     note("saved to the case" if saved.get("ok") else f"NOT saved: {saved.get('error')}")
+    state = approve_review(state, case_id)
     state = similar_defect_node(state)
     sim = state["similar_cases_result"]
     step(n + 1, "SimilarDefectAgent (P1)", f"{sim.get('past_case_count')} earlier case(s) in this unit; links saved")
@@ -244,6 +266,7 @@ def new_case_chain(n: int, case_id: str, unit_id: str, description: str, photo: 
     step(n + 2, "TriageAgent (P2)", f"urgency {t['urgency']}, skill {t['assigned_skill']} (saved)")
     if "rule:" in t.get("justification", ""):
         note(t["justification"].split("Urgency set by ")[-1])
+    state = approve_review(state, case_id)
     state = booking_node(state)
     b = state["booking_result"]
     if b.get("booking_status") == "PENDING":
@@ -284,7 +307,10 @@ def _repair_and_signoff(n: int, case: str, state: dict, repair_note: str, inbox:
     state = run_event(sync(state, case), "repair.done", repair_note=repair_note, repair_photo_path=FIXED_PHOTO)
     v = state["verification_result"]
     step(n + 1, "VerificationAgent (P2)", f"photo check: {v['assessment']} ({v['observations'] or 'no observations'})")
-    if v.get("needs_technician_input"):
+    if v.get("needs_human_review"):
+        state = approve_review(state, case)
+        _issue_standard_guide(case)
+    elif v.get("needs_technician_input"):
         note(f"HELD, buyer not messaged. Technician is told: {v['technician_message']}")
         _issue_standard_guide(case)
     else:
