@@ -1,6 +1,10 @@
 """FastAPI app: REST endpoints for the buyer, technician and SDP apps, plus /uploads static files."""
 import logging
+import json
+import os
 import time
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -71,7 +75,47 @@ app.include_router(app_router)
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    checks = {}
+    try:
+        with db.get_conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+            conn.execute("SELECT 1 FROM cases LIMIT 1").fetchone()
+        checks["database"] = {"status": "ok", "message": "Connected; schema available"}
+    except Exception as exc:
+        checks["database"] = {"status": "error", "message": str(exc)}
+
+    try:
+        request = urllib.request.Request("http://localhost:11434/api/tags")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = payload.get("models", []) if isinstance(payload, dict) else []
+        if not isinstance(models, list) or not models:
+            checks["ollama"] = {"status": "error", "message": "Running, but no models available"}
+        else:
+            checks["ollama"] = {"status": "ok", "message": f"Running, {len(models)} models available"}
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        checks["ollama"] = {"status": "error", "message": f"Ollama not reachable: {exc}"}
+    except Exception as exc:
+        checks["ollama"] = {"status": "error", "message": f"Ollama check failed: {exc}"}
+
+    try:
+        checks["embedder"] = tools.embedder_health()
+    except Exception as exc:
+        checks["embedder"] = {"status": "error", "message": str(exc)}
+
+    checks["agents_mode"] = {
+        "status": "ok",
+        "message": os.getenv("USE_AI_AGENTS", "").strip() or "false (default)",
+    }
+
+    status = "healthy" if all(
+        checks[name]["status"] == "ok" for name in ("database", "ollama", "embedder")
+    ) else "degraded"
+    if checks["embedder"]["status"] == "disabled" and all(
+        checks[name]["status"] == "ok" for name in ("database", "ollama")
+    ):
+        status = "healthy"
+    return {"status": status, "checks": checks}
 
 
 @app.post("/demo/reset")

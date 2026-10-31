@@ -427,20 +427,35 @@ def _parse_guide(text: Optional[str]):
 # ---------- embeddings (find_similar_cases) ----------
 
 EMBED_MODEL = "all-MiniLM-L6-v2"
+_embedder_loaded = False
 
 
 @functools.lru_cache(maxsize=1)
 def _load_embedder():
     """The sentence-transformers model, loaded once per process (first import takes ~15 s). None if unavailable."""
+    global _embedder_loaded
     try:
         from sentence_transformers import SentenceTransformer
-        return SentenceTransformer(EMBED_MODEL)
+        model = SentenceTransformer(EMBED_MODEL)
+        _embedder_loaded = True
+        return model
     except Exception:
+        _embedder_loaded = False
         return None
+
+
+def embedder_health() -> dict:
+    """Report cached embedder readiness without loading a model during a health request."""
+    if os.getenv("EMBEDDINGS_ENABLED", "true").lower() != "true":
+        return {"status": "disabled", "message": "Disabled by configuration"}
+    if _embedder_loaded:
+        return {"status": "ok", "message": f"Loaded ({EMBED_MODEL})"}
+    return {"status": "error", "message": "Not loaded"}
 
 
 def warmup_ai_models() -> bool:
     """Load the sentence-transformers model before requests need embeddings."""
+    global _embedder_loaded
     if os.getenv("EMBEDDINGS_ENABLED", "true").lower() != "true":
         log.info("Embedder warmup skipped because EMBEDDINGS_ENABLED is false")
         return False
@@ -448,12 +463,15 @@ def warmup_ai_models() -> bool:
         model = _load_embedder()
         if model is None:
             _load_embedder.cache_clear()
+            _embedder_loaded = False
             log.warning("Embedder unavailable during startup; it will retry lazy loading on first use")
             return False
         model.encode(["SimePhony startup warmup"], convert_to_numpy=True)
+        _embedder_loaded = True
         return True
     except Exception:
         _load_embedder.cache_clear()
+        _embedder_loaded = False
         log.exception("Embedder warmup failed; it will retry lazy loading on first use")
         return False
 
