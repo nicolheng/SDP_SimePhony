@@ -1,12 +1,12 @@
 """HTTP endpoints. Every write returns the fresh state read back from the database."""
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import db
 
-from . import agents, workflow
+from . import agents, ai_agents, workflow
 from .migrate import reset_demo
 from .state import build_state
 from .workflow import Ctx, WorkflowError
@@ -18,10 +18,10 @@ def _base(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _run(request: Request, action=None, *args) -> dict:
+def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks | None = None) -> dict:
     """Run an action in one transaction, apply time rules, and return the state from the DB."""
     with db.get_conn() as conn:
-        ctx = Ctx(conn)
+        ctx = Ctx(conn, defer_agents=background_tasks is not None)
         extra = {}
         try:
             if action:
@@ -34,6 +34,16 @@ def _run(request: Request, action=None, *args) -> dict:
             conn.rollback()
             raise HTTPException(status_code=409, detail=str(e)) from e
         conn.commit()
+        if background_tasks and ctx.deferred_rain_cases:
+            for case_id in ctx.deferred_rain_cases:
+                background_tasks.add_task(workflow.process_rain_agents, case_id)
+        if background_tasks and ctx.deferred_agent_steps:
+            case_id = extra.get("caseId") or next(
+                (step.get("case_id") for step in ctx.deferred_agent_steps if step.get("case_id")),
+                None,
+            )
+            if case_id:
+                background_tasks.add_task(ai_agents.run_background_steps, case_id, ctx.deferred_agent_steps)
         return {**extra, "state": build_state(Ctx(conn), _base(request))}
 
 
@@ -76,8 +86,9 @@ class NewReport(BaseModel):
 
 
 @router.post("/cases")
-def create_case(body: NewReport, request: Request):
-    return _run(request, workflow.submit_report, body.unit_id, body.buyer_id, body.description, body.photo, body.slot)
+def create_case(body: NewReport, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.submit_report, body.unit_id, body.buyer_id, body.description, body.photo, body.slot,
+                background_tasks=background_tasks)
 
 
 class FollowUp(BaseModel):
@@ -86,8 +97,8 @@ class FollowUp(BaseModel):
 
 
 @router.post("/cases/{case_id}/follow-up")
-def follow_up(case_id: str, body: FollowUp, request: Request):
-    return _run(request, workflow.answer_follow_up, case_id, body.answer, body.slot)
+def follow_up(case_id: str, body: FollowUp, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.answer_follow_up, case_id, body.answer, body.slot, background_tasks=background_tasks)
 
 
 class RepairBooking(BaseModel):
@@ -95,8 +106,8 @@ class RepairBooking(BaseModel):
 
 
 @router.post("/cases/{case_id}/repair-booking")
-def repair_booking(case_id: str, body: RepairBooking, request: Request):
-    return _run(request, workflow.book_repair, case_id, body.start)
+def repair_booking(case_id: str, body: RepairBooking, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.book_repair, case_id, body.start, background_tasks=background_tasks)
 
 
 class Verification(BaseModel):
@@ -106,8 +117,9 @@ class Verification(BaseModel):
 
 
 @router.post("/cases/{case_id}/verification")
-def verification(case_id: str, body: Verification, request: Request):
-    return _run(request, workflow.submit_verification, case_id, body.result, body.note, body.photo)
+def verification(case_id: str, body: Verification, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.submit_verification, case_id, body.result, body.note, body.photo,
+                background_tasks=background_tasks)
 
 
 class Reopen(BaseModel):
@@ -116,8 +128,8 @@ class Reopen(BaseModel):
 
 
 @router.post("/cases/{case_id}/reopen")
-def reopen(case_id: str, body: Reopen, request: Request):
-    return _run(request, workflow.reopen_case, case_id, body.description, body.photo)
+def reopen(case_id: str, body: Reopen, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.reopen_case, case_id, body.description, body.photo, background_tasks=background_tasks)
 
 
 # ---------- technician / subcontractor ----------
@@ -130,8 +142,9 @@ class Verdict(BaseModel):
 
 
 @router.post("/cases/{case_id}/verdict")
-def verdict(case_id: str, body: Verdict, request: Request):
-    return _run(request, workflow.record_verdict, case_id, body.outcome, body.note, body.photo)
+def verdict(case_id: str, body: Verdict, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.record_verdict, case_id, body.outcome, body.note, body.photo,
+                background_tasks=background_tasks)
 
 
 class Repaired(BaseModel):
@@ -140,8 +153,8 @@ class Repaired(BaseModel):
 
 
 @router.post("/cases/{case_id}/repaired")
-def repaired(case_id: str, body: Repaired, request: Request):
-    return _run(request, workflow.mark_repaired, case_id, body.note, body.photo)
+def repaired(case_id: str, body: Repaired, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.mark_repaired, case_id, body.note, body.photo, background_tasks=background_tasks)
 
 
 class Worker(BaseModel):
@@ -149,8 +162,8 @@ class Worker(BaseModel):
 
 
 @router.post("/cases/{case_id}/accept")
-def accept(case_id: str, body: Worker, request: Request):
-    return _run(request, workflow.accept_job, case_id, body.technician_id)
+def accept(case_id: str, body: Worker, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.accept_job, case_id, body.technician_id, background_tasks=background_tasks)
 
 
 class HandOver(BaseModel):
@@ -159,16 +172,16 @@ class HandOver(BaseModel):
 
 
 @router.post("/cases/{case_id}/handover")
-def handover(case_id: str, body: HandOver, request: Request):
-    return _run(request, workflow.hand_over, case_id, body.technician_id, body.reason)
+def handover(case_id: str, body: HandOver, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.hand_over, case_id, body.technician_id, body.reason, background_tasks=background_tasks)
 
 
 # ---------- SDP ----------
 
 
 @router.post("/cases/{case_id}/developer-signoff")
-def developer_signoff(case_id: str, request: Request):
-    return _run(request, workflow.developer_signoff, case_id)
+def developer_signoff(case_id: str, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.developer_signoff, case_id, background_tasks=background_tasks)
 
 
 class Decision(BaseModel):
@@ -176,8 +189,8 @@ class Decision(BaseModel):
 
 
 @router.post("/approvals/{approval_id}/decision")
-def decision(approval_id: str, body: Decision, request: Request):
-    return _run(request, workflow.decide_approval, approval_id, body.approve)
+def decision(approval_id: str, body: Decision, request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.decide_approval, approval_id, body.approve, background_tasks=background_tasks)
 
 
 # ---------- demo controls ----------
@@ -193,8 +206,8 @@ def skip(body: Skip, request: Request):
 
 
 @router.post("/demo/rain")
-def rain(request: Request):
-    return _run(request, workflow.simulate_rain)
+def rain(request: Request, background_tasks: BackgroundTasks):
+    return _run(request, workflow.simulate_rain, background_tasks=background_tasks)
 
 
 @router.post("/demo/reset")

@@ -1,13 +1,14 @@
 """Case workflow for the web app (routes.py): each action runs in one transaction on data/simephony.db.
 
 Every database change goes through backend/tools.py, the one place with the business rules; the tools join
-this request's transaction (tools.use_connection), so a failed step rolls the whole action back. This module
-only orchestrates: it runs the agents (the LangGraph agents through ai_agents.py when USE_AI_AGENTS is on,
-otherwise the rule-based stand-ins in agents.py) and sends the buyer / technician notifications.
+this request's transaction (tools.use_connection), so a failed step rolls the whole action back. API contexts
+use rule-based stand-ins and queue enabled LangGraph agents for post-commit execution; direct workflow callers
+can still run the agents inline. This module also sends buyer / technician notifications.
 """
 import json
 import sqlite3
 
+import db
 import tools
 
 from . import agents, ai_agents, config
@@ -27,8 +28,12 @@ class WorkflowError(ValueError):
 class Ctx:
     """Per-request view of the database: units, workers, bookings and the demo clock."""
 
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, defer_agents: bool = False):
         self.conn = conn
+        self.defer_agents = defer_agents
+        self.deferred_agent_steps: list[dict] = []
+        self.deferred_rain_cases: list[str] = []
+        self.pending_agent_fallbacks: list[dict] = []
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
         self.offset_days = float(row["value"]) if row else 0.0
         self.now = demo_now(conn)
@@ -71,6 +76,9 @@ class Ctx:
     def invalidate(self) -> None:
         self._cases = None
         self._bookings = None
+
+    def defer_agent_step(self, name: str, **args) -> None:
+        self.deferred_agent_steps.append({"name": name, **args})
 
 
 # ---------- reads and the tools bridge ----------
@@ -140,6 +148,7 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
     case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
+    ai_agents.record_pending_fallbacks(ctx, case_id)
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     c = load_case(ctx, case_id)
     step(ctx, case_id, "IntakeAgent", f"Category: {config.CATEGORY_LABEL.get(c['category'])} › {c['sub_category']}; location: {c['location_in_unit'] or 'missing'}; urgency: {c['urgency']}")
@@ -345,11 +354,17 @@ def skip_days(ctx: Ctx, days: float) -> None:
 def simulate_rain(ctx: Ctx) -> None:
     """Demo control: heavy rain brings new ceiling-leak reports from two units in stack A-08."""
     text = "Heavy rain last night, ceiling in master bedroom leaking again"
+    use_ai = any(ai_agents.enabled(name) for name in ("intake", "similar", "triage"))
     for unit_id in ("A-13-08", "A-11-08"):
         if ctx.conn.execute("SELECT 1 FROM cases WHERE unit_id = ? AND status NOT IN ('CLOSED', 'INVALID')", (unit_id,)).fetchone():
             continue
         buyer = ctx.conn.execute("SELECT buyer_id FROM buyers WHERE unit_id = ?", (unit_id,)).fetchone()
         if not buyer:
+            continue
+        if ctx.defer_agents and use_ai:
+            case_id = _tool(ctx, tools.create_case, unit_id, buyer["buyer_id"], text)["case_id"]
+            step(ctx, case_id, "RainSimulator", f"Rain report saved for {unit_id}; AI intake, recurrence, and triage queued")
+            ctx.deferred_rain_cases.append(case_id)
             continue
         r = agents.intake(text, True)
         case_id = _tool(ctx, tools.create_case, unit_id, buyer["buyer_id"], text)["case_id"]
@@ -362,3 +377,43 @@ def simulate_rain(ctx: Ctx) -> None:
         t = agents.triage(ctx, load_case(ctx, case_id), None)
         _tool(ctx, tools.assign_technician, case_id, t["technician_id"], t["slot"], t["reason"])
         step(ctx, case_id, "TriageAgent", t["reason"])
+
+
+def process_rain_agents(case_id: str) -> None:
+    """Apply enabled AI decisions to a rain report, committing each step for clients' periodic refresh."""
+    try:
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            case = load_case(ctx, case_id)
+            if case["status"] != "SUBMITTED":
+                return
+
+            result = ai_agents.intake(ctx, case["description"] or "", None, True, case_id)
+            intake_data = {**result, "missing_info": [], "follow_up_question": ""}
+            _tool(ctx, tools.save_intake_result, case_id, _intake_json(intake_data))
+            c = load_case(ctx, case_id)
+            step(ctx, case_id, "IntakeAgent", f"AI intake: {config.CATEGORY_LABEL.get(c['category'], c['category'])} in {c['location_in_unit'] or 'reported location'}")
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            case = load_case(ctx, case_id)
+            if case["status"] != "SUBMITTED":
+                return
+
+            sim = ai_agents.similar(ctx, case)
+            _tool(ctx, tools.save_similar_cases, case_id,
+                  [{"related_case_id": item["case_id"], "reason": item["reason"]} for item in sim["refs"]],
+                  sim["occurrence"])
+            step(ctx, case_id, "SimilarDefectAgent",
+                 f"Linked to {len(sim['refs'])} related case(s); recurrence_count={sim['occurrence']}")
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            case = load_case(ctx, case_id)
+            if case["status"] != "SUBMITTED":
+                return
+
+            triage_result = ai_agents.triage(ctx, case, None)
+            _tool(ctx, tools.assign_technician, case_id, triage_result["technician_id"],
+                  triage_result["slot"], triage_result["reason"])
+            step(ctx, case_id, "TriageAgent", triage_result["reason"])
+    except Exception:
+        log.exception("Could not complete the AI workflow for rain report %s", case_id)

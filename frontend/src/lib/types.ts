@@ -174,6 +174,9 @@ export interface CaseEvent {
   at: string;
   agent?: AgentName;
   message: string;
+  fallbackUsed?: boolean;
+  fallbackStep?: string;
+  fallbackReason?: string;
 }
 
 export interface BuyerMessage {
