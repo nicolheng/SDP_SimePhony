@@ -9,7 +9,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 # 1. Add the root folder to Python's path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-os.environ["USE_LOCAL_OLLAMA"] = "true"
 from agents.simephony.workflow import agent_app
 
 # 2. Locate files relative to this script

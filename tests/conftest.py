@@ -125,6 +125,9 @@ def fake_llm(request, monkeypatch):
         try:
             mod = importlib.import_module(f"agents.simephony.{name}")
             monkeypatch.setattr(mod, "client", fake.client)
+            # Fixed names, so a MODEL_VL / MODEL_TEXT in someone's .env can't change test results
+            monkeypatch.setattr(mod, "MODEL_VL", "llava-llama3", raising=False)
+            monkeypatch.setattr(mod, "MODEL_TEXT", "qwen2.5:7b", raising=False)
         except ImportError:
             pass
             

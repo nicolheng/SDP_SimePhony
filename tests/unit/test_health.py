@@ -52,6 +52,26 @@ def test_health_reports_component_statuses(monkeypatch):
     assert requests == [("http://localhost:11434/api/tags", 5)]
 
 
+def test_health_checks_the_configured_llm_server(monkeypatch):
+    import tools
+    import main
+
+    tools.get_clock()
+    monkeypatch.setenv("LLM_BASE_URL", "http://gpu-box:11434/v1/")
+    monkeypatch.setattr(tools, "embedder_health", lambda: {"status": "disabled", "message": "Disabled"})
+    urls = []
+
+    def urlopen(request, timeout):
+        urls.append(request.full_url)
+        return _OllamaResponse([{"name": "qwen2.5:7b"}])
+
+    monkeypatch.setattr(main.urllib.request, "urlopen", urlopen)
+
+    main.health()
+
+    assert urls == ["http://gpu-box:11434/api/tags"]
+
+
 def test_health_degrades_gracefully_when_ollama_is_offline(monkeypatch):
     import urllib.error
 

@@ -3,7 +3,7 @@ import json
 import re
 import base64
 from agents.telemetry import record_guardrail_hit, record_llm_telemetry
-from .llm_client import client, MODEL_VL
+from .llm_client import client, LLM_TIMEOUT_VISION, MODEL_VL
 from .structured_output import StructuredOutputError, chat_json
 
 # ---------------------------------------------------------------------------
@@ -118,9 +118,17 @@ def _save(case_id: str | None, intake: dict) -> dict:
     return {"ok": True, "error": None}
 
 
-def encode_image(image_path: str) -> str:
+def image_data_url(image_path: str) -> str:
+    """The image as a data URL, labelled from its first bytes (the file name can be wrong). Unknown types stay JPEG."""
     with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode("utf-8")
+        data = img_file.read()
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime = "image/png"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        mime = "image/webp"
+    else:
+        mime = "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(data).decode('utf-8')}"
 
 
 def intake_node(state: dict) -> dict:
@@ -128,10 +136,9 @@ def intake_node(state: dict) -> dict:
     image_content = []
     image_path = state.get("image_path")
     if image_path and os.path.exists(image_path):
-        base64_img = encode_image(image_path)
         image_content.append({
             "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
+            "image_url": {"url": image_data_url(image_path)}
         })
 
     user_description = state.get("user_description", "")
@@ -185,7 +192,7 @@ def intake_node(state: dict) -> dict:
     ]
 
     try:
-        completion = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0)
+        completion = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0, timeout=LLM_TIMEOUT_VISION)
         record_llm_telemetry(completion["model"], completion["timing_ms"], completion["tokens"])
         parsed_intake = completion["parsed"]
     except StructuredOutputError:

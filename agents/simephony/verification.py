@@ -1,10 +1,10 @@
 import os
 
 from agents.telemetry import record_guardrail_hit, record_llm_telemetry, tracked_chat_completion
-from .llm_client import get_client, get_models
+from .llm_client import LLM_TIMEOUT_VISION, get_client, get_models
 from .structured_output import StructuredOutputError, chat_json
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
-from .intake import encode_image
+from .intake import image_data_url
 from . import backend_tools
 
 _ALLOWED = {"looks_resolved", "unclear", "not_resolved"}
@@ -60,7 +60,7 @@ def _location(state: dict) -> str:
 def _image_part(path: str) -> dict:
     return {
         "type": "image_url",
-        "image_url": {"url": f"data:image/jpeg;base64,{encode_image(path)}"},
+        "image_url": {"url": image_data_url(path)},
     }
 
 
@@ -110,6 +110,7 @@ def assess_repair_photo(state: dict) -> dict:
                 "additionalProperties": False,
             },
             temperature=0.1,
+            timeout=LLM_TIMEOUT_VISION,
         )
         record_llm_telemetry(data["model"], data["timing_ms"], data["tokens"])
     except StructuredOutputError:
