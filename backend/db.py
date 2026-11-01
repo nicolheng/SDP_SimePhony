@@ -31,6 +31,22 @@ def get_conn(path: Path | None = None):
         conn.close()
 
 
+@contextmanager
+def write_conn(path: Path | None = None):
+    """get_conn that takes the write lock up front (BEGIN IMMEDIATE), so the busy timeout always applies and
+    read-then-write steps are atomic. Keep it short (no LLM calls): every other writer waits for it."""
+    with get_conn(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        yield conn
+
+
+def is_busy(error: BaseException) -> bool:
+    """True for SQLITE_BUSY / SQLITE_LOCKED: another connection held the write lock past the busy timeout."""
+    code = getattr(error, "sqlite_errorcode", None)
+    return isinstance(error, sqlite3.OperationalError) and code is not None and \
+        (code & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+
+
 def init_schema(path: Path | None = None) -> None:
     with get_conn(path) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))

@@ -2,6 +2,7 @@
 import logging
 import json
 import os
+import sqlite3
 import time
 import urllib.error
 import urllib.request
@@ -9,8 +10,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
@@ -71,6 +73,17 @@ app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 SAMPLE_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/samples", StaticFiles(directory=SAMPLE_PHOTOS_DIR), name="samples")
 app.include_router(app_router)
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def database_busy(request: Request, exc: sqlite3.OperationalError):
+    if not db.is_busy(exc):
+        raise exc
+    return JSONResponse(
+        status_code=503,
+        headers={"Retry-After": "2"},
+        content={"detail": "The system is busy saving another update. Please try again in a moment."},
+    )
 
 
 @app.get("/health")
