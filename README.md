@@ -44,7 +44,7 @@ CONTRACTS.md        statuses, events, tools and DB rules shared by the team
 
 ## Run it locally
 
-Needs Python 3.12+, Node 20+ and [Ollama](https://ollama.com) with two models:
+Needs Python 3.12+, Node 24.22.1+ and [Ollama](https://ollama.com) with two models:
 
 ```bash
 ollama pull qwen2.5:7b
