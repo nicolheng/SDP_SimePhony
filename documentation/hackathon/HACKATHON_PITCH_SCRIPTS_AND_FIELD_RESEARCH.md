@@ -46,7 +46,7 @@ The important architecture choice is that an API action commits the user’s cha
 
 “First, **the application stays responsive while AI works**. We don’t hold a database write lock across a long model call. The event trail can show the initial rule-based action followed by a later agent completion, making the progression observable.
 
-Second, **the system can say ‘I’m not sure.’** Structured output validation rejects malformed or out-of-range responses; retries and rule-based fallback keep the workflow from trusting invalid output. Confidence thresholds and disagreement with guardrails can route a case to `PENDING_REVIEW`. We also record model, duration, available token counts, confidence, fallback, and guardrail hits with agent events. This gives SDP a basis for reviewing decisions rather than just seeing a generated answer.
+Second, **the system can say ‘I’m not sure.’** Structured output validation rejects malformed or out-of-range responses; retries and rule-based fallback keep the workflow from trusting invalid output. Low confidence, or the AI and the rules disagreeing on what the defect is, routes a case to `PENDING_REVIEW`; urgency is always set by the rules. We also record model, duration, available token counts, confidence, fallback, and guardrail hits with agent events. This gives SDP a basis for reviewing decisions rather than just seeing a generated answer.
 
 Third, **the prototype is built for operational scrutiny**. A health endpoint checks database, Ollama, embedder, and agent mode. Weekly digest metrics are calculated by Python; the language model only writes the narrative. The schema is consolidated, common query indexes are applied, and temporary image files used by the vision bridge are deleted after processing.”
 
