@@ -1,4 +1,5 @@
 """FastAPI app: REST endpoints for the buyer, technician and SDP apps, plus /uploads static files."""
+import asyncio
 import logging
 import json
 import os
@@ -27,6 +28,26 @@ from demo_api.routes import router as app_router  # noqa: E402
 log = logging.getLogger("simephony.startup")
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
 SAMPLE_PHOTOS_DIR = UPLOADS_DIR.parent / "data" / "sample_photos"
+SWEEP_INTERVAL_S = 60
+
+
+def sweep_signoffs_now() -> list[dict]:
+    """Apply the sign-off deadlines (reminder, auto-close, overdue) in one short write transaction."""
+    with db.write_conn() as conn, tools.use_connection(conn):
+        return tools.sweep_signoffs()
+
+
+async def _sweep_loop() -> None:
+    """Deadlines pass with real time even when nobody clicks, and GET /api/state no longer applies them."""
+    while True:
+        try:
+            await asyncio.to_thread(sweep_signoffs_now)
+        except Exception as exc:  # log and keep looping: one failed sweep must not stop the next
+            if db.is_busy(exc):
+                log.warning("Sign-off sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
+            else:
+                log.exception("Sign-off sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
+        await asyncio.sleep(SWEEP_INTERVAL_S)
 
 
 @asynccontextmanager
@@ -58,7 +79,9 @@ async def lifespan(app: FastAPI):
     else:
         log.info("AI model warmup completed in %.2f seconds (embedder ready: %s; Ollama ready: %s)",
                  elapsed, embedder_ready, ollama_ready)
+    sweeper = asyncio.create_task(_sweep_loop())
     yield
+    sweeper.cancel()
 
 
 app = FastAPI(title="SimePhony API", lifespan=lifespan)

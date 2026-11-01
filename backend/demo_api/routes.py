@@ -60,8 +60,10 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
 
 @router.get("/state")
 def get_state(request: Request):
-    """Everything the screens need, read from data/simephony.db (time rules applied first)."""
-    return _run(request)
+    """Everything the screens need, read from data/simephony.db. Read-only, so the 3 s poll never takes the write
+    lock: the time rules run on writes, on "Skip days" and in main.py's periodic sweep."""
+    with db.get_conn() as conn:
+        return {"state": build_state(Ctx(conn), _base(request))}
 
 
 @router.get("/rules")
