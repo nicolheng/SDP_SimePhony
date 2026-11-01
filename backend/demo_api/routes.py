@@ -22,7 +22,7 @@ def _base(request: Request) -> str:
 
 def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks | None = None) -> dict:
     """Run an action in one transaction, apply time rules, and return the state from the DB."""
-    with db.get_conn() as conn:
+    with db.write_conn() as conn:
         ctx = Ctx(conn, defer_agents=background_tasks is not None)
         extra = {}
         try:
