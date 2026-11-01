@@ -115,8 +115,7 @@ def triage_node(state: dict) -> dict:
         state["_structured_output_error"] = True
     if intake_urgency == "high":
         urgency, matched_rule = "high", None  # the model can raise urgency, never lower an intake "high"
-    rule_conflict = llm_urgency is not None and urgency != llm_urgency
-    if rule_conflict:
+    if llm_urgency is not None and urgency != llm_urgency:
         record_guardrail_hit("urgency_guardrail_triggered")
 
     # 3. Map category to skill
@@ -137,12 +136,7 @@ def triage_node(state: dict) -> dict:
         "save_error": _save(state.get("case_id"), urgency, justification),
     }
     if not state.get("_structured_output_error"):
-        flag_for_human_review(
-            state,
-            "TriageAgent",
-            confidence_score,
-            rule_conflict=rule_conflict,
-        )
+        flag_for_human_review(state, "TriageAgent", confidence_score)
     if state.get("needs_human_review"):
         state["triage_result"]["needs_human_review"] = True
         state["triage_result"]["review_reason"] = state["review_reason"]

@@ -85,7 +85,11 @@ def test_low_confidence_triage_abstains_for_human_review(sample_state, fake_llm)
     assert result["triage_result"]["confidence_score"] == 0.5
 
 
-def test_triage_guardrail_disagreement_abstains_for_human_review(sample_state, fake_llm):
+def test_triage_urgency_correction_is_logged_not_held(sample_state, fake_llm, monkeypatch):
+    from agents.simephony import triage
+
+    guardrail_hits = []
+    monkeypatch.setattr(triage, "record_guardrail_hit", guardrail_hits.append)
     fake_llm.responses = [_reply("high", confidence=0.95)]
     state = _state(sample_state, case_id="C-NEW",
                    intake_result={"category": "water_leak", "urgency": "normal"})
@@ -93,8 +97,8 @@ def test_triage_guardrail_disagreement_abstains_for_human_review(sample_state, f
     result = triage_node(state)
 
     assert result["triage_result"]["urgency"] == "normal"
-    assert result["needs_human_review"] is True
-    assert "rule conflict" in result["review_reason"]
+    assert result.get("needs_human_review", False) is False
+    assert "urgency_guardrail_triggered" in guardrail_hits
 
 
 def test_triage_missing_intake_urgency_defaults_normal(sample_state, fake_llm):

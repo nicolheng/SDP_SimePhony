@@ -2,7 +2,7 @@
 
 **For:** Tan Syn Yee (IntakeAgent), Nicol Heng Si Yi (TriageAgent, guardrails)
 **Also affects:** Lim Xiao Wen (SDP console: fewer cases in Approvals), Phoebe Angelina Surin (buyer app: fewer "Being checked" cases)
-**Status:** proposal, not built. Needs Syn Yee and Nicol to agree before anyone changes their agent files.
+**Status:** implemented. Urgency corrections remain logged as guardrail hits but no longer trigger human review.
 
 ---
 
@@ -203,8 +203,6 @@ In the web app (`USE_AI_AGENTS=true`, Ollama running): report *"Ceiling leaking 
 Expected: the inspection visit is booked straight away. In **SDP → Agent Trace**, the IntakeAgent step still lists
 `urgency_guardrail_triggered` under guardrail hits.
 
-## 6. Decision needed
+## 6. Outcome
 
-- [ ] Tan Syn Yee agrees to 4.1 and the intake test
-- [ ] Nicol Heng Si Yi agrees to 4.2 and 4.3
-- [ ] Whoever makes the change also updates the docs in 4.4
+Urgency-only corrections no longer hold cases. Low-confidence decisions and disagreements about the defect category still route to human review. The specified tests and documentation updates are included.

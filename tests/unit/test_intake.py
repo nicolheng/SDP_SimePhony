@@ -98,6 +98,29 @@ class TestOutputContract:
         assert result["current_status"] == "PENDING_REVIEW"
         assert result["intake_result"]["confidence_score"] == 0.5
 
+    def test_urgency_correction_does_not_request_human_review(self, monkeypatch):
+        from agents.simephony import intake
+
+        guardrail_hits = []
+        monkeypatch.setattr(intake, "record_guardrail_hit", guardrail_hits.append)
+        _patch_llm(monkeypatch, {
+            "category": "water_leak",
+            "urgency": "high",
+            "missing_info": [],
+            "preliminary_outcome": "VALID_DEFECT",
+            "confidence_score": 0.95,
+        })
+
+        result = intake_node(_base_state(
+            case_id="C-NEW",
+            user_description="Ceiling leaking in my bedroom",
+            needs_human_review=False,
+        ))
+
+        assert result["intake_result"]["urgency"] == "normal"
+        assert result["needs_human_review"] is False
+        assert "urgency_guardrail_triggered" in guardrail_hits
+
     def test_always_sets_missing_info_list(self, monkeypatch):
         _patch_llm(monkeypatch, {"category": "plumbing", "missing_info": ["Need photo"]})
         state = _base_state()

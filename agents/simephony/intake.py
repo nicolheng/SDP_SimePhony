@@ -293,10 +293,8 @@ def intake_node(state: dict) -> dict:
         record_guardrail_hit("category_guardrail_triggered")
     if parsed_intake.get("urgency") != original_urgency:
         record_guardrail_hit("urgency_guardrail_triggered")
-    rule_conflict = (
-        parsed_intake.get("category") != original_category
-        or parsed_intake.get("urgency") != original_urgency
-    )
+    model_was_specific = original_category in _ALLOWED_CATEGORIES and original_category != "other"
+    rule_conflict = model_was_specific and parsed_intake.get("category") != original_category
 
     # 4. Blur / missing photo detection
     is_blur_image = False

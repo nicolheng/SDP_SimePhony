@@ -12,7 +12,7 @@ SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / INVALID
 |---|---|
 | `SUBMITTED` | Buyer sent photo, description and preferred visit time |
 | `INFO_NEEDED` | IntakeAgent asked the buyer for more detail (one round: the answer is taken as given and the case is booked, never held for review) |
-| `PENDING_REVIEW` | An AI agent was unsure (confidence below 0.7, or a rule conflict) and paused the case for SDP. Technician and bookings are released. SDP approves (the case resumes from the held step with the rule-based agents) or rejects (new report → `INVALID`, reopen → `CLOSED`, repair → `VALID`) via `POST /api/cases/{id}/review-decision` |
+| `PENDING_REVIEW` | An AI agent was unsure (confidence below 0.7, or the AI and the rules disagree on the category) and paused the case for SDP. Technician and bookings are released. SDP approves (the case resumes from the held step with the rule-based agents) or rejects (new report → `INVALID`, reopen → `CLOSED`, repair → `VALID`) via `POST /api/cases/{id}/review-decision` |
 | `VISIT_SCHEDULED` | Inspection visit booked with a technician |
 | `VALID` / `INVALID` | Technician's verdict. `INVALID` is terminal |
 | `REPAIR_BOOKED` | Buyer booked the repair |
