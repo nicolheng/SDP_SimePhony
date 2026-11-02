@@ -77,7 +77,7 @@ export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
   INVALID: "The technician assessed this as not a defect. This case is closed; submit a new report if the problem changes.",
   REPAIR_BOOKED: "Your repair is booked. The technician will fix the defect at the booked time.",
   REPAIRED: "The technician has marked the repair as done. Your sign-off checklist is being prepared.",
-  PENDING_SIGNOFF: "The developer reviews the repair first. Once they approve, please check it using the checklist and sign off within 14 days; the case closes when you sign, or automatically after 14 days.",
+  PENDING_SIGNOFF: "The repair is done. The developer is reviewing it first; we'll let you know when you can check it and sign off.",
   CLOSED: "You and the developer have both signed off. You can reopen within the grace period if the problem returns.",
   REOPENED: "You reopened this case with a new photo. We're deciding the next step.",
   ESCALATION_PENDING: "This problem has come back, so our team is reviewing whether a more detailed inspection is needed.",
@@ -90,7 +90,6 @@ export const BUYER_TABS = [
   { id: "open", label: "Open", statuses: ["SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VISIT_SCHEDULED"] },
   { id: "ongoing", label: "Ongoing", statuses: ["VALID", "REPAIR_BOOKED", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING", "EXTRA_INSPECTION"] },
   { id: "closed", label: "Closed", statuses: ["CLOSED", "INVALID"] },
-  { id: "previous", label: "Previous", statuses: null },
 ] as const satisfies readonly { id: string; label: string; statuses: readonly CaseStatus[] | null }[];
 
 /** Statuses where the buyer has something to do. */
@@ -120,12 +119,12 @@ export const TECH_EXPLAIN: Record<CaseStatus, string> = {
 
 /** Technician "My Jobs" tabs. */
 export const TECH_TABS = [
-  { id: "todo", label: "To do", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "REPAIR_BOOKED"] },
-  { id: "inspection", label: "Inspection visits", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION"] },
-  { id: "repair", label: "Repair", statuses: ["REPAIR_BOOKED"] },
-  { id: "waiting", label: "Waiting", statuses: ["VALID", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING"] },
-  { id: "completed", label: "Completed", statuses: ["CLOSED", "INVALID"] },
-  { id: "history", label: "History", statuses: null },
+  { id: "all", label: "All", statuses: null },
+  { id: "todo", label: "To Do", statuses: ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "REPAIR_BOOKED"] },
+  // Out of the technician's hands for now: waiting on the buyer, the developer or SDP staff.
+  { id: "ongoing", label: "Ongoing", statuses: ["SUBMITTED", "INFO_NEEDED", "PENDING_REVIEW", "VALID", "REPAIRED", "PENDING_SIGNOFF", "REOPENED", "ESCALATION_PENDING"] },
+  // Past (seeded history) jobs are always finished, so they sit here too.
+  { id: "closed", label: "Closed", statuses: ["CLOSED", "INVALID"] },
 ] as const satisfies readonly { id: string; label: string; statuses: readonly CaseStatus[] | null }[];
 
 /** Statuses where the technician has to act. */

@@ -1,8 +1,8 @@
 "use client";
-import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList, Clock, Headphones, Mail, Phone, PlusCircle, UserRound } from "lucide-react";
+import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList, Clock, Headphones, Mail, Phone, PlusCircle } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
-import { BrandMark } from "@/components/brand";
+import { Avatar, BrandMark } from "@/components/brand";
 import { useRecentActivity } from "@/components/case-views";
 import { BuildingBanner } from "@/components/illustrations";
 import { QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
@@ -11,13 +11,6 @@ import { DEMO_BUYER, getUnit, PROJECT_NAME } from "@/lib/constants";
 import { relative } from "@/lib/dates";
 import { buyerNeedsAction, isOpen, STATUS_META } from "@/lib/status";
 import { useDemo } from "@/lib/store";
-
-const MANUAL_STEPS = [
-  "Report the defect with a photo and pick an inspection slot.",
-  "A technician inspects and confirms whether it is a defect.",
-  "Book a repair slot; the technician fixes it.",
-  "Check the repair with our checklist and sign off.",
-];
 
 export default function BuyerHome() {
   const cases = useDemo((s) => s.cases);
@@ -40,8 +33,8 @@ export default function BuyerHome() {
             <Bell className="size-6" />
             {updates > 0 && <span className="absolute -right-1.5 -top-1.5 grid min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold">{updates}</span>}
           </Link>
-          <Link href="/buyer/profile" className="grid size-10 place-items-center rounded-full bg-zinc-300 text-zinc-500" aria-label="Profile">
-            <UserRound className="size-6" />
+          <Link href="/buyer/profile" className="rounded-full ring-2 ring-white/80" aria-label="Profile">
+            <Avatar who="buyer" className="size-10" />
           </Link>
         </div>
       </header>
@@ -111,18 +104,6 @@ export default function BuyerHome() {
               No ongoing defects.
             </div>
           )}
-        </section>
-
-        <section>
-          <SectionHead title="User Manual" href="/buyer/manual" more="Read guide" />
-          <ol className="space-y-2.5 rounded-2xl bg-zinc-50 p-4">
-            {MANUAL_STEPS.map((s, i) => (
-              <li key={s} className="flex gap-3 text-sm text-zinc-700">
-                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand text-xs font-semibold text-white">{i + 1}</span>
-                {s}
-              </li>
-            ))}
-          </ol>
         </section>
 
         <section id="support">

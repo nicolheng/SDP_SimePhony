@@ -31,7 +31,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
       </div>
 
       <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Photo comparison</h3>
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Photo Comparison</h3>
         <div className="grid grid-cols-2 gap-2">
           {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
           {reopen && <PhotoThumb photo={reopen} className="aspect-[4/3]" />}
@@ -41,7 +41,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
 
       {b.neighbouringUnits.length > 0 && (
         <div>
-          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Neighbouring units with the same problem</h3>
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Neighbouring Units with the Same Problem</h3>
           <ul className="flex flex-wrap gap-1.5">
             {b.neighbouringUnits.map((u) => (
               <li key={u.unitId} className="rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-900 ring-1 ring-amber-200">
@@ -53,7 +53,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
       )}
 
       <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Likely components</h3>
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Likely Components</h3>
         <ul className="list-disc space-y-0.5 pl-4 text-xs text-zinc-700">
           {b.likelyComponents.map((x) => (
             <li key={x}>{x}</li>

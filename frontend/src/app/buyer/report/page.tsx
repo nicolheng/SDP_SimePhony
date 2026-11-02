@@ -1,25 +1,46 @@
 "use client";
-import { CheckCircle2, CircleAlert, Loader2, Sparkles } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { TechAvatar } from "@/components/brand";
 import { useCase, useCaseEvents } from "@/components/case-views";
+import { FollowUpForm } from "@/components/follow-up-form";
 import { BuildingBanner } from "@/components/illustrations";
 import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
-import { PhotoInput, samplePhoto } from "@/components/photo";
+import { PhotoInput } from "@/components/photo";
 import { SlotPicker } from "@/components/slot-picker";
 import { UrgencyBadge } from "@/components/status-badge";
 import { fetchVisitSlots, submitReport } from "@/lib/api";
-import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, getUnit, PROJECT_NAME } from "@/lib/constants";
+import { DEMO_BUYER, getTechnician, getUnit, PROJECT_NAME } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { useDemo } from "@/lib/store";
+import type { Category, Urgency } from "@/lib/types";
 
-const EXAMPLES = [
-  "Siling bilik utama bocor lagi lepas hujan, air menitis atas almari",
-  "Ceiling in master bedroom leaking again after heavy rain",
-  "Socket kat dapur tak function, ada bau hangus sikit",
-  "Bocor",
-];
+const EXAMPLES = ["Ceiling in master bedroom seems to be leaking", "Bocor"];
+
+/** What the priority badge means for the buyer (high urgency books the earliest slot and is watched by SDP staff). */
+const PRIORITY_NOTE: Record<Urgency, string> = {
+  high: "High priority: earliest available inspection, monitored by our team",
+  normal: "Normal priority: inspection at your selected time",
+  low: "Low priority (cosmetic): inspection at your selected time",
+};
+
+/** Interim care advice until the inspection visit. */
+const CARE_TIP: Record<Category, string> = {
+  water_leak: "Keep the area dry, move valuables and furniture away, and avoid using power points nearby.",
+  plumbing: "Turn off the nearest stop valve if water is leaking, and wipe up standing water.",
+  drainage: "Avoid pouring oil or debris into the drain; use another bathroom or sink if possible.",
+  sanitary_fittings: "Avoid forcing the fitting; turn off its water supply valve if it keeps running or leaking.",
+  electrical: "Do not use the affected socket or switch. If you smell burning or see sparks, switch off at the DB box.",
+  wall_crack: "Avoid hanging items on or drilling into the cracked area. Take a photo if the crack grows.",
+  structural_crack: "Keep clear of the affected area and avoid placing heavy loads near it. Contact us if it widens.",
+  tiles: "Avoid walking on or placing heavy items over loose or hollow tiles; mark the spot to prevent trips.",
+  ceiling: "Keep clear of the area below and move furniture away in case of falling debris.",
+  door_window: "Avoid forcing the door or window; keep it locked if it closes securely.",
+  paint: "Keep the area dry and avoid scraping or repainting it before the inspection.",
+  other: "Avoid using or disturbing the affected area until the technician has inspected it.",
+};
 
 export default function ReportDefect() {
   const now = useDemo((s) => s.now);
@@ -59,16 +80,7 @@ export default function ReportDefect() {
 
   if (caseId)
     return (
-      <Processing
-        caseId={caseId}
-        done={!busy}
-        onReset={() => {
-          setCaseId(null);
-          setPhoto(null);
-          setText("");
-          setSlot(null);
-        }}
-      />
+      <Processing caseId={caseId} done={!busy} />
     );
 
   return (
@@ -82,7 +94,6 @@ export default function ReportDefect() {
         <p className="text-sm text-zinc-500">
           Unit {DEMO_BUYER.unitId} · {DEMO_BUYER.name}
         </p>
-        <p className="mt-2 text-xs text-zinc-500">Tell us what&apos;s wrong. Our assistant will categorise it and book the right technician.</p>
         {dlpOver && (
           <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
             Your Defect Liability Period ended on {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be reported in the app. Please contact the developer.
@@ -90,36 +101,30 @@ export default function ReportDefect() {
         )}
       </div>
       <div className="space-y-4 p-4">
-        <Section title="1. Photo of the defect *">
-          <PhotoInput value={photo} onChange={setPhoto} label="Take or upload a photo" required />
-          {!photo && (
-            <button type="button" onClick={() => setPhoto(samplePhoto())} className="mt-2 text-xs font-medium text-brand">
-              Use a sample photo (demo)
-            </button>
-          )}
+        <Section title="1. Defect Photo *">
+          <PhotoInput value={photo} onChange={setPhoto} />
         </Section>
 
-        <Section title="2. Describe the problem *">
+        <Section title="2. Defect Description *">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={4}
             maxLength={500}
-            placeholder="What's wrong, which room, and where exactly? English or BM is fine."
+            placeholder="Tell us what's wrong."
             className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
           />
           <p className="-mt-1 text-right text-xs text-zinc-400">{text.length} / 500</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {EXAMPLES.map((e) => (
               <button key={e} type="button" onClick={() => setText(e)} className="rounded-full bg-zinc-100 px-2.5 py-1 text-left text-[11px] text-zinc-600 hover:bg-zinc-200">
-                {e.length > 38 ? e.slice(0, 38) + "…" : e}
+                {e}
               </button>
             ))}
           </div>
         </Section>
 
-        <Section title="3. Book your inspection visit *">
-          <p className="-mt-1 mb-3 text-xs text-zinc-500">Your first appointment is an inspection visit: a technician checks the defect. If it&apos;s confirmed, you book the repair afterwards.</p>
+        <Section title="3. Book Your Inspection Visit *">
           {slotError ? (
             <p className="text-sm text-red-600">{slotError}</p>
           ) : slots ? (
@@ -134,21 +139,19 @@ export default function ReportDefect() {
         <PrimaryButton disabled={!photo || !text.trim() || !slot || busy || dlpOver} onClick={submit}>
           {busy ? "Submitting…" : "Submit Defect"}
         </PrimaryButton>
-        {(!photo || !text.trim() || !slot) && <p className="text-center text-xs text-zinc-500">Photo, description and a visit slot are required.</p>}
       </div>
     </div>
   );
 }
 
-function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; onReset: () => void }) {
-  const c = useCase(caseId);
-  const events = useCaseEvents(caseId);
-  if (!c) return null;
-  // Buyer-facing progress only: no agent names, no related-case details.
+type Stage = { label: string; state: "done" | "active" | "attention" | "todo" };
+
+/** Buyer-facing progress only: no agent names, no related-case details. */
+function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnType<typeof useCaseEvents>): Stage[] {
   const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent);
-  const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
   const review = c.status === "PENDING_REVIEW";
-  const stages: { label: string; state: "done" | "active" | "attention" | "todo" }[] = [
+  const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
+  return [
     { label: "Report received", state: "done" },
     { label: "Understanding your report", state: did("IntakeAgent") ? "done" : "active" },
     c.status === "INFO_NEEDED"
@@ -158,7 +161,30 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
         : { label: "Finding a technician", state: did("TriageAgent") ? "done" : did("IntakeAgent") ? "active" : "todo" },
     ...(c.status === "INFO_NEEDED" ? [] : [{ label: "Inspection visit booked", state: booked ? ("done" as const) : ("todo" as const) }]),
   ];
+}
+
+function Processing({ caseId, done }: { caseId: string; done: boolean }) {
+  const c = useCase(caseId);
+  const events = useCaseEvents(caseId);
+  // Stages are revealed one at a time: each waits (spinner, grey) until the previous one is ticked.
+  const [revealed, setRevealed] = useState(0);
+  const real = c ? stagesFor(c, events) : [];
+  const currentDone = real[revealed]?.state === "done";
+  useEffect(() => {
+    if (!currentDone) return;
+    const t = setTimeout(() => setRevealed((r) => r + 1), 700);
+    return () => clearTimeout(t);
+  }, [currentDone, revealed]);
+  if (!c) return null;
+  // Also not settled while a stage is still running (e.g. re-processing after the buyer answers a question).
+  const settled = done && (revealed >= real.length || (real[revealed].state !== "done" && real[revealed].state !== "active"));
+  const stages = real.map((st, i) => ({
+    label: st.label,
+    state: i < revealed ? st.state : i === revealed ? (st.state === "attention" || (settled && st.state === "todo") ? st.state : "active") : "todo",
+  }));
+  const review = c.status === "PENDING_REVIEW";
   const tech = getTechnician(c.technicianId);
+
 
   return (
     <div>
@@ -166,8 +192,8 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-2 text-sm font-semibold">
-            {done ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-brand" />}
-            {done ? (c.status === "INFO_NEEDED" ? "We need one more detail" : review ? "Received: our team is checking it" : "All set") : "Processing your report…"}
+            {settled ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-zinc-400" />}
+            {settled ? (c.status === "INFO_NEEDED" ? "We need one more detail" : review ? "Received: our team is checking it" : "All set") : "Processing your report…"}
           </p>
           <ol className="mt-3 space-y-2.5">
             {stages.map((st) => (
@@ -175,54 +201,65 @@ function Processing({ caseId, done, onReset }: { caseId: string; done: boolean; 
                 {st.state === "done" ? (
                   <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
                 ) : st.state === "active" ? (
-                  <Loader2 className="size-4 shrink-0 animate-spin text-brand" />
+                  <Loader2 className="size-4 shrink-0 animate-spin text-zinc-400" />
                 ) : st.state === "attention" ? (
                   <CircleAlert className="size-4 shrink-0 text-amber-600" />
                 ) : (
                   <span className="size-4 shrink-0 rounded-full border-2 border-zinc-200" />
                 )}
-                <span className={st.state === "todo" ? "text-zinc-400" : "text-zinc-800"}>{st.label}</span>
+                <span className={st.state === "done" || st.state === "attention" ? "text-zinc-900" : "text-zinc-400"}>{st.label}</span>
               </li>
             ))}
           </ol>
         </Section>
 
-        <Section title="What we understood">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-brand" />
-            <span className="text-sm font-medium">{c.summary}</span>
-            <UrgencyBadge urgency={c.urgency} />
-          </div>
-          <p className="mt-1 text-xs text-zinc-500">
-            {CATEGORY_LABEL[c.category]} · {c.subCategory} · {c.location || "location not given"}
-          </p>
-        </Section>
+        {settled && (
+          <Section title="Defect Assessment">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-brand" />
+              <span className="text-sm font-medium">{c.summary}</span>
+              <UrgencyBadge urgency={c.urgency} />
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">{PRIORITY_NOTE[c.urgency] ?? PRIORITY_NOTE.normal}</p>
+            <div className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
+              <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <p>
+                <span className="font-semibold">Until the visit: </span>
+                {CARE_TIP[c.category] ?? CARE_TIP.other}
+              </p>
+            </div>
+          </Section>
+        )}
 
 
-        {c.status === "INFO_NEEDED" && (
+        {settled && c.status === "INFO_NEEDED" && (
           <Section>
             <p className="text-sm font-semibold text-amber-800">One more question</p>
             <p className="mt-1 text-sm text-zinc-700">{c.followUpQuestion}</p>
+            <FollowUpForm caseId={c.id} />
           </Section>
         )}
 
-        {c.status === "VISIT_SCHEDULED" && tech && c.visitSlot && (
-          <Section title="Inspection visit booked">
-            <p className="text-sm">
-              <span className="font-medium">{tech.name}</span> will visit on <span className="font-medium">{fmtDateTime(c.visitSlot)}</span>.
-            </p>
+        {settled && c.status === "VISIT_SCHEDULED" && tech && c.visitSlot && (
+          <Section title="Scheduled Inspection">
+            <div className="flex items-center gap-3">
+              <TechAvatar tech={tech} className="size-11 shrink-0 ring-1 ring-zinc-200" iconClassName="size-6" />
+              <div className="text-sm">
+                <p>
+                  <span className="font-medium">{tech.name}</span> will visit on
+                </p>
+                <p className="mt-0.5 flex items-center gap-1.5 font-medium">
+                  <CalendarClock className="size-4 text-brand" /> {fmtDateTime(c.visitSlot)}
+                </p>
+              </div>
+            </div>
           </Section>
         )}
 
-        {done && (
+        {settled && c.status !== "INFO_NEEDED" && (
           <Link href={`/buyer/cases/${c.id}`} className={primaryButtonClass}>
-            {c.status === "INFO_NEEDED" ? "Answer question" : "View my case"}
+            View my case
           </Link>
-        )}
-        {done && (
-          <button type="button" onClick={onReset} className="w-full text-center text-sm font-semibold text-brand">
-            Report another defect
-          </button>
         )}
       </div>
     </div>

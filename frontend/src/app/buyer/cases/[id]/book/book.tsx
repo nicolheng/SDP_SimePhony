@@ -6,10 +6,9 @@ import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { MobileHeader, PrimaryButton, Section } from "@/components/mobile";
 import { SlotPicker } from "@/components/slot-picker";
-import { fmtHours, repairBlocks } from "@/lib/agents";
+import { fmtHours } from "@/lib/agents";
 import { bookRepair, fetchRepairOptions, type RepairOption } from "@/lib/api";
-import { REPAIR_PLAN, SLOT_HOURS, workerName } from "@/lib/constants";
-import { fmtTime } from "@/lib/dates";
+import { REPAIR_PLAN } from "@/lib/constants";
 import { useDemo } from "@/lib/store";
 
 export function BookRepair() {
@@ -34,9 +33,6 @@ export function BookRepair() {
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
   const plan = REPAIR_PLAN[c.category];
-  const blocks = repairBlocks(plan.hours);
-  const chosen = options?.find((o) => o.start === start);
-  const endTime = chosen ? fmtTime(new Date(new Date(chosen.slots.at(-1)!).getTime() + SLOT_HOURS * 3_600_000).toISOString()) : null;
 
   return (
     <div>
@@ -49,8 +45,7 @@ export function BookRepair() {
             <li className="flex items-center gap-2">
               <Clock className="size-4 text-brand" />
               <span>
-                Estimated job duration: <span className="font-semibold">{fmtHours(plan.hours)}</span>
-                <span className="text-zinc-500"> · reserves {blocks * SLOT_HOURS} h</span>
+                Estimated job duration: <span className="font-semibold">{fmtHours(plan.hours).replace(/^about /, "")}</span>
               </span>
             </li>
             <li className="flex items-center gap-2">
@@ -77,14 +72,6 @@ export function BookRepair() {
             <SlotPicker available={options.map((o) => o.start)} value={start} onChange={setStart} />
           )}
         </Section>
-
-        {chosen && (
-          <p className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-700">
-            {fmtTime(chosen.start)} – {endTime} · will be allocated to{" "}
-            <span className="font-medium">{workerName(c.supportId && chosen.workerIds.includes(c.supportId) ? c.supportId : chosen.workerIds[0])}</span>
-            {chosen.workerIds.length > 1 && <span className="text-zinc-500"> ({chosen.workerIds.length} available)</span>}
-          </p>
-        )}
 
         <PrimaryButton
           disabled={!start || c.status !== "VALID" || busy}

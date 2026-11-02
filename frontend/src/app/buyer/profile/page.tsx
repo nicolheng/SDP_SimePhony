@@ -1,6 +1,7 @@
 "use client";
-import { ArrowLeft, BookOpen, ChevronRight, Headphones, Home, UserRound } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronRight, Headphones, Home } from "lucide-react";
 import Link from "next/link";
+import { Avatar } from "@/components/brand";
 import { DEMO_BUYER, getUnit, PROJECT_NAME } from "@/lib/constants";
 import { fmtDate } from "@/lib/dates";
 
@@ -23,9 +24,7 @@ export default function Profile() {
         <Link href="/buyer" className="absolute left-4 top-6 grid size-9 place-items-center rounded-full hover:bg-white/10" aria-label="Back">
           <ArrowLeft className="size-5" />
         </Link>
-        <span className="grid size-24 place-items-center rounded-full bg-zinc-300 text-zinc-500">
-          <UserRound className="size-14" />
-        </span>
+        <Avatar who="buyer" className="size-24 ring-4 ring-white/80" />
         <p className="mt-4 text-2xl font-semibold">{DEMO_BUYER.name}</p>
         <p className="mt-1 text-sm text-zinc-400">
           {PROJECT_NAME} · {unit.id}

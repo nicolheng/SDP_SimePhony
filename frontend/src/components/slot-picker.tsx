@@ -18,9 +18,9 @@ export function SlotPicker({ available, value, onChange }: { available: string[]
 
   return (
     <div className="space-y-3">
-      <p className="text-center text-sm font-semibold text-brand">Please select an available date and time slot</p>
+      <p className="whitespace-nowrap text-center text-xs font-semibold tracking-tight text-brand">Please select an available date and time slot</p>
       <p className="text-center text-xs font-medium text-zinc-500">{mon.format(new Date(`${current}T12:00:00+08:00`))}</p>
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 pt-1">
         {days.map((d) => {
           const date = new Date(`${d}T12:00:00+08:00`);
           return (
@@ -51,7 +51,7 @@ export function SlotPicker({ available, value, onChange }: { available: string[]
               onClick={() => onChange(iso)}
               className={cn(
                 "h-10 rounded-lg text-sm font-medium ring-1 transition",
-                value === iso ? "bg-brand text-white ring-brand" : ok ? "bg-white text-zinc-800 ring-zinc-200 hover:ring-brand" : "bg-zinc-100 text-zinc-400 line-through ring-zinc-100",
+                value === iso ? "bg-brand text-white ring-brand" : ok ? "bg-white text-zinc-800 ring-zinc-200 hover:ring-brand" : "bg-zinc-100 text-zinc-400 ring-zinc-100",
               )}
             >
               {fmtTime(iso)}

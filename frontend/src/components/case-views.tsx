@@ -191,7 +191,7 @@ export function PreviousReports({ c, buyer }: { c: Case; buyer?: boolean }) {
   );
   if (!list.length) return null;
   return (
-    <Section title={`Previous ${CATEGORY_LABEL[c.category].toLowerCase()} reports in unit ${c.unitId}`}>
+    <Section title={`Similar ${CATEGORY_LABEL[c.category]} Reports History`}>
       <ol className="space-y-3">
       {list.map((x) => (
         <li key={x.id} className="flex items-start gap-2.5">

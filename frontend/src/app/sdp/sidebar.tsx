@@ -1,5 +1,5 @@
 "use client";
-import { Activity, BarChart3, ClipboardList, LayoutDashboard, Layers, ShieldCheck, Star } from "lucide-react";
+import { Activity, ClipboardList, LayoutDashboard, Layers, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -73,9 +73,11 @@ export function SdpSidebar() {
   const path = usePathname();
   const approvals = useDemo((s) => s.approvals);
   const cases = useDemo((s) => s.cases);
-  // Extra inspection requests plus cases an AI agent held for review: both wait for an SDP decision.
+  // Everything on the Approvals page: extra inspection requests, cases held for review and sign-offs to chase.
   const pending = useMemo(
-    () => approvals.filter((a) => a.status === "pending").length + cases.filter((c) => c.status === "PENDING_REVIEW").length,
+    () =>
+      approvals.filter((a) => a.status === "pending").length +
+      cases.filter((c) => c.status === "PENDING_REVIEW" || (c.status === "PENDING_SIGNOFF" && (!c.signoff?.developer || c.signoffOverdueAt))).length,
     [approvals, cases],
   );
   const items = [
@@ -84,8 +86,6 @@ export function SdpSidebar() {
     { href: "/sdp/approvals", label: "Approvals", icon: ShieldCheck, badge: pending },
     { href: "/sdp/defects", label: "Defects", icon: ClipboardList },
     { href: "/sdp/systemic", label: "Systemic Issues", icon: Layers },
-    { href: "/sdp/analytics", label: "Analytics", icon: BarChart3 },
-    { href: "/sdp/satisfaction", label: "Ratings", icon: Star },
     { href: "/sdp/trace", label: "Agent Trace", icon: Activity },
   ];
   const isActive = (href: string) => (href === "/sdp" ? path === "/sdp" : path.startsWith(href));

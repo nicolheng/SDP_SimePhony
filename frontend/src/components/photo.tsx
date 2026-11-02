@@ -114,13 +114,9 @@ async function toDataUrl(file: File, max = 720): Promise<string> {
 export function PhotoInput({
   value,
   onChange,
-  label = "Add photo",
-  required,
 }: {
   value: string | null;
   onChange: (url: string | null) => void;
-  label?: string;
-  required?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -192,10 +188,6 @@ export function PhotoInput({
         </div>
       ) : (
         <div className="rounded-xl border-2 border-dashed border-zinc-300 bg-white p-3">
-          <p className="mb-2 text-center text-sm text-zinc-500">
-            {label}
-            {required && <span className="ml-1 text-[11px] text-zinc-400">(required)</span>}
-          </p>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={takePhoto} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-brand text-sm font-semibold text-white">
               <Camera className="size-4" /> Take photo

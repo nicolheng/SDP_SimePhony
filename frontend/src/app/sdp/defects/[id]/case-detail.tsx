@@ -83,7 +83,7 @@ export function SdpCaseDetail() {
           </Panel>
 
           {(c.verdict || c.repairNote || c.verification) && (
-            <Panel title="Inspection, repair & verification">
+            <Panel title="Inspection, Repair & Verification">
               <ul className="space-y-2 text-base">
                 {c.verdict && (
                   <li>
@@ -116,7 +116,7 @@ export function SdpCaseDetail() {
           )}
 
           {c.inspectionBrief && (
-            <Panel title="Inspection brief">
+            <Panel title="Inspection Brief">
               <InspectionBriefView c={c} />
             </Panel>
           )}
@@ -125,7 +125,7 @@ export function SdpCaseDetail() {
         <div className="space-y-6">
           {c.status === "PENDING_REVIEW" && <ReviewPanel c={c} />}
           {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && (
-            <Panel title="Developer verification">
+            <Panel title="Developer Verification">
               <p className="text-base text-zinc-700">
                 Check the repair by {workerLabel(c.technicianId)}, then approve it.
               </p>
@@ -158,7 +158,7 @@ export function SdpCaseDetail() {
             </Panel>
           )}
           {c.rating?.comment && (
-            <Panel title="Buyer feedback">
+            <Panel title="Buyer Feedback">
               <Stars value={c.rating.stars} className="text-lg" />
               <p className="mt-2 text-base text-zinc-700">&ldquo;{c.rating.comment}&rdquo;</p>
               <p className="mt-1 text-sm text-zinc-500">{fmtDateTime(c.rating.at)}</p>
@@ -166,7 +166,7 @@ export function SdpCaseDetail() {
           )}
           {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${SDP_STAFF.name} (${SDP_STAFF.title})`} large />}
           {!!c.assignments?.length && (
-            <Panel title="Assignment history">
+            <Panel title="Assignment History">
               <ul className="space-y-2.5">
                 {[...c.assignments].reverse().map((a, i) => (
                   <li key={i} className="flex items-start justify-between gap-3 text-base">
@@ -193,7 +193,7 @@ export function SdpCaseDetail() {
             </Panel>
           )}
           {c.similar.length > 0 && (
-            <Panel title="Related cases (Similar Defect Agent)">
+            <Panel title="Related Cases (Similar Defect Agent)">
               <SimilarList c={c} />
             </Panel>
           )}

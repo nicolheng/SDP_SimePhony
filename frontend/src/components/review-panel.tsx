@@ -52,7 +52,7 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
           · {c.unitId} · {c.summary}
         </p>
       )}
-      <h2 className="text-lg font-semibold">Held for human review</h2>
+      <h2 className="text-lg font-semibold">Held for Human Review</h2>
       <div className="mt-3 rounded-xl bg-violet-50 p-4">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-violet-800">
           <Bot className="size-4" /> {r?.agent ?? "An AI agent"} was not sure{r?.at ? ` · ${fmtDateTime(r.at)}` : ""}

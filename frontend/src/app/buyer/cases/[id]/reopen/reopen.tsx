@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { MobileHeader, PrimaryButton, Section } from "@/components/mobile";
-import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
+import { PhotoInput, PhotoThumb } from "@/components/photo";
 import { canReopen, reopenCase } from "@/lib/api";
 import { RULES } from "@/lib/constants";
 import { useDemo } from "@/lib/store";
@@ -41,15 +41,10 @@ export function ReopenCase() {
             {c.photos[0] && <PhotoThumb photo={c.photos[0]} className="aspect-square" />}
           </div>
         </Section>
-        <Section title="1. New photo *">
-          <PhotoInput value={photo} onChange={setPhoto} label="Take a new photo" required />
-          {!photo && (
-            <button type="button" onClick={() => setPhoto(samplePhoto("leak-worse"))} className="mt-2 text-xs font-medium text-brand">
-              Use a sample photo (demo)
-            </button>
-          )}
+        <Section title="1. New Photo *">
+          <PhotoInput value={photo} onChange={setPhoto} />
         </Section>
-        <Section title="2. What happened? (optional)">
+        <Section title="2. What Happened? (Optional)">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}

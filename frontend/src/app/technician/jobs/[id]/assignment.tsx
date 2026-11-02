@@ -60,7 +60,7 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
       {pending ? (
         <>
           <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-800">
-            <Clock className="size-4" /> {c.handover ? "Handed over to you: please confirm" : "New job: please confirm"}
+            <Clock className="size-4" /> {c.handover ? "Reassigned Job: Confirmation Required" : "New Assignment: Confirmation Required"}
           </p>
           {c.handover && <p className="mt-1 text-sm text-zinc-700">{workerLabel(c.handover.fromId)} couldn&apos;t make it.</p>}
           {!open && (

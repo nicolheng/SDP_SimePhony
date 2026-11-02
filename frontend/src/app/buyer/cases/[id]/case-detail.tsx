@@ -1,19 +1,19 @@
 "use client";
-import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, Loader2, MessageSquare, ShieldAlert, Star, UserRound, Wrench } from "lucide-react";
+import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, MessageSquare, ShieldAlert, Star, Wrench } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { CaseProgress, PreviousReports, useCase, useCaseId } from "@/components/case-views";
+import { CaseProgress, useCase, useCaseId } from "@/components/case-views";
+import { TechAvatar } from "@/components/brand";
 import { DefectRecordCard } from "@/components/defect-record";
+import { FollowUpForm } from "@/components/follow-up-form";
 import { recordAvailable } from "@/lib/defect-record";
-import { EmptyState, MobileHeader, PrimaryButton, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
-import { PhotoInput, PhotoThumb } from "@/components/photo";
+import { EmptyState, MobileHeader, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
+import { PhotoThumb } from "@/components/photo";
 import { RatingDialog, STAR_LABEL, Stars } from "@/components/rating";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
-import { fmtHours } from "@/lib/agents";
-import { answerFollowUp, canReopen, signoffDeadline } from "@/lib/api";
-import { CATEGORY_LABEL, DEMO_BUYER, REPAIR_PLAN, RULES, workerName } from "@/lib/constants";
+import { canReopen, signoffDeadline } from "@/lib/api";
+import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, RULES, workerName } from "@/lib/constants";
 import { addDays, daysBetween, fmtDate, fmtDateTime } from "@/lib/dates";
 import { BUYER_EXPLAIN, isOpen } from "@/lib/status";
 import { useDemo } from "@/lib/store";
@@ -29,16 +29,17 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const JOB_NAME: Partial<Record<Case["status"], string>> = {
-  VISIT_SCHEDULED: "Inspection visit",
-  EXTRA_INSPECTION: "Detailed inspection",
-  REPAIR_BOOKED: "Repair",
+  VISIT_SCHEDULED: "Scheduled Inspection",
+  EXTRA_INSPECTION: "Scheduled Detailed Inspection",
+  REPAIR_BOOKED: "Scheduled Repair",
 };
 
 /** Who is coming and when, including a hand-over to a different technician. */
 function YourTechnician({ c }: { c: Case }) {
   const job = JOB_NAME[c.status];
   const slot = c.status === "REPAIR_BOOKED" ? c.repairSlot : c.visitSlot;
-  if (!job || !c.technicianId) return null;
+  const tech = getTechnician(c.technicianId);
+  if (!job || !tech) return null;
   const confirmed = c.bookingStatus !== "pending";
   const h = c.handover;
   const moved = h?.previousSlot && slot && h.previousSlot !== slot;
@@ -57,13 +58,13 @@ function YourTechnician({ c }: { c: Case }) {
         </span>
       </div>
       <div className="flex items-center gap-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-red-50 text-brand">
-          <UserRound className="size-6" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold leading-snug">{workerName(c.technicianId)}</p>
-          <p className="flex items-center gap-1 text-xs text-zinc-600">
-            <CalendarClock className="size-3.5" /> {slot ? fmtDateTime(slot) : "Time to be confirmed"}
+        <TechAvatar tech={tech} className="size-11 shrink-0 ring-1 ring-zinc-200" iconClassName="size-6" />
+        <div className="min-w-0 flex-1 text-sm">
+          <p>
+            <span className="font-medium">{tech.name}</span> will visit on
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 font-medium">
+            <CalendarClock className="size-4 text-brand" /> {slot ? fmtDateTime(slot) : "Time to be confirmed"}
           </p>
         </div>
       </div>
@@ -101,9 +102,6 @@ export function CaseDetail() {
   const allMessages = useDemo((s) => s.messages);
   const messages = useMemo(() => allMessages.filter((m) => m.caseId === id).reverse(), [allMessages, id]);
   const [tab, setTab] = useState<Tab>("details");
-  const [answer, setAnswer] = useState("");
-  const [followUpPhoto, setFollowUpPhoto] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
   const [rating, setRating] = useState(false);
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
@@ -140,7 +138,7 @@ export function CaseDetail() {
                 <p className="mt-1.5 text-sm text-zinc-700">{BUYER_EXPLAIN[c.status] ?? "We're working on your case."}</p>
                 {c.repairClock && !c.repairClock.doneAt && isOpen(c.status) && (
                   <p className="mt-1.5 text-xs text-zinc-500">
-                    The developer aims to repair confirmed defects by {fmtDate(c.repairClock.dueAt)} ({RULES.repairDaysFromNotice ?? 30} days from your report).
+                    The developer aims to repair confirmed defects by {fmtDate(c.repairClock.dueAt)}.
                   </p>
                 )}
               </div>
@@ -150,47 +148,15 @@ export function CaseDetail() {
 
             {/* Next step for the buyer */}
             {c.status === "INFO_NEEDED" && (
-              <Section title="We need a little more information">
+              <Section title="We Need a Little More Information">
                 <p className="text-sm text-zinc-700">{c.followUpQuestion}</p>
-                <textarea
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. Master bedroom, ceiling above the wardrobe"
-                  className="mt-3 w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
-                />
-                <div className="mt-2">
-                  <PhotoInput value={followUpPhoto} onChange={setFollowUpPhoto} label="Add a photo if it helps (optional)" />
-                </div>
-                <PrimaryButton
-                  className="mt-3"
-                  disabled={!answer.trim() || sending}
-                  onClick={async () => {
-                    setSending(true);
-                    try {
-                      await answerFollowUp(c.id, answer.trim(), followUpPhoto);
-                      setAnswer("");
-                      setFollowUpPhoto(null);
-                    } catch (err) {
-                      toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-                    } finally {
-                      setSending(false);
-                    }
-                  }}
-                >
-                  {sending ? <Loader2 className="size-4 animate-spin" /> : "Send"}
-                </PrimaryButton>
+                <FollowUpForm caseId={c.id} />
               </Section>
             )}
             {c.status === "VALID" && (
               <Link href={`/buyer/cases/${c.id}/book`} className={primaryButtonClass}>
                 Book Repair Slot
               </Link>
-            )}
-            {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && !c.signoff?.developer && (
-              <p className="flex gap-2 rounded-2xl bg-sky-50 p-3 text-sm text-sky-900 ring-1 ring-sky-200">
-                <Clock className="size-4 shrink-0" /> The repair is done. The developer is reviewing it first; we&apos;ll let you know when you can check it and sign off.
-              </p>
             )}
             {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && c.signoff?.developer && (
               <div className="space-y-2">
@@ -256,8 +222,19 @@ export function CaseDetail() {
             {rating && <RatingDialog caseId={c.id} onDone={() => setRating(false)} />}
 
             {/* What the buyer sent */}
-            <Section title="What you reported">
-              <p className="whitespace-pre-line rounded-xl bg-zinc-50 p-3 text-sm text-zinc-800">&ldquo;{c.description}&rdquo;</p>
+            <Section title="Your Report">
+              <ul className="space-y-2">
+                {c.description
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line, i) => (
+                    <li key={i} className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-800">
+                      <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400">{i === 0 ? "Initial report" : "Additional detail"}</p>
+                      {line}
+                    </li>
+                  ))}
+              </ul>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {reported.map((p, i) => (
                   <PhotoThumb key={i} photo={p} className="aspect-square" />
@@ -268,40 +245,21 @@ export function CaseDetail() {
             {/* What the AI understood */}
             <Section>
               <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-                <Bot className="size-4 text-violet-600" /> How we categorised it
+                <Bot className="size-4 text-violet-600" /> Defect Assessment
               </h2>
               <dl>
                 <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
-                <Row label="Type">{c.subCategory}</Row>
+                <Row label="Defect type">{c.subCategory}</Row>
                 <Row label="Location">{c.location || "—"}</Row>
-                <Row label="Urgency">
+                <Row label="Priority">
                   <UrgencyBadge urgency={c.urgency} />
                 </Row>
-                <Row label="Summary">{c.summary}</Row>
-              </dl>
-            </Section>
-
-            {/* Bookings */}
-            <Section title="Bookings">
-              <dl>
-                <Row label={c.status === "EXTRA_INSPECTION" ? "Joint extra inspection" : "Inspection visit"}>{c.visitSlot ? fmtDateTime(c.visitSlot) : "—"}</Row>
-                {c.preferredVisitAt && c.preferredVisitAt !== c.visitSlot && <Row label="You asked for">{fmtDateTime(c.preferredVisitAt)}</Row>}
-                <Row label="Inspected by">{workerName(c.inspectorId ?? (c.repairSlot ? undefined : c.technicianId))}</Row>
-                {c.supportId && <Row label="With subcontractor">{workerName(c.supportId)}</Row>}
-                <Row label="Repair">
-                  {c.repairSlot
-                    ? `${fmtDateTime(c.repairSlot)} · ${fmtHours(c.repairHours ?? REPAIR_PLAN[c.category].hours)}`
-                    : c.status === "VALID"
-                      ? "Not booked yet"
-                      : "—"}
-                </Row>
-                {c.repairSlot && <Row label="Repair by">{workerName(c.technicianId)}</Row>}
               </dl>
             </Section>
 
             {/* Inspection + repair */}
             {(c.verdict || c.repairNote) && (
-              <Section title="Inspection & repair">
+              <Section title="Inspection & Repair">
                 <dl>
                   {c.verdict && (
                     <>
@@ -353,7 +311,6 @@ export function CaseDetail() {
                 </ul>
               </Section>
             )}
-            <PreviousReports c={c} buyer />
           </>
         )}
 

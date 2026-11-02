@@ -1189,7 +1189,7 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
         per_unit: dict[str, int] = {}
         for x in cluster:
             per_unit[x["unit_id"]] = per_unit.get(x["unit_id"], 0) + 1
-        # Same score the SDP Analytics page shows for this block + stack + category cluster.
+        # Same score the SDP Systemic Issues page shows for this block + stack + category cluster.
         confidence = cluster_confidence(len(per_unit), sum(1 for n in per_unit.values() if n > 1), sum(x["reopen_count"] for x in cluster))
 
         approval_id = _next_id(conn, "approvals", "approval_id", "APR", 4)

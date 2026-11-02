@@ -34,7 +34,7 @@ export default function InspectionSheet() {
       <MobileHeader title="Inspection Sheet" back="/buyer" />
       <div className="space-y-4 p-4">
         <div>
-          <h2 className="font-semibold">Check your home</h2>
+          <h2 className="font-semibold">Check Your Home</h2>
           <p className="text-sm text-zinc-600">Go room by room with this list. If something looks wrong, report it; our technician confirms whether it&apos;s a defect at the inspection visit.</p>
         </div>
 
@@ -62,7 +62,7 @@ export default function InspectionSheet() {
         </div>
 
         {filter === "all" && !q && (
-          <Section title="Before you start">
+          <Section title="Before You Start">
             <ul className="space-y-2">
               {GENERAL_TIPS.map((t) => (
                 <li key={t} className="flex gap-2 text-sm text-zinc-700">

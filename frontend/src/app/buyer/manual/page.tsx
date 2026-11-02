@@ -8,14 +8,14 @@ import { BUYER_EXPLAIN } from "@/lib/status";
 import type { CaseStatus } from "@/lib/types";
 
 const FLOW = [
-  { title: "Report the defect", text: "Upload a photo, describe the problem and pick an inspection slot. Our assistant categorises it and checks nothing is missing." },
-  { title: "Technician assigned", text: "We assign a technician with the right skills who is free at your chosen time." },
-  { title: "Inspection visit", text: "The technician inspects and marks the defect as confirmed or not a defect. You get an update in the app and by email." },
-  { title: "Book the repair", text: "If confirmed, choose a repair slot in the app." },
+  { title: "Report the Defect", text: "Upload a photo, describe the problem and pick an inspection slot. Our assistant categorises it and checks nothing is missing." },
+  { title: "Technician Assigned", text: "We assign a technician with the right skills who is free at your chosen time." },
+  { title: "Inspection Visit", text: "The technician inspects and marks the defect as confirmed or not a defect. You get an update in the app and by email." },
+  { title: "Book the Repair", text: "If confirmed, choose a repair slot in the app." },
   { title: "Repair", text: "The technician fixes the defect and marks it done." },
-  { title: "Check & sign off", text: `The developer approves the repair first. Then follow the short checklist for your defect and sign off within ${RULES.signoffPeriodDays} days. We remind you ${RULES.signoffReminderDaysBefore} days before the deadline; if you don't sign off, the case closes automatically.` },
-  { title: "Case closed", text: "The case closes once both you and the developer have signed off." },
-  { title: "Came back?", text: `Within ${RULES.gracePeriodDays} days of closing, reopen the same case with a new photo. No need to report again.` },
+  { title: "Check & Sign Off", text: `The developer approves the repair first. Then follow the short checklist for your defect and sign off within ${RULES.signoffPeriodDays} days. We remind you ${RULES.signoffReminderDaysBefore} days before the deadline; if you don't sign off, the case closes automatically.` },
+  { title: "Case Closed", text: "The case closes once both you and the developer have signed off." },
+  { title: "Came Back?", text: `Within ${RULES.gracePeriodDays} days of closing, reopen the same case with a new photo. No need to report again.` },
 ];
 
 const TIPS = [
@@ -31,7 +31,7 @@ export default function Manual() {
     <div>
       <MobileHeader title="User Manual" back="/buyer" />
       <div className="space-y-4 p-4">
-        <Section title="How defect reporting works">
+        <Section title="How Defect Reporting Works">
           <ol className="relative space-y-4 border-l-2 border-red-100 pl-5">
             {FLOW.map((f, i) => (
               <li key={f.title} className="relative">
@@ -48,7 +48,7 @@ export default function Manual() {
           <span className="block text-zinc-700">What to check in each room, by defect type, with FAQs.</span>
         </Link>
 
-        <Section title="Taking a good photo">
+        <Section title="Taking a Good Photo">
           <ul className="space-y-2.5">
             {TIPS.map((t) => (
               <li key={t.text} className="flex gap-2.5 text-sm text-zinc-700">
@@ -61,7 +61,7 @@ export default function Manual() {
           </p>
         </Section>
 
-        <Section title="What each status means">
+        <Section title="What Each Status Means">
           <ul className="space-y-3">
             {SHOWN.map((s) => (
               <li key={s}>

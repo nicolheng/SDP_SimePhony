@@ -1,6 +1,7 @@
 "use client";
-import { Bot, Check, ShieldCheck, X } from "lucide-react";
+import { Bot, Check, ChevronDown, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PhotoThumb } from "@/components/photo";
@@ -14,6 +15,25 @@ import { useDemo, useOffline } from "@/lib/store";
 import type { Approval, Case, SystemicIssue } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+type Tab = "review" | "extra" | "signoff" | "decided";
+
+/** Compact, clickable summary row; the full decision panel opens underneath, one at a time. */
+function QueueRow({ open, onToggle, id, title, meta, children }: { open: boolean; onToggle: () => void; id: string; title: string; meta: string; children: ReactNode }) {
+  return (
+    <li className="rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200">
+      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+        <span className="w-16 shrink-0 font-mono text-sm text-zinc-500">{id}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-medium">{title}</span>
+          <span className="block truncate text-sm text-zinc-500">{meta}</span>
+        </span>
+        <ChevronDown className={cn("size-5 shrink-0 text-zinc-400 transition", open && "rotate-180")} />
+      </button>
+      {open && <div className="border-t border-zinc-100 p-2">{children}</div>}
+    </li>
+  );
+}
+
 export default function Approvals() {
   const approvals = useDemo((s) => s.approvals);
   const cases = useDemo((s) => s.cases);
@@ -21,55 +41,171 @@ export default function Approvals() {
   const pending = useMemo(() => approvals.filter((a) => a.status === "pending").reverse(), [approvals]);
   const decided = useMemo(() => approvals.filter((a) => a.status !== "pending").reverse(), [approvals]);
   const held = useMemo(() => cases.filter((c) => c.status === "PENDING_REVIEW"), [cases]);
+  // Sign-offs to chase: high-urgency cases the buyer hasn't signed in time, and repairs waiting for the developer.
+  const overdue = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && c.signoffOverdueAt), [cases]);
+  const awaitingDev = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && !c.signoff?.developer), [cases]);
+  const signoffCount = new Set([...overdue, ...awaitingDev].map((c) => c.id)).size;
+  const [picked, setTab] = useState<Tab | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Default to the first queue with work in it.
+  const tab: Tab = picked ?? (held.length ? "review" : pending.length ? "extra" : signoffCount ? "signoff" : "decided");
+  const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
+
+  const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: "review", label: "Held for Review", count: held.length },
+    { id: "extra", label: "Extra Inspections", count: pending.length },
+    { id: "signoff", label: "Sign-Offs", count: signoffCount },
+    { id: "decided", label: "Decided", count: decided.length },
+  ];
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageTitle title="Approvals" sub="Cases the AI agents want a person to decide: held for review when unsure, and extra inspection requests." />
-      {held.length > 0 && (
-        <div className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold">Held for review · {held.length}</h2>
-          <p className="mb-4 text-base text-zinc-600">An AI agent was not confident enough to continue, so it paused these cases. Approve to let the case carry on, or reject it.</p>
-          <div className="space-y-6">
-            {held.map((c) => (
-              <ReviewPanel key={c.id} c={c} showCase />
-            ))}
-          </div>
-        </div>
-      )}
-      {pending.length > 0 && held.length > 0 && <h2 className="mb-3 text-xl font-semibold">Extra inspection requests · {pending.length}</h2>}
-      {pending.length === 0 && held.length === 0 && (
-        <Panel>
-          <div className="py-8 text-center">
-            <ShieldCheck className="mx-auto size-8 text-zinc-300" />
-            <p className="mt-2 text-base text-zinc-500">No requests waiting. They appear here when a case recurs a 3rd time or a stack cluster is detected.</p>
-          </div>
-        </Panel>
-      )}
-      <div className="space-y-6">
-        {pending.map((a) => {
-          const c = cases.find((x) => x.id === a.caseId);
-          return c ? <ApprovalCard key={a.id} a={a} c={c} si={issues.find((s) => s.id === a.systemicIssueId)} cases={cases} /> : null;
-        })}
+      <PageTitle title="Approvals" sub="Decisions waiting on SDP staff: cases held for review, extra inspection requests and sign-offs." />
+
+      <div className="mb-5 flex flex-wrap gap-2">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => {
+              setTab(t.id);
+              setOpenId(null);
+            }}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-base font-medium ring-1 transition",
+              tab === t.id ? "bg-brand text-white ring-brand" : "bg-white text-zinc-700 ring-zinc-200 hover:ring-brand",
+            )}
+          >
+            {t.label}
+            <span className={cn("rounded-full px-1.5 text-sm", tab === t.id ? "bg-white/20" : "bg-zinc-100")}>{t.count}</span>
+          </button>
+        ))}
       </div>
-      {decided.length > 0 && (
-        <Panel title="Decided" className="mt-8">
-          <ul className="divide-y text-base">
-            {decided.map((a) => (
-              <li key={a.id} className="flex items-center gap-3 py-2">
-                <span className={cn("rounded-full px-2 py-0.5 text-sm font-medium", a.status === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-600")}>
-                  {a.status}
-                </span>
-                <Link href={`/sdp/defects/${a.caseId}`} className="font-mono text-sm hover:underline">
-                  {a.caseId}
-                </Link>
-                <span className="text-zinc-600">{a.systemicIssueId}</span>
-                <span className="ml-auto text-sm text-zinc-500">{a.decidedAt && fmtDateTime(a.decidedAt)}</span>
-              </li>
-            ))}
+
+      {tab === "review" &&
+        (held.length ? (
+          <>
+            <p className="mb-3 text-base text-zinc-600">An AI agent was not confident enough to continue, so it paused these cases. Open one to approve or reject it.</p>
+            <ul className="space-y-2">
+              {held.map((c) => (
+                <QueueRow
+                  key={c.id}
+                  id={c.id}
+                  open={openId === c.id}
+                  onToggle={() => toggle(c.id)}
+                  title={`${c.unitId} · ${c.summary}`}
+                  meta={[
+                    c.review?.agent ?? "AI agent",
+                    typeof c.review?.confidence === "number" ? `${Math.round(c.review.confidence * 100)}% confidence` : null,
+                    c.review?.at ? fmtDateTime(c.review.at) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                >
+                  <ReviewPanel c={c} showCase />
+                </QueueRow>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <Empty text="No cases held for review." />
+        ))}
+
+      {tab === "extra" &&
+        (pending.length ? (
+          <ul className="space-y-2">
+            {pending.map((a) => {
+              const c = cases.find((x) => x.id === a.caseId);
+              if (!c) return null;
+              const si = issues.find((s) => s.id === a.systemicIssueId);
+              return (
+                <QueueRow
+                  key={a.id}
+                  id={c.id}
+                  open={openId === a.id}
+                  onToggle={() => toggle(a.id)}
+                  title={`Extra Inspection for ${c.unitId} · ${c.summary}`}
+                  meta={[a.id, si?.id, si ? `${Math.round(si.confidence * 100)}% confidence` : null, `raised ${fmtDateTime(a.createdAt)}`].filter(Boolean).join(" · ")}
+                >
+                  <ApprovalCard a={a} c={c} si={si} cases={cases} />
+                </QueueRow>
+              );
+            })}
           </ul>
-        </Panel>
-      )}
+        ) : (
+          <Empty text="No extra inspection requests. They appear here when a case recurs a 3rd time or a stack cluster is detected." />
+        ))}
+
+      {tab === "signoff" &&
+        (signoffCount ? (
+          <>
+            {overdue.length > 0 && (
+              <Panel title={`${overdue.length} High-Urgency Case(s) with Overdue Buyer Sign-Off`} className="mb-6 ring-2 ring-red-200">
+                <p className="mb-3 text-base text-zinc-600">Not auto-closed because they are high urgency. Contact the buyer to confirm the repair.</p>
+                <ul className="flex flex-wrap gap-2">
+                  {overdue.map((c) => (
+                    <li key={c.id}>
+                      <Link href={`/sdp/defects/${c.id}`} className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-base ring-1 ring-red-200 hover:ring-brand">
+                        <span className="font-mono text-sm">{c.id}</span> {c.summary}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            )}
+            {awaitingDev.length > 0 && (
+              <Panel title={`${awaitingDev.length} Case(s) Awaiting Developer Sign-Off`} className="ring-2 ring-orange-300">
+                <p className="mb-3 text-base text-zinc-600">The repair is done. Open a case to review the evidence and sign off as the developer.</p>
+                <ul className="flex flex-wrap gap-2">
+                  {awaitingDev.map((c) => (
+                    <li key={c.id}>
+                      <Link href={`/sdp/defects/${c.id}`} className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-base ring-1 ring-orange-200 hover:ring-orange-500">
+                        <span className="font-mono text-sm">{c.id}</span> {c.summary}
+                        {c.signoff?.buyer && <span className="text-sm text-emerald-700">buyer signed</span>}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            )}
+          </>
+        ) : (
+          <Empty text="No sign-offs to chase right now." />
+        ))}
+
+      {tab === "decided" &&
+        (decided.length ? (
+          <Panel>
+            <ul className="divide-y text-base">
+              {decided.map((a) => (
+                <li key={a.id} className="flex items-center gap-3 py-2">
+                  <span className={cn("rounded-full px-2 py-0.5 text-sm font-medium capitalize", a.status === "approved" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-600")}>
+                    {a.status}
+                  </span>
+                  <Link href={`/sdp/defects/${a.caseId}`} className="font-mono text-sm hover:underline">
+                    {a.caseId}
+                  </Link>
+                  <span className="text-zinc-600">{a.systemicIssueId}</span>
+                  <span className="ml-auto text-sm text-zinc-500">{a.decidedAt && fmtDateTime(a.decidedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : (
+          <Empty text="Nothing decided yet." />
+        ))}
     </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return (
+    <Panel>
+      <div className="py-8 text-center">
+        <ShieldCheck className="mx-auto size-8 text-zinc-300" />
+        <p className="mt-2 text-base text-zinc-500">{text}</p>
+      </div>
+    </Panel>
   );
 }
 
@@ -109,7 +245,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
           <p className="text-sm font-medium text-violet-700">
             {a.id} · {si?.id} · raised {fmtDateTime(a.createdAt)}
           </p>
-          <h2 className="mt-1 text-lg font-semibold">Extra inspection for {c.unitId}?</h2>
+          <h2 className="mt-1 text-lg font-semibold">Extra Inspection for {c.unitId}?</h2>
           <p className="text-base text-zinc-600">
             <Link href={`/sdp/defects/${c.id}`} className="font-mono hover:underline">
               {c.id}

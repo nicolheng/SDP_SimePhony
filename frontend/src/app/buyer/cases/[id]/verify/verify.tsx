@@ -63,15 +63,16 @@ export function VerifyRepair() {
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-1.5 text-[11px] font-medium text-violet-700">
-            <Bot className="size-3.5" /> Verification guide for {c.id}
+            <Bot className="size-3.5" /> Repair Verification
           </p>
-          <p className="mt-1 text-sm text-zinc-700">{g.intro}</p>
+          {/* Shown without the technician's note or the stored intro's "check only these points" line. */}
+          <p className="mt-1 text-sm text-zinc-700">Your {c.summary.toLowerCase()} has been repaired.</p>
           <p className="mt-2 text-xs font-medium text-amber-800">
             Sign off by {fmtDate(signoffDeadline(c))}. {c.urgency === "high" ? "After that our team will follow up." : "After that the case closes automatically."}
           </p>
         </Section>
 
-        <Section title="Before and after">
+        <Section title="Before and After">
           <div className="grid grid-cols-2 gap-2">
             {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
             {repair ? (
@@ -82,7 +83,7 @@ export function VerifyRepair() {
           </div>
         </Section>
 
-        <Section title="1. Check these points">
+        <Section title="1. Verification Checklist">
           <ol className="space-y-2">
             {g.steps.map((s, i) => {
               const on = checked.includes(i);
@@ -105,8 +106,8 @@ export function VerifyRepair() {
           <p className="mt-3 text-xs text-zinc-500">{g.ifFails}</p>
         </Section>
 
-        <Section title="2. Photo (required if not fixed)">
-          <PhotoInput value={photo} onChange={setPhoto} label="Add a photo of the repaired area" />
+        <Section title="2. Supporting Photo (Required if the Defect Persists)">
+          <PhotoInput value={photo} onChange={setPhoto} />
           {!photo && (
             <div className="mt-2 flex gap-3 text-xs font-medium text-brand">
               <button type="button" onClick={() => setPhoto(samplePhoto("repaired"))}>Sample: looks fixed</button>
@@ -115,20 +116,20 @@ export function VerifyRepair() {
           )}
         </Section>
 
-        <Section title="3. Anything to add? (optional)">
+        <Section title="3. Additional Remarks (Optional)">
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="e.g. Looks dry after running the shower"
+            placeholder="e.g. Area remains dry after running the shower."
             className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
           />
         </Section>
 
-        <h2 className="px-1 text-sm font-semibold text-zinc-900">4. Your result</h2>
+        <h2 className="px-1 text-sm font-semibold text-zinc-900">4. Sign-Off</h2>
         <label className="flex gap-3 rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-700">
           <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 size-4 accent-[var(--brand)]" />
-          I have checked the repair and confirm the defect is fixed. The developer has already approved it, so the case closes when I sign off.
+          I confirm that I have inspected the repair and the defect has been rectified. As the developer has approved the repair, this case will be closed upon my sign-off.
         </label>
 
         <div className="space-y-2">
