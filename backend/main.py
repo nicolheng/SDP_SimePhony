@@ -37,6 +37,15 @@ def sweep_signoffs_now() -> list[dict]:
         return tools.sweep_signoffs()
 
 
+def sweep_visit_reminders_now() -> list[dict]:
+    """Queue due visit reminders atomically, then deliver them after the database commit."""
+    with db.write_conn() as conn, tools.use_connection(conn):
+        reminders = tools.sweep_visit_reminders()
+    if reminders:
+        tools.deliver_queued_emails()
+    return reminders
+
+
 async def _sweep_loop() -> None:
     """Deadlines pass with real time even when nobody clicks, and GET /api/state no longer applies them."""
     while True:
@@ -47,6 +56,13 @@ async def _sweep_loop() -> None:
                 log.warning("Sign-off sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
             else:
                 log.exception("Sign-off sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
+        try:
+            await asyncio.to_thread(sweep_visit_reminders_now)
+        except Exception as exc:  # a failed reminder pass must not stop later periodic sweeps
+            if db.is_busy(exc):
+                log.warning("Visit reminder sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
+            else:
+                log.exception("Visit reminder sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
         await asyncio.sleep(SWEEP_INTERVAL_S)
 
 
