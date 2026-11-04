@@ -45,7 +45,7 @@ function WhyPanel({ event }: { event: CaseEvent }) {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <BrainCircuit className="size-4 text-indigo-700" aria-hidden="true" />
-          <h3 className="font-semibold text-zinc-900">Why? · {event.agent ? agentLabel(event.agent) : "AI agent"}</h3>
+          <h3 className="font-semibold text-zinc-900">{event.agent ? agentLabel(event.agent) : "AI agent"}</h3>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-600">
           {telemetry.model && <span>Model: <strong className="font-medium text-zinc-800">{telemetry.model}</strong></span>}
