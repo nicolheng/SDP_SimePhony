@@ -17,6 +17,7 @@ def _new_telemetry() -> dict:
         "output_tokens": None,
         "confidence_score": None,
         "guardrail_hits": [],
+        "reasoning": None,
         "agent_step_events": 0,
     }
 
@@ -39,6 +40,27 @@ def record_guardrail_hit(hit: str) -> None:
     telemetry = _CURRENT.get()
     if telemetry is not None and hit not in telemetry["guardrail_hits"]:
         telemetry["guardrail_hits"].append(hit)
+
+
+def record_agent_reasoning(reasoning: dict | str | None) -> None:
+    telemetry = _CURRENT.get()
+    if telemetry is not None:
+        if isinstance(reasoning, dict):
+            telemetry["reasoning"] = dict(reasoning)
+        elif isinstance(reasoning, str):
+            telemetry["reasoning"] = {
+                "matched_rule": reasoning,
+                "evidence": None,
+                "related_cases": [],
+            }
+        else:
+            telemetry["reasoning"] = reasoning
+
+
+def record_confidence_score(confidence_score: float | None) -> None:
+    telemetry = _CURRENT.get()
+    if telemetry is not None and confidence_score is not None:
+        telemetry["confidence_score"] = float(confidence_score)
 
 
 def record_agent_step_event() -> None:
@@ -82,11 +104,12 @@ def telemetry_payload(
         return {
             "model": None,
             "timing_ms": 0.0,
-            "tokens": {"input": None, "output": None},
+            "tokens": None,
             "confidence_score": None,
             "fallback_used": fallback_used,
             "fallback_reason": fallback_reason,
             "guardrail_hits": [],
+            "reasoning": None,
         }
     return {
         "model": current["model"],
@@ -103,6 +126,7 @@ def telemetry_payload(
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason,
         "guardrail_hits": list(current["guardrail_hits"]),
+        "reasoning": current["reasoning"],
     }
 
 

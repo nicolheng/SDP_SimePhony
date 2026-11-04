@@ -45,6 +45,7 @@ def _make_llm_response(payload: dict) -> MagicMock:
 def _patch_llm(monkeypatch, response_payload: dict):
     """Patch llm_client.client so intake_node uses our stub."""
     response_payload.setdefault("confidence_score", 0.95)
+    response_payload.setdefault("reasoning", "Standard defect assessment")
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = _make_llm_response(response_payload)
     monkeypatch.setattr("agents.simephony.llm_client.client", mock_client)
@@ -100,26 +101,31 @@ class TestOutputContract:
 
     def test_urgency_correction_does_not_request_human_review(self, monkeypatch):
         from agents.simephony import intake
+        from agents.telemetry import telemetry_payload, telemetry_scope
 
         guardrail_hits = []
         monkeypatch.setattr(intake, "record_guardrail_hit", guardrail_hits.append)
         _patch_llm(monkeypatch, {
             "category": "water_leak",
-            "urgency": "high",
+            "urgency": "low",
             "missing_info": [],
             "preliminary_outcome": "VALID_DEFECT",
             "confidence_score": 0.95,
         })
 
-        result = intake_node(_base_state(
-            case_id="C-NEW",
-            user_description="Ceiling leaking in my bedroom",
-            needs_human_review=False,
-        ))
+        with telemetry_scope():
+            result = intake_node(_base_state(
+                case_id="C-NEW",
+                user_description="Sparking sound coming from the socket.",
+                needs_human_review=False,
+            ))
+            reasoning = telemetry_payload()["reasoning"]
 
-        assert result["intake_result"]["urgency"] == "normal"
+        assert result["intake_result"]["urgency"] == "high"
         assert result["needs_human_review"] is False
         assert "urgency_guardrail_triggered" in guardrail_hits
+        assert reasoning["matched_rule"] == "Rule H2: electrical sparks or burning smell"
+        assert reasoning["evidence"] == "Sparking sound coming from the socket."
 
     def test_always_sets_missing_info_list(self, monkeypatch):
         _patch_llm(monkeypatch, {"category": "plumbing", "missing_info": ["Need photo"]})
@@ -272,7 +278,7 @@ class TestImageHandling:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _make_llm_response(
             {"category": "water_leak", "missing_info": [], "urgency": "high",
-             "preliminary_outcome": "VALID_DEFECT", "confidence_score": 0.95}
+             "preliminary_outcome": "VALID_DEFECT", "confidence_score": 0.95, "reasoning": "Ceiling leak detected"}
         )
         monkeypatch.setattr("agents.simephony.intake.client", mock_client)
 
@@ -339,7 +345,7 @@ def _model_says(fake_llm, **fields):
     base = {"category": "other", "sub_category": "", "location_in_unit": None, "summary": "Ceiling issue",
             "urgency": "normal", "mentions_previous_issue": False, "mentioned_recurrence_count": None,
             "missing_info": [], "follow_up_question": "", "preliminary_outcome": "VALID_DEFECT",
-            "mismatch_detected": False, "confidence_score": 0.95}
+            "mismatch_detected": False, "confidence_score": 0.95, "reasoning": "Standard defect assessment"}
     fake_llm.responses = [json.dumps({**base, **fields})]
 
 

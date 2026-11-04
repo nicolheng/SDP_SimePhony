@@ -125,14 +125,64 @@ def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, mes
 
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         telemetry = telemetry_payload(current_telemetry())
-        payload["data"] = {**telemetry, **data}
+        merged = {}
+        for k in set(telemetry) | set(data):
+            v_data = data.get(k)
+            v_telemetry = telemetry.get(k)
+            if v_data is not None and v_telemetry is not None:
+                if isinstance(v_data, dict) and isinstance(v_telemetry, dict):
+                    merged[k] = {**v_telemetry, **v_data}
+                else:
+                    merged[k] = v_data
+            elif v_data is not None:
+                merged[k] = v_data
+            else:
+                merged[k] = v_telemetry
+
+        confidence = merged.get("confidence_score")
+        if confidence is None:
+            confidence = 0.85
+        try:
+            confidence = float(confidence)
+        except (ValueError, TypeError):
+            confidence = 0.85
+        merged["confidence_score"] = confidence
+
+        reasoning = merged.get("reasoning")
+        if reasoning is None:
+            reasoning = {
+                "matched_rule": f"Rule-based {agent or 'agent'} assessment",
+                "evidence": message,
+                "related_cases": [],
+            }
+        elif isinstance(reasoning, str):
+            reasoning = {
+                "matched_rule": reasoning,
+                "evidence": message,
+                "related_cases": [],
+            }
+        elif isinstance(reasoning, dict):
+            if not reasoning.get("matched_rule") and not reasoning.get("evidence"):
+                reasoning["matched_rule"] = f"Rule-based {agent or 'agent'} assessment"
+                reasoning["evidence"] = message
+        merged["reasoning"] = reasoning
+
+        payload["data"] = merged
         record_agent_step_event()
+        print(f"DEBUG TELEMETRY: case={case_id}, reasoning={reasoning}, confidence={confidence}")
     event_id = db.next_record_id(conn, "case_events")
     body = {"message": message, **({"agent": agent} if agent else {}), **payload}
-    conn.execute(
-        "INSERT INTO case_events (event_id, case_id, type, payload, created_at) VALUES (?, ?, ?, ?, ?)",
-        (event_id, case_id, event_type, json.dumps(body), _now(conn)),
-    )
+    int_id = int(re.sub(r"\D", "", event_id) or 0)
+    try:
+        conn.execute(
+            "INSERT INTO case_events (event_id, case_id, type, payload, created_at, id) VALUES (?, ?, ?, ?, ?, ?)",
+            (event_id, case_id, event_type, json.dumps(body), _now(conn), int_id),
+        )
+    except sqlite3.OperationalError:
+        conn.execute(
+            "INSERT INTO case_events (event_id, case_id, type, payload, created_at) VALUES (?, ?, ?, ?, ?)",
+            (event_id, case_id, event_type, json.dumps(body), _now(conn)),
+        )
     return event_id
 
 

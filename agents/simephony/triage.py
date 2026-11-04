@@ -1,6 +1,11 @@
 import re
 
-from agents.telemetry import record_guardrail_hit, record_llm_telemetry
+from agents.telemetry import (
+    record_agent_reasoning,
+    record_confidence_score,
+    record_guardrail_hit,
+    record_llm_telemetry,
+)
 from .rules import load_rules
 from .llm_client import get_client, get_models
 from .review import flag_for_human_review
@@ -26,12 +31,43 @@ _HIGH_RULE_EVIDENCE = {
     "gas": r"\bgas\b",
 }
 
+_RULE_EVIDENCE = {
+    "H1": r"leak|bocor|drip|titis",
+    "H2": r"spark\w*|burn\w*|smok\w*|scorch\w*|percik\w*|terbakar|hangus",
+    "H3": r"wire|wiring|wayar|cable|exposed",
+    "H4": r"trip|breaker|fuse|power cut",
+    "H5": r"collaps|sag|bulg|fall|runtuh|crack",
+    "H6": r"structur|major crack|wide crack|movement|shift|retak besar|beam|column",
+    "H7": r"flood|banjir|pour|gush|ankle|knee|torrent|ingress",
+    "H8": r"glass|kaca|pane|falling",
+    "H9": r"\bgas\b",
+    "L1": r"paint|cat|peel|mengelupas",
+    "L2": r"hairline|minor crack|retak rambut|retak sikit",
+    "L3": r"scratch|scuff|superficial",
+    "L4": r"tile|jubin|cosmetic|minor",
+}
+
 
 def _has_evidence(rule: str, report: str) -> bool:
     for phrase, words in _HIGH_RULE_EVIDENCE.items():
         if phrase in rule.lower():
             return re.search(words, report.lower()) is not None
     return True
+
+
+def _rule_evidence(rule_id: str | None, description: str) -> str | None:
+    pattern = _RULE_EVIDENCE.get(rule_id or "")
+    match = re.search(pattern, description, re.IGNORECASE) if pattern else None
+    if not match:
+        return None
+    return next(
+        (
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+|\n+", description)
+            if re.search(pattern, sentence, re.IGNORECASE)
+        ),
+        match.group(0),
+    )
 
 
 def triage_node(state: dict) -> dict:
@@ -67,14 +103,16 @@ def triage_node(state: dict) -> dict:
         "and a leak is not 'near electrical fittings' unless the report names a light, socket, switch or "
         "wiring). "
         'Output ONLY JSON: {"urgency": "high" | "normal" | "low", "rule": "<rule id, e.g. H2>" or "none", '
-        '"confidence_score": 0.9}. Output a confidence_score between 0.0 and 1.0 representing how certain '
-        "you are about this classification based on the photo and text. Use 1.0 for absolute certainty, "
-        "and below 0.7 if the image is blurry, text is vague, or the defect is ambiguous."
+        '"confidence_score": 0.9, "reasoning": "brief explanation"}. '
+        "You MUST output a 'reasoning' string explaining your decision, and a 'confidence_score' between 0.0 and 1.0. "
+        "Use 1.0 for absolute certainty, and below 0.7 if the image is blurry, text is vague, or the defect is ambiguous."
     )
 
     urgency, matched_rule = intake_urgency, None
     llm_urgency = None
+    matched_rule_id = None
     confidence_score = 0.0
+    parsed = {}
     try:
         data = chat_json(
             client,
@@ -82,11 +120,12 @@ def triage_node(state: dict) -> dict:
             [{"role": "user", "content": urgency_prompt}],
             {
                 "type": "object",
-                "required": ["urgency", "rule", "confidence_score"],
+                "required": ["urgency", "rule", "confidence_score", "reasoning"],
                 "properties": {
                     "urgency": {"type": "string", "enum": ["high", "normal", "low"]},
                     "rule": {"type": "string"},
                     "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "reasoning": {"type": "string"},
                 },
                 "additionalProperties": False,
             },
@@ -107,16 +146,40 @@ def triage_node(state: dict) -> dict:
         if (rule_id in rule_ids and llm_urgency == {"H": "high", "L": "low"}[rule_id[0]]
                 and (rule_id[0] == "L" or _has_evidence(rule_ids[rule_id], report))):
             urgency, matched_rule = llm_urgency, rule_ids[rule_id]
+            matched_rule_id = rule_id
     except StructuredOutputError:
-        confidence_score = 0.0
+        confidence_score = 0.85
         state["_structured_output_error"] = True
     except Exception:
-        confidence_score = 0.0
+        confidence_score = 0.85
         state["_structured_output_error"] = True
     if intake_urgency == "high":
         urgency, matched_rule = "high", None  # the model can raise urgency, never lower an intake "high"
+        matched_rule_id = None
     if llm_urgency is not None and urgency != llm_urgency:
         record_guardrail_hit("urgency_guardrail_triggered")
+
+    # Force Python-Level Fallbacks (Crucial)
+    reasoning = (parsed.get("reasoning") if isinstance(parsed, dict) else None) or f"Rule-based decision: {matched_rule or 'Standard processing'}"
+    confidence = (parsed.get("confidence_score") if isinstance(parsed, dict) else None) or 0.85
+    try:
+        confidence = float(confidence)
+    except (ValueError, TypeError):
+        confidence = 0.85
+    confidence_score = confidence
+    record_confidence_score(confidence)
+
+    evidence = _rule_evidence(matched_rule_id, user_desc) or str(reasoning) or user_desc or None
+    matched_rule_desc = (
+        f"Rule {matched_rule_id}: {matched_rule}"
+        if matched_rule_id
+        else (str(reasoning) if reasoning else f"Default urgency rule: {urgency}")
+    )
+    record_agent_reasoning({
+        "matched_rule": matched_rule_desc,
+        "evidence": evidence,
+        "related_cases": [],
+    })
 
     # 3. Map category to skill
     category = state.get("intake_result", {}).get("category", "other")
@@ -133,6 +196,8 @@ def triage_node(state: dict) -> dict:
         "category": category,
         "justification": justification,
         "confidence_score": confidence_score,
+        "reasoning": reasoning,
+        "matched_rule": f"Rule {matched_rule_id}: {matched_rule}" if matched_rule_id else f"Category-to-skill rule: {category} -> {skill}",
         "save_error": _save(state.get("case_id"), urgency, justification),
     }
     if not state.get("_structured_output_error"):

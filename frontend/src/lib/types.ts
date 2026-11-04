@@ -194,11 +194,17 @@ export interface CaseEvent {
   telemetry?: {
     model: string | null;
     timing_ms: number;
-    tokens: { input: number | null; output: number | null };
+    tokens: { input: number | null; output: number | null } | null;
     confidence_score: number | null;
     fallback_used: boolean;
     fallback_reason: string | null;
     guardrail_hits: string[];
+    reasoning?: {
+      matched_rule?: string | null;
+      evidence?: string | null;
+      related_cases?: { case_id: string; score: number | null; reason: string }[];
+      cluster_reason?: string | null;
+    } | null;
   };
 }
 
