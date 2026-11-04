@@ -1,4 +1,4 @@
-# backend/tools.py
+stat# backend/tools.py
 """
 SimePhony business rules and database operations: the one place that changes a case.
 
@@ -41,7 +41,6 @@ load_dotenv()
 
 import db
 import email_render
-from calendar_utils import calendar_url
 if str(db.ROOT) not in sys.path:
     sys.path.insert(0, str(db.ROOT))
 from demo_api import config
@@ -223,58 +222,6 @@ def _worker(conn: sqlite3.Connection, worker_id: Optional[str]) -> Optional[dict
 
 def _worker_label(w: dict) -> str:
     return f"{w['name']} ({w['company']})" if w.get("company") else w["name"]
-
-
-def _calendar_event(conn: sqlite3.Connection, case: dict) -> Optional[dict]:
-    """Return the active scheduled visit or repair for a case, including its recipients."""
-    kind = JOB_KIND.get(case["status"])
-    if kind is None:
-        return None
-    rows = conn.execute(
-        """SELECT s.start_at, s.end_at, s.technician_id, t.name, t.email
-           FROM slots s JOIN technicians t ON t.technician_id = s.technician_id
-           WHERE s.case_id = ? AND s.kind = ? ORDER BY s.start_at, s.end_at""",
-        (case["case_id"], kind),
-    ).fetchall()
-    if not rows:
-        return None
-    buyer = conn.execute("SELECT name, email FROM buyers WHERE buyer_id = ?", (case["buyer_id"],)).fetchone()
-    start = min((row["start_at"] for row in rows), key=parse)
-    ends = [row["end_at"] for row in rows if row["end_at"]]
-    end = max(ends, key=parse) if ends else None
-    technicians = {
-        row["technician_id"]: {"technician_id": row["technician_id"], "name": row["name"], "email": row["email"]}
-        for row in rows
-    }
-    unit = conn.execute("SELECT unit_id FROM units WHERE unit_id = ?", (case["unit_id"],)).fetchone()
-    job = "Repair" if kind == "repair" else JOB_NAME[case["status"]].title()
-    description = f"Case: {case['case_id']}\nUnit: {unit['unit_id'] if unit else case['unit_id']}"
-    if case.get("summary"):
-        description += f"\nDefect: {case['summary']}"
-    return {
-        "case_id": case["case_id"],
-        "kind": kind,
-        "job": job,
-        "summary": f"SDP {job} - Case {case['case_id']}",
-        "start": start,
-        "end": end,
-        "description": description,
-        "buyer": dict(buyer) if buyer else None,
-        "technicians": list(technicians.values()),
-    }
-
-
-def get_calendar_event(case_id: str) -> Optional[dict]:
-    """Get the current scheduled job for the downloadable case calendar event."""
-    with _connect() as conn:
-        case = _get_case(conn, case_id)
-        return _calendar_event(conn, case)
-
-
-def _calendar_email_body(body: str, case_id: str, event: Optional[dict]) -> str:
-    if event is None:
-        return body
-    return f"{body.rstrip()}\n\nAdd to Calendar: {calendar_url(case_id)}"
 
 
 # ---------- scheduling rules (same as demo_api/agents.py) ----------
@@ -1474,15 +1421,13 @@ def notify_buyer(case_id: str, title: str, body: str, email: bool = True) -> dic
     with _connect() as conn:
         case = _get_case(conn, case_id)
         buyer = conn.execute("SELECT email FROM buyers WHERE buyer_id = ?", (case["buyer_id"],)).fetchone()
-        calendar_event = _calendar_event(conn, case)
         message_id = db.next_record_id(conn, "buyer_messages")
         conn.execute(
             "INSERT INTO buyer_messages (message_id, case_id, title, body, created_at) VALUES (?, ?, ?, ?, ?)",
             (message_id, case_id, title, body, _now(conn)),
         )
         _emit(conn, case_id, "agent.step", f'Sent buyer update "{title}"', agent="CommsAgent")
-    email_body = _calendar_email_body(body, case_id, calendar_event)
-    email_status = send_email(buyer["email"], f"[{case_id}] {title}", email_body, case_id)["status"] if email and buyer else None
+    email_status = send_email(buyer["email"], f"[{case_id}] {title}", body, case_id)["status"] if email and buyer else None
     return {"ok": True, "message_id": message_id, "email_status": email_status}
 
 
@@ -1493,10 +1438,9 @@ def notify_technician(case_id: str, subject: str, body: str, technician_id: Opti
     with _connect() as conn:
         case = _get_case(conn, case_id)
         worker = _worker(conn, technician_id or case["technician_id"])
-        calendar_event = _calendar_event(conn, case)
     if worker is None:
         raise ToolError(f"Case {case_id} has no technician to notify")
-    email = send_email(worker["email"], f"[{case_id}] {subject}", _calendar_email_body(body, case_id, calendar_event), case_id)
+    email = send_email(worker["email"], f"[{case_id}] {subject}", body, case_id)
     return {"ok": True, "to": worker["technician_id"], "email_status": email["status"]}
 
 
@@ -1948,60 +1892,3 @@ def sweep_signoffs() -> list[dict]:
                 message("Reminder: please sign off your repair", f"{ref}. Please check the repair and sign off by {fmt_date(deadline)}. {tail}")
                 done.append({"case_id": case_id, "action": "reminder"})
     return done
-
-
-def sweep_visit_reminders() -> list[dict]:
-    """Queue one buyer/technician reminder for each visit or repair starting within 24 hours."""
-    reminders = []
-    with _connect() as conn, use_connection(conn):
-        now = parse(_now(conn))
-        cases = conn.execute(
-            "SELECT * FROM cases WHERE status IN ('VISIT_SCHEDULED', 'EXTRA_INSPECTION', 'REPAIR_BOOKED')"
-        ).fetchall()
-        sent = set()
-        for row in conn.execute(
-            "SELECT case_id, payload FROM case_events WHERE type = 'reminder.sent'"
-        ):
-            try:
-                payload = json.loads(row["payload"] or "{}")
-            except (TypeError, json.JSONDecodeError):
-                continue
-            if payload.get("kind") and payload.get("start"):
-                sent.add((row["case_id"], payload["kind"], payload["start"]))
-
-        for row in cases:
-            case = dict(row)
-            event = _calendar_event(conn, case)
-            if event is None:
-                continue
-            start = parse(event["start"])
-            hours_until = (start - now).total_seconds() / 3600
-            key = (case["case_id"], event["kind"], norm(event["start"]))
-            if not 0 <= hours_until <= 24 or key in sent:
-                continue
-
-            body = (
-                f"Reminder: your {event['job'].lower()} for Case {case['case_id']} is scheduled "
-                f"for {fmt_datetime(event['start'])}.\n\nAdd to Calendar: {calendar_url(case['case_id'])}"
-            )
-            recipients = []
-            if event["buyer"] and event["buyer"].get("email"):
-                recipients.append((event["buyer"]["email"], "Upcoming defect visit reminder"))
-            recipients.extend(
-                (worker["email"], "Upcoming defect visit reminder")
-                for worker in event["technicians"]
-                if worker.get("email")
-            )
-            for address, subject in recipients:
-                send_email(address, f"[{case['case_id']}] {subject}", body, case["case_id"])
-            _emit(
-                conn,
-                case["case_id"],
-                "reminder.sent",
-                f"Pre-visit reminder queued for {event['job'].lower()}",
-                kind=event["kind"],
-                start=key[2],
-            )
-            sent.add(key)
-            reminders.append({"case_id": case["case_id"], "kind": event["kind"], "start": key[2]})
-    return reminders
