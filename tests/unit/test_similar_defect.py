@@ -15,14 +15,19 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from agents.simephony.similar_defect import similar_defect_node, _OCCURRENCE_THRESHOLD
+from agents.telemetry import telemetry_payload, telemetry_scope
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _llm_response(cluster_reason: str = "Recurring issue detected.") -> MagicMock:
-    content = json.dumps({"cluster_reason": cluster_reason, "confidence_score": 0.9})
+def _llm_response(cluster_reason: str = "Recurring issue detected.", reasoning: str | None = None) -> MagicMock:
+    content = json.dumps({
+        "cluster_reason": cluster_reason,
+        "confidence_score": 0.9,
+        "reasoning": reasoning or cluster_reason,
+    })
     return MagicMock(choices=[MagicMock(message=MagicMock(content=content))])
 
 
@@ -75,6 +80,33 @@ class TestOutputContract:
         state = _base_state()
         result = similar_defect_node(state)
         assert result is state
+
+    def test_records_related_cases_scores_and_cluster_reason(self, monkeypatch):
+        related = {
+            "case_id": "C-0012",
+            "score": 0.91,
+            "reason": "Same unit",
+            "counts_toward_escalation": True,
+        }
+        monkeypatch.setattr(
+            "agents.simephony.similar_defect.find_similar_cases",
+            lambda **_: [related],
+        )
+        monkeypatch.setattr(
+            "agents.simephony.similar_defect.client",
+            MagicMock(**{"chat.completions.create.return_value": _llm_response("Same unit recurrence.")}),
+        )
+
+        with telemetry_scope():
+            similar_defect_node(_base_state(case_id="C-NEW"))
+            reasoning = telemetry_payload()["reasoning"]
+
+        assert reasoning["related_cases"] == [{
+            "case_id": "C-0012",
+            "score": 0.91,
+            "reason": "Same unit",
+        }]
+        assert reasoning["cluster_reason"] == "Same unit recurrence."
 
 
 # ===========================================================================

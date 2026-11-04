@@ -265,6 +265,10 @@ def test_agent_step_records_telemetry_and_guardrail_hits(monkeypatch):
     assert telemetry["fallback_reason"] is None
     assert "category_guardrail_triggered" in telemetry["guardrail_hits"]
     assert "urgency_guardrail_triggered" in telemetry["guardrail_hits"]
+    assert telemetry["confidence_score"] == 0.95
+    assert telemetry["reasoning"]["matched_rule"] == "Rule: scratches on a wall are classified as paint"
+    assert telemetry["reasoning"]["evidence"] == "Water leak and a scratch on wall in the bedroom."
+    assert telemetry["reasoning"]["related_cases"] == []
     response_event = next(
         event for event in response_state["events"]
         if event["caseId"] == case_id and event.get("telemetry", {}).get("model")
@@ -355,6 +359,27 @@ def test_api_defers_ai_until_the_action_is_committed(fake_llm, monkeypatch):
 
     task.func(*task.args, **task.kwargs)
     assert fake_llm.calls
+    agent_events = {
+        event["agent"]: event["data"]
+        for event in _trace(response["caseId"])
+        if (event.get("data") or {}).get("model")
+    }
+    for agent in ("IntakeAgent", "SimilarDefectAgent", "TriageAgent"):
+        assert agent_events[agent]["confidence_score"] is not None
+        assert agent_events[agent]["reasoning"] is not None
+    assert agent_events["IntakeAgent"]["reasoning"]["evidence"]
+    assert "cluster_reason" in agent_events["SimilarDefectAgent"]["reasoning"]
+    assert agent_events["TriageAgent"]["reasoning"]["evidence"]
+    api_events = routes.get_state(request)["state"]["events"]
+    api_agent_events = {
+        event["agent"]: event["telemetry"]
+        for event in api_events
+        if event["caseId"] == response["caseId"] and event["type"] == "agent.step"
+        and event.get("telemetry", {}).get("model")
+    }
+    for agent in ("IntakeAgent", "SimilarDefectAgent", "TriageAgent"):
+        assert api_agent_events[agent]["confidence_score"] is not None
+        assert api_agent_events[agent]["reasoning"] is not None
 
 
 def test_case_action_succeeds_while_background_agent_is_running(fake_llm, monkeypatch):

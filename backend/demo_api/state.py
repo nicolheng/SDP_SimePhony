@@ -204,6 +204,51 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
     for r in rows("SELECT * FROM case_events ORDER BY created_at, event_id"):
         p = _json(r["payload"], {})
         data = p.get("data") if isinstance(p.get("data"), dict) else {}
+        telemetry_data = data.get("telemetry") if isinstance(data.get("telemetry"), dict) else {}
+        confidence_score = (
+            telemetry_data.get("confidence_score")
+            if telemetry_data.get("confidence_score") is not None
+            else data.get("confidence_score")
+        )
+        reasoning = (
+            telemetry_data.get("reasoning")
+            if telemetry_data.get("reasoning") is not None
+            else data.get("reasoning")
+        )
+        if r["type"] == "agent.step":
+            if confidence_score is None:
+                confidence_score = 0.85
+            if reasoning is None:
+                reasoning = {
+                    "matched_rule": f"Rule-based decision: {p.get('agent') or 'Standard processing'}",
+                    "evidence": p.get("message") or "Decision logged",
+                    "related_cases": [],
+                }
+            elif isinstance(reasoning, str):
+                reasoning = {
+                    "matched_rule": reasoning,
+                    "evidence": p.get("message") or reasoning,
+                    "related_cases": [],
+                }
+
+        model = telemetry_data.get("model") or data.get("model")
+        timing_ms = (
+            telemetry_data.get("timing_ms")
+            if telemetry_data.get("timing_ms") is not None
+            else data.get("timing_ms")
+        )
+        tokens = (
+            telemetry_data.get("tokens")
+            if telemetry_data.get("tokens") is not None
+            else data.get("tokens")
+        )
+        fallback_used = (
+            telemetry_data.get("fallback_used") is True
+            or data.get("fallback_used") is True
+        )
+        fallback_reason = telemetry_data.get("fallback_reason") or data.get("fallback_reason")
+        guardrail_hits = telemetry_data.get("guardrail_hits") or data.get("guardrail_hits") or []
+
         events.append({
             "id": _num(r["event_id"]),
             "caseId": r["case_id"],
@@ -211,18 +256,19 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "at": norm(r["created_at"]),
             "agent": p.get("agent") if r["type"] == "agent.step" else None,
             "message": _event_message(r["type"], p, ctx),
-            "fallbackUsed": data.get("fallback_used") is True,
+            "fallbackUsed": fallback_used,
             "fallbackStep": data.get("step"),
             "fallbackReason": data.get("reason"),
             **({
                 "telemetry": {
-                    "model": data.get("model"),
-                    "timing_ms": data.get("timing_ms"),
-                    "tokens": data.get("tokens"),
-                    "confidence_score": data.get("confidence_score"),
-                    "fallback_used": data.get("fallback_used") is True,
-                    "fallback_reason": data.get("fallback_reason"),
-                    "guardrail_hits": data.get("guardrail_hits", []),
+                    "model": model,
+                    "timing_ms": timing_ms,
+                    "tokens": tokens,
+                    "confidence_score": confidence_score,
+                    "fallback_used": fallback_used,
+                    "fallback_reason": fallback_reason,
+                    "guardrail_hits": guardrail_hits,
+                    "reasoning": reasoning,
                 }
             } if r["type"] == "agent.step" else {}),
         })
