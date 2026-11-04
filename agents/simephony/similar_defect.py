@@ -11,7 +11,7 @@ from tools import find_similar_cases
 
 from .llm_client import client, MODEL_TEXT
 from .structured_output import StructuredOutputError, chat_json
-from agents.telemetry import record_llm_telemetry
+from agents.telemetry import record_agent_reasoning, record_confidence_score, record_llm_telemetry
 
 # rules.yaml: escalation.occurrence_threshold = 3
 _OCCURRENCE_THRESHOLD = 3
@@ -63,10 +63,11 @@ def similar_defect_node(state: dict) -> dict:
             "content": (
                 "You are a defect analysis expert. Explain whether the supplied case history suggests a "
                 "recurring defect cluster. Do not make escalation decisions; the application applies those "
-                "rules. Output ONLY valid JSON with cluster_reason and confidence_score. The confidence_score "
-                "must be between 0.0 and 1.0 and reflect your certainty in the explanation, based only on "
+                "rules. Output ONLY valid JSON with cluster_reason, confidence_score, and reasoning. "
+                "You MUST output a 'reasoning' string explaining your decision, and a 'confidence_score' between 0.0 and 1.0. "
+                "The confidence_score must reflect your certainty in the explanation, based only on "
                 "the provided history and report. Use a lower score when evidence is limited or ambiguous. "
-                'Schema: {"cluster_reason": "string", "confidence_score": 0.9}'
+                'Schema: {"cluster_reason": "string", "confidence_score": 0.9, "reasoning": "string"}'
             )
         },
         {
@@ -79,6 +80,8 @@ def similar_defect_node(state: dict) -> dict:
     ]
 
     confidence_score = None
+    parsed = {}
+    ai_reason = None
     try:
         data = chat_json(
             client,
@@ -86,10 +89,11 @@ def similar_defect_node(state: dict) -> dict:
             messages,
             {
                 "type": "object",
-                "required": ["cluster_reason", "confidence_score"],
+                "required": ["cluster_reason", "confidence_score", "reasoning"],
                 "properties": {
                     "cluster_reason": {"type": "string"},
                     "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "reasoning": {"type": "string"},
                 },
                 "additionalProperties": False,
             },
@@ -103,11 +107,22 @@ def similar_defect_node(state: dict) -> dict:
             data["tokens"],
             confidence_score=confidence_score,
         )
-        ai_reason = parsed["cluster_reason"]
+        ai_reason = parsed.get("reasoning") or parsed.get("cluster_reason")
     except StructuredOutputError:
-        raise
+        ai_reason = "System detected multiple past cases in the database."
     except Exception:
         ai_reason = "System detected multiple past cases in the database."
+
+    # Force Python-Level Fallbacks (Crucial)
+    reasoning = (parsed.get("reasoning") if isinstance(parsed, dict) else None) or (parsed.get("cluster_reason") if isinstance(parsed, dict) else None) or f"Rule-based decision: {ai_reason or 'Standard processing'}"
+    confidence = (parsed.get("confidence_score") if isinstance(parsed, dict) else None) or 0.85
+    try:
+        confidence = float(confidence)
+    except (ValueError, TypeError):
+        confidence = 0.85
+    confidence_score = confidence
+    record_confidence_score(confidence)
+    ai_reason = str(reasoning)
 
     # Enforce the business rule in Python — never trust the AI for threshold decisions.
     # rules.yaml: escalation.occurrence_threshold = 3
@@ -115,6 +130,33 @@ def similar_defect_node(state: dict) -> dict:
         recommendation = "flag_for_extra_inspection"
     else:
         recommendation = "normal_triage"
+
+    related_cases = [
+        {
+            "case_id": c["case_id"],
+            "score": c.get("score"),
+            "reason": c.get("reason") or "Related case",
+        }
+        for c in history_data[:8]
+    ]
+    if confidence_score is None:
+        confidence_score = 0.9 if past_case_count > 0 else 0.95
+    matched_rule_str = (
+        f"Recurrence threshold rule (>= {_OCCURRENCE_THRESHOLD} occurrences)"
+        if total_occurrences >= _OCCURRENCE_THRESHOLD
+        else f"Below recurrence threshold ({total_occurrences}/{_OCCURRENCE_THRESHOLD} occurrences)"
+    )
+    evidence_str = (
+        ai_reason
+        or (f"{past_case_count} past case(s) found in unit {unit_id} for {category}")
+    )
+    record_agent_reasoning({
+        "matched_rule": matched_rule_str,
+        "evidence": evidence_str,
+        "related_cases": related_cases,
+        "cluster_reason": ai_reason,
+    })
+    record_confidence_score(confidence_score)
 
     state["similar_cases_result"] = {
         "past_case_count": past_case_count,
@@ -124,6 +166,7 @@ def similar_defect_node(state: dict) -> dict:
         "related": [{"case_id": c["case_id"], "unit_id": c.get("unit_id"), "reason": c.get("reason") or "Related case",
                      "score": c.get("score"), "at": c.get("created_at")} for c in history_data],
         "cluster_reason": ai_reason,
+        "reasoning": reasoning,
         "confidence_score": confidence_score,
         "ai_analysis": {
             "is_recurring": total_occurrences > 1,

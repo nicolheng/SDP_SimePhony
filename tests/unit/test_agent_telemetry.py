@@ -2,7 +2,12 @@ from types import SimpleNamespace
 import time
 
 from agents.simephony.structured_output import chat_json
-from agents.telemetry import record_llm_telemetry, telemetry_payload, telemetry_scope
+from agents.telemetry import (
+    record_agent_reasoning,
+    record_llm_telemetry,
+    telemetry_payload,
+    telemetry_scope,
+)
 
 
 def test_chat_json_returns_and_records_actual_model_timing_and_usage():
@@ -46,3 +51,16 @@ def test_chat_json_returns_and_records_actual_model_timing_and_usage():
     assert payload["timing_ms"] > 0
     assert result["tokens"] == payload["tokens"] == {"input": 21, "output": 8}
     assert payload["confidence_score"] == 0.95
+
+
+def test_agent_reasoning_is_included_in_telemetry_payload():
+    reasoning = {
+        "matched_rule": "Rule H2: electrical sparks or burning smell",
+        "evidence": "sparking sound",
+    }
+
+    with telemetry_scope():
+        record_agent_reasoning(reasoning)
+        payload = telemetry_payload()
+
+    assert payload["reasoning"] == reasoning

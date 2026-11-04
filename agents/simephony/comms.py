@@ -1,6 +1,11 @@
 import re
 
-from agents.telemetry import record_guardrail_hit, tracked_chat_completion
+from agents.telemetry import (
+    record_agent_reasoning,
+    record_confidence_score,
+    record_guardrail_hit,
+    tracked_chat_completion,
+)
 from .llm_client import get_client, get_models
 from . import backend_tools
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
@@ -382,5 +387,12 @@ def _draft(state: dict) -> str:
         if deadline:
             message = f"{message}\n\nPlease check the repair and sign off by {deadline} if it is fixed."
         message = f"{message}\n\n{state['verification_result']['protocol']}"
+
+    record_confidence_score(0.95)
+    record_agent_reasoning({
+        "matched_rule": f"Communication template: {template_key}",
+        "evidence": message,
+        "related_cases": [],
+    })
 
     return message

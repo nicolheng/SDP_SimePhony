@@ -31,6 +31,7 @@ CASE_COLUMNS = {
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 UNIT_COLUMNS = {"vp_date": "TEXT"}  # vacant possession date; the defect liability period runs from it
 ASSIGNMENT_COLUMNS = {"job": "TEXT"}  # inspection visit | detailed inspection | repair
+EVENT_COLUMNS = {"id": "INTEGER"}
 
 INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_cases_unit_status ON cases(unit_id, status)",
@@ -157,6 +158,8 @@ def migrate(conn: sqlite3.Connection) -> None:
     _add_columns(conn, "technicians", TECHNICIAN_COLUMNS)
     _add_columns(conn, "units", UNIT_COLUMNS)
     _add_columns(conn, "assignment_history", ASSIGNMENT_COLUMNS)
+    _add_columns(conn, "case_events", EVENT_COLUMNS)
+    conn.execute("UPDATE case_events SET id = CAST(SUBSTR(event_id, 4) AS INTEGER) WHERE id IS NULL")
     conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
     for statement in INDEXES:
         conn.execute(statement)

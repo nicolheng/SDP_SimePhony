@@ -16,7 +16,7 @@ from pathlib import Path
 
 import db
 import tools
-from agents.telemetry import telemetry_payload, telemetry_scope
+from agents.telemetry import record_agent_reasoning, telemetry_payload, telemetry_scope
 
 from . import agents as standins
 
@@ -69,6 +69,8 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
         try:
             with tools.use_connection(ctx.conn):
                 result = ai()
+                payload = telemetry_payload(telemetry)
+                ctx.pending_agent_telemetry[_agent_label(name)] = payload
                 if telemetry["agent_step_events"] == 0:
                     case_id = (background_args or {}).get("case_id")
                     if case_id:
@@ -76,10 +78,8 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
                             case_id,
                             _agent_label(name),
                             f"Completed {name} agent step",
-                            telemetry_payload(telemetry),
+                            payload,
                         )
-                    else:
-                        ctx.pending_agent_telemetry[_agent_label(name)] = telemetry_payload(telemetry)
         except Exception as exc:
             error = exc
     if error is None:
@@ -107,13 +107,22 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
 def _save_fallback(ctx, case_id: str, name: str, reason: str, error_type: str, telemetry: dict | None = None) -> bool:
     try:
         message = f"Used rule-based fallback for {name}: {error_type}"
+        fallback_telemetry = telemetry_payload(telemetry, fallback_used=True, fallback_reason=reason[:500])
+        if fallback_telemetry.get("confidence_score") is None:
+            fallback_telemetry["confidence_score"] = 0.8
+        if fallback_telemetry.get("reasoning") is None:
+            fallback_telemetry["reasoning"] = {
+                "matched_rule": f"Rule-based fallback for {name}",
+                "evidence": reason[:500],
+                "related_cases": [],
+            }
         with tools.use_connection(ctx.conn):
             result = tools.log_agent_step(
                 case_id,
                 _agent_label(name),
                 message,
                 {
-                    **telemetry_payload(telemetry, fallback_used=True, fallback_reason=reason[:500]),
+                    **fallback_telemetry,
                     "fallback_used": True,
                     "fallback_reason": reason[:500],
                     "step": name,
@@ -270,6 +279,11 @@ def triage(ctx, case: dict, preferred: str | None) -> dict:
         b = state["booking_result"]
         if b.get("booking_status") != "PROPOSED":
             raise RuntimeError(b.get("reason") or b.get("error") or "no technician proposed")
+        record_agent_reasoning({
+            "matched_rule": (state.get("triage_result") or {}).get("matched_rule"),
+            "evidence": b["reason"],
+            "related_cases": [],
+        })
         return {
             "technician_id": b["assigned_technician"],
             "slot": b["start"],

@@ -1,8 +1,8 @@
 "use client";
-import { ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BrainCircuit } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
 import { DefectRecordCard } from "@/components/defect-record";
 import { recordAvailable } from "@/lib/defect-record";
@@ -16,12 +16,102 @@ import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { developerSignOff } from "@/lib/api";
 import { CATEGORY_LABEL, getTechnician, getUnit, SDP_STAFF, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
+import { agentLabel } from "@/lib/agents";
 import { useDemo, useOffline } from "@/lib/store";
+import type { CaseEvent } from "@/lib/types";
+
+function hasWhyData(event: CaseEvent) {
+  const telemetry = event.telemetry;
+  return event.type === "agent.step" && Boolean(telemetry && (
+    telemetry.model ||
+    telemetry.timing_ms > 0 ||
+    telemetry.confidence_score !== null ||
+    telemetry.fallback_used ||
+    telemetry.guardrail_hits.length > 0 ||
+    telemetry.reasoning?.matched_rule ||
+    telemetry.reasoning?.evidence ||
+    telemetry.reasoning?.related_cases?.length ||
+    telemetry.reasoning?.cluster_reason
+  ));
+}
+
+function WhyPanel({ event }: { event: CaseEvent }) {
+  const telemetry = event.telemetry!;
+  const reasoning = telemetry.reasoning;
+  const guardrails = telemetry.guardrail_hits.map((hit) => hit.replace(/_guardrail_triggered$/, ""));
+
+  return (
+    <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="size-4 text-indigo-700" aria-hidden="true" />
+          <h3 className="font-semibold text-zinc-900">Why? · {event.agent ? agentLabel(event.agent) : "AI agent"}</h3>
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-600">
+          {telemetry.model && <span>Model: <strong className="font-medium text-zinc-800">{telemetry.model}</strong></span>}
+          {telemetry.timing_ms > 0 && <span>Timing: <strong className="font-medium text-zinc-800">{(telemetry.timing_ms / 1000).toFixed(1)}s</strong></span>}
+          {telemetry.confidence_score !== null && (
+            <span>Self-reported confidence: <strong className="font-medium text-zinc-800">{Math.round(telemetry.confidence_score * 100)}%</strong></span>
+          )}
+        </div>
+      </header>
+
+      <div className="mt-3 space-y-3 text-sm">
+        {typeof reasoning === "string" ? (
+          <p className="text-zinc-700">{reasoning}</p>
+        ) : (
+          (reasoning?.matched_rule || reasoning?.evidence) && (
+            <div>
+              {reasoning.matched_rule && (
+                <p><span className="font-medium text-zinc-700">Matched rule:</span> {reasoning.matched_rule}</p>
+              )}
+              {reasoning.evidence && (
+                <blockquote className="mt-1 border-l-2 border-indigo-300 pl-3 italic text-zinc-600">
+                  &ldquo;{reasoning.evidence}&rdquo;
+                </blockquote>
+              )}
+            </div>
+          )
+        )}
+        {typeof reasoning === "object" && reasoning?.cluster_reason && (
+          <p className="text-zinc-700">{reasoning.cluster_reason}</p>
+        )}
+        {!!reasoning?.related_cases?.length && (
+          <div>
+            <p className="font-medium text-zinc-700">Related cases</p>
+            <ul className="mt-1 space-y-1">
+              {reasoning.related_cases.map((related) => (
+                <li key={related.case_id} className="flex flex-wrap gap-x-2 text-zinc-600">
+                  <span className="font-mono text-zinc-800">{related.case_id}</span>
+                  {related.score !== null && <span>{Math.round(related.score * 100)}% similarity</span>}
+                  <span>{related.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {(telemetry.fallback_used || guardrails.length > 0) && (
+        <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-indigo-100 pt-2 text-xs text-zinc-500">
+          {telemetry.fallback_used && (
+            <span className="inline-flex items-center gap-1">
+              <AlertTriangle className="size-3.5 text-amber-700" aria-hidden="true" />
+              Rule-based fallback used
+            </span>
+          )}
+          {guardrails.length > 0 && <span>Guardrail triggered: {guardrails.join(", ")}</span>}
+        </p>
+      )}
+    </section>
+  );
+}
 
 export function SdpCaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
   const events = useCaseEvents(id);
+  const whyEvents = useMemo(() => events.filter(hasWhyData), [events]);
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
   const now = useDemo((s) => s.now);
@@ -73,6 +163,14 @@ export function SdpCaseDetail() {
             <p className="mt-4 whitespace-pre-line rounded-lg bg-zinc-50 p-3 text-base text-zinc-700">&ldquo;{c.description}&rdquo;</p>
             {c.triageReason && <p className="mt-2 text-sm text-zinc-500">Triage: {c.triageReason}</p>}
           </Panel>
+
+          {whyEvents.length > 0 && (
+            <Panel title="AI decision rationale">
+              <div className="space-y-3">
+                {[...whyEvents].reverse().map((event) => <WhyPanel key={event.id} event={event} />)}
+              </div>
+            </Panel>
+          )}
 
           <Panel title="Photos">
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">

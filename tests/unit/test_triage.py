@@ -3,6 +3,7 @@ import json
 import pytest
 import yaml
 from agents.simephony.triage import triage_node
+from agents.telemetry import telemetry_payload, telemetry_scope
 
 
 def _state(sample_state, **kw):
@@ -11,8 +12,8 @@ def _state(sample_state, **kw):
     return state
 
 
-def _reply(urgency, rule="none", confidence=0.95):
-    return json.dumps({"urgency": urgency, "rule": rule, "confidence_score": confidence})
+def _reply(urgency, rule="none", confidence=0.95, reasoning="Triage rule assessment"):
+    return json.dumps({"urgency": urgency, "rule": rule, "confidence_score": confidence, "reasoning": reasoning})
 
 
 def test_triage_raises_urgency_when_a_high_rule_matches(sample_state, fake_llm):
@@ -99,6 +100,23 @@ def test_triage_urgency_correction_is_logged_not_held(sample_state, fake_llm, mo
     assert result["triage_result"]["urgency"] == "normal"
     assert result.get("needs_human_review", False) is False
     assert "urgency_guardrail_triggered" in guardrail_hits
+
+
+def test_triage_records_matched_rule_and_exact_report_evidence(sample_state, fake_llm):
+    fake_llm.responses = [_reply("high", "H2")]
+    state = _state(
+        sample_state,
+        case_id="C-NEW",
+        user_description="There is a sparking sound coming from the socket.",
+        intake_result={"category": "electrical", "urgency": "normal"},
+    )
+
+    with telemetry_scope():
+        triage_node(state)
+        reasoning = telemetry_payload()["reasoning"]
+
+    assert reasoning["matched_rule"] == "Rule H2: electrical sparks or burning smell"
+    assert reasoning["evidence"] == "There is a sparking sound coming from the socket."
 
 
 def test_triage_missing_intake_urgency_defaults_normal(sample_state, fake_llm):

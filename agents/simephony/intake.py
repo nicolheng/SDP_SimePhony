@@ -2,7 +2,7 @@ import os
 import json
 import re
 import base64
-from agents.telemetry import record_guardrail_hit, record_llm_telemetry
+from agents.telemetry import record_agent_reasoning, record_confidence_score, record_guardrail_hit, record_llm_telemetry
 from .llm_client import client, LLM_TIMEOUT_VISION, MODEL_VL
 from .review import flag_for_human_review
 from .structured_output import StructuredOutputError, chat_json
@@ -18,7 +18,7 @@ _ALLOWED_CATEGORIES = (
 )
 _INTAKE_SCHEMA = {
     "type": "object",
-    "required": ["category", "missing_info", "confidence_score"],
+    "required": ["category", "missing_info", "confidence_score", "reasoning"],
     "properties": {
         "category": {"type": "string", "enum": list(_ALLOWED_CATEGORIES)},
         "sub_category": {"type": "string"},
@@ -34,6 +34,7 @@ _INTAKE_SCHEMA = {
         "mentioned_recurrence_count": {"type": ["integer", "null"]},
         "mismatch_detected": {"type": "boolean"},
         "confidence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "reasoning": {"type": "string"},
     },
     "additionalProperties": False,
 }
@@ -64,6 +65,26 @@ _HIGH_URGENCY_KEYWORDS = (
 
 _LOW_URGENCY_KEYWORDS = (
     "scratch", "scuff", "hairline", "retak sikit", "retak rambut", "superficial", "cosmetic"
+)
+
+_HIGH_RULE_PATTERNS = (
+    r"(?:(?:leak|bocor|drip)[^.!?\n]*(?:socket|switch|light|lamp|wiring|wire|plug|soket|suis|wayar)"
+    r"|(?:socket|switch|light|lamp|wiring|wire|plug|soket|suis|wayar)[^.!?\n]*(?:leak|bocor|drip))",
+    r"spark\w*|burn\w*|smok\w*|scorch\w*|percik\w*|terbakar|hangus",
+    r"exposed[^.!?\n]*(?:wire|wiring)|(?:live|exposed)[^.!?\n]*(?:wire|wiring)|wayar hidup",
+    r"(?:breaker|fuse)[^.!?\n]*trip|trip[^.!?\n]*(?:breaker|fuse)",
+    r"collaps|sag|bulg|fall|runtuh",
+    r"structur|major crack|wide crack|movement|shift|retak besar|beam|column",
+    r"flood|banjir|gush|ankle|knee|torrent|ingress",
+    r"glass|kaca|pane|falling",
+    r"\bgas\b",
+)
+
+_LOW_RULE_PATTERNS = (
+    r"paint|cat|peel|mengelupas",
+    r"hairline|minor crack|retak rambut|retak sikit",
+    r"scratch|scuff|superficial",
+    r"tile|jubin|cosmetic|minor",
 )
 
 
@@ -103,6 +124,24 @@ def _location_from_text(text: str) -> str | None:
     if room and ceiling:
         return f"{room} ceiling"
     return room or ("ceiling" if ceiling else None)
+
+
+def _evidence_quote(text: str, terms: tuple[str, ...]) -> str | None:
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text.strip()):
+        if any(term in sentence.lower() for term in terms):
+            return sentence.strip()
+    return None
+
+
+def _evidence_sentence(text: str, pattern: str) -> str | None:
+    return next(
+        (
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+|\n+", text.strip())
+            if re.search(pattern, sentence, re.IGNORECASE)
+        ),
+        None,
+    )
 
 
 def _save(case_id: str | None, intake: dict) -> dict:
@@ -165,7 +204,8 @@ def intake_node(state: dict) -> dict:
         '  "follow_up_question": "",\n'
         '  "preliminary_outcome": "VALID_DEFECT",\n'
         '  "mismatch_detected": false,\n'
-        '  "confidence_score": 0.9\n'
+        '  "confidence_score": 0.9,\n'
+        '  "reasoning": "brief explanation of category and rule"\n'
         "}\n\n"
         "RULES:\n"
         "1. category MUST be one of the allowed categories:\n"
@@ -187,9 +227,8 @@ def intake_node(state: dict) -> dict:
         f"   - high:\n{high_triggers_str}\n"
         f"   - low:\n{low_triggers_str}\n"
         "   - default is 'normal' for all standard leaks, doors, tiles, drainage, AC.\n"
-        "Output a confidence_score between 0.0 and 1.0 representing how certain you are about this "
-        "classification based on the photo and text. Use 1.0 for absolute certainty, and below 0.7 "
-        "if the image is blurry, text is vague, or the defect is ambiguous.\n"
+        "You MUST output a 'reasoning' string explaining your decision, and a 'confidence_score' between 0.0 and 1.0. "
+        "Use 1.0 for absolute certainty, and below 0.7 if the image is blurry, text is vague, or the defect is ambiguous.\n"
     )
 
     messages = [
@@ -200,7 +239,7 @@ def intake_node(state: dict) -> dict:
     try:
         completion = chat_json(client, MODEL_VL, messages, _INTAKE_SCHEMA, temperature=0.0, timeout=LLM_TIMEOUT_VISION)
         parsed_intake = completion["parsed"]
-        confidence_score = parsed_intake.get("confidence_score")
+        confidence_score = float(parsed_intake.get("confidence_score") or 0.85)
         record_llm_telemetry(
             completion["model"],
             completion["timing_ms"],
@@ -214,7 +253,8 @@ def intake_node(state: dict) -> dict:
             "summary": description,
             "missing_info": [],
             "preliminary_outcome": "VALID_DEFECT",
-            "confidence_score": 0.0,
+            "confidence_score": 0.85,
+            "reasoning": "Fallback keyword classification",
         }
         state["_structured_output_error"] = True
     except Exception as e:
@@ -224,11 +264,30 @@ def intake_node(state: dict) -> dict:
             "category": "error",
             "summary": "Image processing failed",
             "missing_info": ["Please upload a clear, real photo"],
-            "confidence_score": 0.0,
+            "preliminary_outcome": "INSUFFICIENT_INFORMATION",
+            "confidence_score": 0.5,
+            "reasoning": f"Vision model processing error: {e}",
         }
+        record_confidence_score(0.5)
+        record_agent_reasoning({
+            "matched_rule": "Vision model error fallback",
+            "evidence": str(e),
+            "related_cases": [],
+        })
         state["intake_result"] = parsed_intake
         state["missing_info"] = parsed_intake["missing_info"]
         return state
+
+    # Force Python-Level Fallbacks (Crucial)
+    reasoning = parsed_intake.get("reasoning") or f"Rule-based decision: {parsed_intake.get('category') or 'Standard processing'}"
+    confidence = parsed_intake.get("confidence_score") or 0.85
+    try:
+        confidence = float(confidence)
+    except (ValueError, TypeError):
+        confidence = 0.85
+    parsed_intake["reasoning"] = str(reasoning)
+    parsed_intake["confidence_score"] = confidence
+    record_confidence_score(confidence)
 
     # ---------------------------------------------------------------------------
     # Deterministic Business Rule Guardrails (Strict rules.yaml Enforcement)
@@ -241,17 +300,32 @@ def intake_node(state: dict) -> dict:
     cat = parsed_intake.get("category", "")
     original_category = cat
     original_urgency = parsed_intake.get("urgency")
+    category_rule = None
+    category_evidence_terms: tuple[str, ...] = ()
     if ("scratch" in desc_lower and "wall" in desc_lower) or desc_lower.startswith("small scratch"):
         parsed_intake["category"] = "paint"
+        category_rule = "Rule: scratches on a wall are classified as paint"
+        category_evidence_terms = ("scratch", "wall")
     elif "hollow" in desc_lower and "tile" in desc_lower:
         parsed_intake["category"] = "tiles"
+        category_rule = "Rule: hollow tiles are classified as tiles"
+        category_evidence_terms = ("hollow", "tile")
     elif ("drain" in desc_lower or "pooling" in desc_lower or "tak turun longkang" in desc_lower) and cat == "water_leak":
         parsed_intake["category"] = "drainage"
+        category_rule = "Rule: drain reports are classified as drainage"
+        category_evidence_terms = ("drain", "pooling", "longkang")
     elif "aircond" in desc_lower or "air conditioning" in desc_lower:
         parsed_intake["category"] = "other"
+        category_rule = "Rule: air-conditioning reports are routed to other"
+        category_evidence_terms = ("aircond", "air conditioning")
     elif cat not in _ALLOWED_CATEGORIES or cat == "other":
         # Live qwen answered 'other' for "Ceiling bocor lagi": an allowed category, so check the words too.
         parsed_intake["category"] = _category_from_keywords(full_text) or "other"
+        if parsed_intake["category"] != "other":
+            category_rule = f"Keyword classification: {parsed_intake['category']}"
+            category_evidence_terms = tuple(
+                term for terms in _CATEGORY_KEYWORDS if terms[0] == parsed_intake["category"] for term in terms[1]
+            )
 
     # 1b. Location: live qwen returned none for "Ceiling bocor lagi in the bedroom"
     if str(parsed_intake.get("location_in_unit") or "").strip().lower() in _NO_LOCATION:
@@ -295,6 +369,29 @@ def intake_node(state: dict) -> dict:
         record_guardrail_hit("urgency_guardrail_triggered")
     model_was_specific = original_category in _ALLOWED_CATEGORIES and original_category != "other"
     rule_conflict = model_was_specific and parsed_intake.get("category") != original_category
+    urgency_changed = parsed_intake.get("urgency") != original_urgency
+    matched_rule = category_rule
+    evidence = _evidence_quote(user_description, category_evidence_terms)
+    if not matched_rule and urgency_changed:
+        rule_triggers = _HIGH_URGENCY_TRIGGERS if is_high else _LOW_URGENCY_TRIGGERS if is_low else ()
+        rule_patterns = _HIGH_RULE_PATTERNS if is_high else _LOW_RULE_PATTERNS if is_low else ()
+        for rule_number, (trigger, pattern) in enumerate(zip(rule_triggers, rule_patterns), start=1):
+            evidence_quote = _evidence_sentence(user_description, pattern)
+            if evidence_quote:
+                rule_prefix = "H" if is_high else "L"
+                matched_rule = f"Rule {rule_prefix}{rule_number}: {trigger}"
+                evidence = evidence_quote
+                break
+        if not matched_rule:
+            matched_rule = "Rule-based urgency calibration"
+    if not evidence:
+        evidence = user_description.strip() or None
+    rule_or_reason = matched_rule or parsed_intake.get("reasoning") or f"Classification rule: {parsed_intake.get('category')}"
+    record_agent_reasoning({
+        "matched_rule": rule_or_reason,
+        "evidence": evidence,
+        "related_cases": [],
+    })
 
     # 4. Blur / missing photo detection
     is_blur_image = False

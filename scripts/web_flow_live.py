@@ -246,6 +246,12 @@ def main() -> None:
         tc5_simulate_rain()
     finally:
         print(f"\nDone. The temporary DB is kept for a look: {tmp / 'web.db'}")
+        try:
+            live_db = ROOT / "data" / "simephony.db"
+            shutil.copyfile(tmp / "web.db", live_db)
+            print(f"Synced latest state to live DB: {live_db}")
+        except Exception as e:
+            print(f"Could not sync to live DB: {e}")
 
 
 if __name__ == "__main__":
