@@ -1,28 +1,29 @@
 "use client";
 import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList, Clock, Headphones, Mail, Phone, PlusCircle } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { AssetPicker } from "@/components/asset-picker";
 import { Avatar, BrandMark } from "@/components/brand";
 import { useRecentActivity } from "@/components/case-views";
 import { BuildingBanner } from "@/components/illustrations";
 import { QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
-import { StatusBadge } from "@/components/status-badge";
 import { DEMO_BUYER, getUnit, PROJECT_NAME } from "@/lib/constants";
-import { relative } from "@/lib/dates";
+import { setBuyerUnit, useBuyerUnit } from "@/lib/session";
 import { buyerNeedsAction, isOpen, STATUS_META } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 
 export default function BuyerHome() {
   const cases = useDemo((s) => s.cases);
   const messages = useDemo((s) => s.messages);
-  const now = useDemo((s) => s.now);
   const own = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id && !c.historical), [cases]);
   const { sorted: mine } = useRecentActivity(own);
   const ongoing = mine.filter((c) => isOpen(c.status));
   const closed = mine.filter((c) => !isOpen(c.status));
   const action = mine.filter(buyerNeedsAction);
   const updates = useMemo(() => messages.filter((m) => mine.some((c) => c.id === m.caseId)).length, [messages, mine]);
-  const unit = getUnit(DEMO_BUYER.unitId);
+  const unitId = useBuyerUnit();
+  const unit = getUnit(unitId);
+  const [picking, setPicking] = useState(false);
 
   return (
     <div className="pb-8">
@@ -40,19 +41,29 @@ export default function BuyerHome() {
       </header>
 
       <div className="space-y-7 px-4 pt-5">
-        <div className="overflow-hidden rounded-2xl ring-1 ring-zinc-200">
-          <div className="h-24">
-            <BuildingBanner />
-          </div>
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="text-sm text-zinc-500">Hi, {DEMO_BUYER.name.split(" ")[0]}</p>
-              <p className="font-semibold">{PROJECT_NAME}</p>
+        <div>
+          <p className="mb-2 text-lg font-semibold">Hi, {DEMO_BUYER.name.split(" ")[0]}</p>
+          <div className="overflow-hidden rounded-2xl ring-1 ring-zinc-200">
+            <div className="h-24">
+              <BuildingBanner />
             </div>
-            <div className="text-right text-xs text-zinc-500">
-              Unit <span className="block font-mono text-sm font-semibold text-zinc-900">{unit.id}</span>
+            <div className="flex items-start justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="whitespace-nowrap font-semibold">{PROJECT_NAME}</p>
+                <p className="text-xs text-zinc-500">
+                  Unit <span className="font-mono font-semibold text-zinc-900">{unit.id}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                className="shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-semibold text-brand ring-1 ring-brand/40 hover:bg-red-50"
+              >
+                Select Another Asset
+              </button>
             </div>
           </div>
+          {picking && <AssetPicker value={unitId} onPick={setBuyerUnit} onClose={() => setPicking(false)} />}
         </div>
 
         <section>
@@ -82,27 +93,6 @@ export default function BuyerHome() {
               </span>
               <ChevronRight className="size-4 text-amber-700" />
             </Link>
-          )}
-          <ul className="mt-3 divide-y divide-zinc-100">
-            {ongoing.slice(0, 3).map((c) => (
-              <li key={c.id}>
-                <Link href={`/buyer/cases/${c.id}`} className="flex items-center gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{c.summary}</p>
-                    <p className="text-xs text-zinc-500">
-                      {c.id} · {relative(c.createdAt, now)}
-                    </p>
-                  </div>
-                  <StatusBadge status={c.status} buyer />
-                  <ChevronRight className="size-4 text-zinc-400" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {ongoing.length === 0 && (
-            <div className="mt-3 rounded-2xl border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500">
-              No ongoing defects.
-            </div>
           )}
         </section>
 

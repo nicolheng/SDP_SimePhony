@@ -1,5 +1,5 @@
 "use client";
-import { Camera, ImageIcon, Loader2, X } from "lucide-react";
+import { Camera, CloudUpload, ImageIcon, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fmtDateTime } from "@/lib/dates";
 import type { Photo } from "@/lib/types";
@@ -111,6 +111,9 @@ async function toDataUrl(file: File, max = 720): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.7);
 }
 
+const MAX_BYTES = 3 * 1024 * 1024;
+const FORMATS = ["image/jpeg", "image/png"];
+
 export function PhotoInput({
   value,
   onChange,
@@ -129,8 +132,8 @@ export function PhotoInput({
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
-    if (!f.type.startsWith("image/")) return setError("Please choose an image (JPG or PNG).");
-    if (f.size > 15 * 1024 * 1024) return setError("That photo is too large (max 15 MB).");
+    if (!FORMATS.includes(f.type)) return setError("Please choose a JPG or PNG photo.");
+    if (f.size > MAX_BYTES) return setError("That photo is too large (max 3MB).");
     setBusy(true);
     setError(null);
     try {
@@ -147,8 +150,8 @@ export function PhotoInput({
 
   return (
     <div>
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={fromFile} />
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={fromFile} />
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={fromFile} />
+      <input ref={cameraRef} type="file" accept="image/jpeg,image/png" capture="environment" className="hidden" onChange={fromFile} />
       {camera && (
         <CameraCapture
           onCapture={(url) => {
@@ -187,19 +190,28 @@ export function PhotoInput({
           <Loader2 className="size-4 animate-spin" /> Processing photo…
         </div>
       ) : (
-        <div className="rounded-xl border-2 border-dashed border-zinc-300 bg-white p-3">
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={takePhoto} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-brand text-sm font-semibold text-white">
-              <Camera className="size-4" /> Take photo
+        <div>
+          {/* Red "Upload a Photo" (file picker) + grey "Take Photo" (camera), in one bar as in the SDP app. */}
+          <div className="flex h-12 w-full overflow-hidden rounded-md ring-1 ring-zinc-200">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex flex-1 items-center justify-center gap-1.5 bg-brand px-2 text-sm font-medium text-white transition hover:bg-brand-dark"
+            >
+              <CloudUpload className="size-5 shrink-0" /> <span className="whitespace-nowrap">Upload a Photo</span>
             </button>
-            <button type="button" onClick={() => fileRef.current?.click()} className="flex h-12 items-center justify-center gap-2 rounded-lg bg-zinc-100 text-sm font-semibold text-zinc-800">
-              <ImageIcon className="size-4" /> Choose photo
+            <button
+              type="button"
+              onClick={takePhoto}
+              className="flex flex-1 items-center justify-center gap-1.5 bg-zinc-100 px-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-200"
+            >
+              <Camera className="size-5 shrink-0" /> <span className="whitespace-nowrap">Take Photo</span>
             </button>
           </div>
-          <p className="mt-2 text-center text-[11px] text-zinc-400">JPG or PNG</p>
+          <p className="mt-1.5 text-xs text-zinc-500">Format Support: JPG, PNG (Max 3MB)</p>
         </div>
       )}
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-brand">{error}</p>}
     </div>
   );
 }
