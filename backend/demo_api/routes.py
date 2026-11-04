@@ -1,11 +1,14 @@
 """HTTP endpoints. Every write returns the fresh state read back from the database."""
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 
 import db
 import tools
+from calendar_utils import generate_ics
 from agents.simephony.analytics import generate_weekly_digest
 
 from . import agents, config, ai_agents, workflow
@@ -56,6 +59,30 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
 
 
 # ---------- reads ----------
+
+
+@router.get("/calendar/{case_id}.ics")
+def download_calendar_event(case_id: str):
+    """Download the currently scheduled visit or repair as an iCalendar file."""
+    try:
+        event = tools.get_calendar_event(case_id)
+    except tools.ToolError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if event is None:
+        raise HTTPException(status_code=409, detail="This case has no scheduled visit or repair.")
+    content = generate_ics(
+        event["case_id"],
+        event["summary"],
+        event["start"],
+        end=event["end"],
+        description=event["description"],
+        job=event["job"],
+    )
+    return Response(
+        content=content,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{quote(case_id, safe="")}.ics"'},
+    )
 
 
 @router.get("/state")
