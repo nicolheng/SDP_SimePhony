@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +23,7 @@ from demo_api import config  # noqa: E402
 import tools  # noqa: E402
 from demo_api import ai_agents  # noqa: E402
 from demo_api.migrate import migrate  # noqa: E402
-from demo_api.routes import router as app_router  # noqa: E402
+from demo_api.routes import MAX_BODY_BYTES, router as app_router  # noqa: E402
 
 log = logging.getLogger("simephony.startup")
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
@@ -66,6 +66,37 @@ async def _sweep_loop() -> None:
         await asyncio.sleep(SWEEP_INTERVAL_S)
 
 
+class BodySizeLimit:
+    """Reject request bodies over max_bytes with 413 before they are buffered and parsed. Checks Content-Length up
+    front and also counts the bytes as they arrive, so a chunked upload without that header is capped too."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+        self.detail = f"Request too large (max {max_bytes // (1024 * 1024)} MB)."
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        length = dict(scope["headers"]).get(b"content-length")
+        if length is not None and (not length.isdigit() or int(length) > self.max_bytes):
+            return await JSONResponse(status_code=413, content={"detail": self.detail})(scope, receive, send)
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    # An HTTPException, because FastAPI turns any other error while reading the body into a 400.
+                    raise HTTPException(status_code=413, detail=self.detail)
+            return message
+
+        await self.app(scope, limited_receive, send)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if config.write_rules_snapshot():
@@ -101,6 +132,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SimePhony API", lifespan=lifespan)
+# Added before CORS so it runs inside it: the 413 still carries CORS headers and the browser can show its message.
+app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
