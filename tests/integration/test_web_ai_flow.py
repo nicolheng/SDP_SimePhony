@@ -583,26 +583,41 @@ def _api_report(text="Water dripping from the master bedroom ceiling."):
     return response, tasks
 
 
-def test_only_mode_runs_the_agents_in_the_request(fake_llm, monkeypatch):
-    from demo_api import ai_agents
+def _run_task(tasks, fn):
+    task = next(t for t in tasks.tasks if t.func is fn)
+    task.func(*task.args, **task.kwargs)
+
+
+def test_only_mode_saves_the_report_first_then_runs_the_agents(fake_llm, monkeypatch):
+    from demo_api import workflow
     monkeypatch.setenv("USE_AI_AGENTS", "only")
     response, tasks = _api_report()
-    assert fake_llm.calls  # the models ran before the request returned
-    assert not any(t.func is ai_agents.run_background_steps for t in tasks.tasks)  # nothing left for later
-    steps = [t for t in _trace(response["caseId"]) if (t.get("data") or {}).get("model")]
-    assert steps and not any((t.get("data") or {}).get("fallback_used") for t in _trace(response["caseId"]))
+    case_id = response["caseId"]
+    assert fake_llm.calls == []  # the request returned before any model call
+    assert _case(case_id)["status"] == "SUBMITTED"
+
+    _run_task(tasks, workflow.process_new_report)
+    assert fake_llm.calls
+    assert _case(case_id)["status"] == "VISIT_SCHEDULED"
+    trace = _trace(case_id)
+    agents_with_a_model = {t.get("agent") for t in trace if (t.get("data") or {}).get("model")}
+    assert {"IntakeAgent", "TriageAgent"} <= agents_with_a_model
+    assert not any((t.get("data") or {}).get("fallback_used") for t in trace)
+    assert _messages(case_id)  # CommsAgent told the buyer
 
 
-def test_only_mode_fails_the_request_instead_of_using_the_stand_ins(fake_llm, monkeypatch):
-    from fastapi import HTTPException
-
+def test_only_mode_holds_the_report_for_review_when_an_agent_fails(fake_llm, monkeypatch):
     import db
+    from demo_api import workflow
     monkeypatch.setenv("USE_AI_AGENTS", "only")
     fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    response, tasks = _api_report()  # saving the report needs no model
+    case_id = response["caseId"]
+
+    _run_task(tasks, workflow.process_new_report)
+    assert _case(case_id)["status"] == "PENDING_REVIEW"
     with db.get_conn() as conn:
-        before = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
-    with pytest.raises(HTTPException) as err:
-        _api_report()
-    assert err.value.status_code == 400 and "IntakeAgent failed" in err.value.detail
-    with db.get_conn() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0] == before  # nothing saved
+        reason = json.loads(conn.execute("SELECT payload FROM case_events WHERE case_id = ? AND type = 'case.review_requested'",
+                                         (case_id,)).fetchone()["payload"])["message"]
+    assert "could not finish" in reason and "IntakeAgent failed" in reason
+    assert not _messages(case_id)  # no rule-based message was sent instead

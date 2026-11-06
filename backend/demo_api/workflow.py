@@ -6,6 +6,7 @@ use rule-based stand-ins and queue enabled LangGraph agents for post-commit exec
 can still run the agents inline. This module also sends buyer / technician notifications.
 """
 import json
+import logging
 import sqlite3
 
 import db
@@ -17,6 +18,7 @@ from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
 signoff_deadline = tools.signoff_deadline
+log = logging.getLogger("simephony.workflow")
 
 
 class WorkflowError(ValueError):
@@ -35,6 +37,7 @@ class Ctx:
         self.deferred_agent_steps: list[dict] = []
         self.deferred_rain_cases: list[str] = []
         self.deferred_calendar_cases: list[str] = []
+        self.deferred_reports: list[str] = []
         self.pending_agent_fallbacks: list[dict] = []
         self.pending_agent_telemetry: dict[str, dict] = {}
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
@@ -179,23 +182,71 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     if left is not None and left < 0:
         raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
                             "so new defects can no longer be reported here. Please contact the developer directly.")
+    if ctx.defer_agents and ai_agents.ai_only():
+        # USE_AI_AGENTS=only: save the report now and let the agents work after the request returns
+        # (process_new_report), so the buyer's progress screen shows each step as it really finishes.
+        non_defect = agents.intake(description, bool(photo)).get("non_defect")
+        if non_defect:
+            return {"nonDefect": non_defect}
+        case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
+        ctx.deferred_reports.append(case_id)
+        return {"caseId": case_id}
     result = ai_agents.intake(ctx, description, photo)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
     case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
     ai_agents.record_pending_fallbacks(ctx, case_id)
+    if _save_intake(ctx, case_id, result):
+        _continue_new_case(ctx, case_id)
+    return {"caseId": case_id}
+
+
+def _save_intake(ctx: Ctx, case_id: str, result: dict) -> bool:
+    """Save IntakeAgent's result on a new report. True when the case goes on to booking; False when it waits for
+    SDP review or for the buyer's answer to a follow-up question."""
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     c = load_case(ctx, case_id)
     step(ctx, case_id, "IntakeAgent", f"Category: {config.CATEGORY_LABEL.get(c['category'])} › {c['sub_category']}; location: {c['location_in_unit'] or 'missing'}; urgency: {c['urgency']}")
     if result.get("needs_human_review"):
         _route_to_human_review(ctx, case_id, result)
-        return {"caseId": case_id}
+        return False
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", f"Missing info ({', '.join(result['missing_info'])}): asking a follow-up question")
         notify_buyer(ctx, case_id, "info_needed")
-    else:
-        _continue_new_case(ctx, case_id)
-    return {"caseId": case_id}
+        return False
+    return True
+
+
+def process_new_report(case_id: str) -> None:
+    """USE_AI_AGENTS=only: the agents for a report submit_report saved, run after that request has returned.
+    IntakeAgent's result is committed on its own, then the related cases, booking and buyer message, so the
+    progress screen (3-second refresh) sees each step end. If an agent fails, the case is held for SDP review
+    with the error as the reason, instead of being left at Submitted."""
+    try:
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            c = load_case(ctx, case_id)
+            if c["status"] != "SUBMITTED":
+                return
+            result = ai_agents.intake(ctx, c["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
+            go_on = _save_intake(ctx, case_id, result)
+        if not go_on:
+            return
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            if load_case(ctx, case_id)["status"] != "SUBMITTED":
+                return  # someone acted on the case meanwhile
+            _continue_new_case(ctx, case_id)
+    except Exception as e:
+        log.exception("AI agents could not finish new report %s", case_id)
+        held = tools.flag_case_for_human_review(case_id, "AI agents", f"The AI agents could not finish this report: {e}", 0.0)
+        if held.get("ok") is False:
+            log.error("Could not hold report %s for review: %s", case_id, held.get("error"))
+    finally:
+        try:
+            tools.deliver_queued_emails()  # emails these steps queued: the request's own delivery ran before them
+        except Exception:
+            log.exception("Could not send the emails queued for report %s", case_id)
 
 
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:

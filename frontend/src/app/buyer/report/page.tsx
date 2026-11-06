@@ -170,7 +170,9 @@ function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnTyp
   const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
   return [
     { label: "Report received", state: "done" },
-    { label: "Understanding your report", state: did("IntakeAgent") ? "done" : "active" },
+    // With USE_AI_AGENTS=only the agents run after the report is saved: a case that has left SUBMITTED is past
+    // this stage even without an IntakeAgent step (e.g. held for review when the AI failed).
+    { label: "Understanding your report", state: did("IntakeAgent") || c.status !== "SUBMITTED" ? "done" : "active" },
     c.status === "INFO_NEEDED"
       ? { label: "Waiting for one more detail from you", state: "attention" }
       : review

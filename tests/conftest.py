@@ -119,7 +119,9 @@ def fake_llm(request, monkeypatch):
     if request.node.get_closest_marker("live_llm"):
         yield None
         return
-        
+    # A developer's .env (e.g. USE_AI_AGENTS=only) must not change results: tests that need agents set it themselves.
+    monkeypatch.delenv("USE_AI_AGENTS", raising=False)
+
     fake = FakeLLM()
     
     # Patch function-based modules (P2/P3/P4)

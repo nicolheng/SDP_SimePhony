@@ -7,8 +7,10 @@ USE_AI_AGENTS (.env):  "" / false = the rule-based stand-ins in agents.py only (
 Direct workflow callers run agents inline. API requests use rule-based results in their transaction and
 defer the agent computations until after commit, where each step loads current case data on a fresh
 connection. AI results do not replace the rule-based action already returned to the caller.
-With "only", API requests run every agent inline too, so the AI result is the one saved, and a failed agent
-step fails the request (nothing is saved) instead of using the stand-in. Slower: the request waits for the model.
+With "only", the AI result is the one saved, and a failed agent step is an error instead of using the stand-in.
+A new report is saved straight away and its agents run after the request (workflow.process_new_report); a
+failure there holds the case for SDP review. Other actions run their agents inline, so the request waits for
+the model, and a failure fails the request (nothing is saved).
 """
 import base64
 import logging
