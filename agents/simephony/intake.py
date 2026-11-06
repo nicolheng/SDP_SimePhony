@@ -94,6 +94,7 @@ _CATEGORY_KEYWORDS = (
     ("wall_crack", ("retak", "crack")),
     ("drainage", ("longkang", "tersumbat", "tak turun", "drain", "pooling")),
     ("tiles", ("jubin", "tile")),
+    ("sanitary_fittings", ("flush", "cistern", "pam tandas", "mangkuk tandas", "faucet")),
     ("water_leak", ("bocor", "leak", "rembes", "titis", "drip")),
     ("door_window", ("pintu", "tingkap", "door", "window")),
 )
@@ -172,6 +173,18 @@ def image_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('utf-8')}"
 
 
+_TITLE_MAX_WORDS = 10
+
+
+def _short_title(summary: str) -> str:
+    """The case title shown in lists, cards and messages: no full stop, and an over-long model answer cut at its
+    first clause ("Toilet flush button sticks after flushing and water keeps running…" -> "…after flushing")."""
+    title = summary.strip().rstrip(".").strip()
+    if len(title.split()) > _TITLE_MAX_WORDS:
+        title = re.split(r",|;| and | which | until | when ", title, maxsplit=1)[0].strip()
+    return title
+
+
 def intake_node(state: dict) -> dict:
     """P1: Parse photo + text into structured JSON aligned with rules.yaml."""
     image_content = []
@@ -216,12 +229,17 @@ def intake_node(state: dict) -> dict:
         "   - 'door' / 'window' stuck or misaligned -> 'door_window'\n"
         "   - 'retak' / 'crack on wall' -> 'wall_crack'\n"
         "   - 'spark' / 'socket' / 'wiring' -> 'electrical'\n"
+        "   - a faulty toilet flush, cistern, tap, basin or shower fitting -> 'sanitary_fittings', even when water "
+        "keeps running (that is the fitting, not a leak)\n"
         "   - 'aircond' / 'air conditioning' -> 'other'\n"
         "   Reports are often in Manglish (Malay mixed with English): bocor = leak, siling = ceiling, "
         "retak = crack, pintu = door, tingkap = window, jubin = tile, longkang = drain, "
         "bilik tidur = bedroom, bilik air / tandas = bathroom, dapur = kitchen, lagi = again. "
         "Only use 'other' when the text names none of these defects.\n"
         "   location_in_unit: the room and surface, e.g. 'bedroom ceiling'.\n"
+        "   summary: a short title for the case in English, 3 to 8 words, no full stop: the defect and where it is, "
+        "e.g. 'Hairline crack on living room wall' or 'Loose handle on second bedroom door'. "
+        "Never copy the resident's description.\n"
         "2. preliminary_outcome is 'VALID_DEFECT' for all genuine property defects.\n"
         "3. urgency triggers:\n"
         f"   - high:\n{high_triggers_str}\n"
@@ -416,11 +434,8 @@ def intake_node(state: dict) -> dict:
     elif "mismatch_detected" not in parsed_intake:
         parsed_intake["mismatch_detected"] = False
 
-    # 6. Safety rule
-    if parsed_intake.get("urgency") == "high":
-        summary = parsed_intake.get("summary", "")
-        if not summary.startswith("URGENT:"):
-            parsed_intake["summary"] = f"URGENT: {summary}".strip()
+    # The title stays plain: the app shows urgency as its own badge (and technician emails as "Urgency: high")
+    parsed_intake["summary"] = _short_title(parsed_intake.get("summary") or "")
 
     state["intake_result"] = parsed_intake
     state["missing_info"] = parsed_intake.get("missing_info", [])
