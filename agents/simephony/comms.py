@@ -6,7 +6,7 @@ from agents.telemetry import (
     record_guardrail_hit,
     tracked_chat_completion,
 )
-from .llm_client import get_client, get_models
+from .llm_client import ai_only, get_client, get_models
 from . import backend_tools
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 
@@ -324,6 +324,8 @@ def _draft(state: dict) -> str:
             ], 0.1)
             message = _clean(response.choices[0].message.content)
         except Exception:
+            if ai_only():
+                raise
             # LLM unavailable: send the fixed neutral template rather than crash the workflow.
             message = _fallback(state, template_key)
 

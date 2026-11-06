@@ -28,3 +28,7 @@ def get_client():
 
 def get_models():
     return MODEL_VL, MODEL_TEXT
+
+def ai_only():
+    """USE_AI_AGENTS=only (for testing): a failed AI step is an error, never a rule-based or fixed-template answer."""
+    return os.getenv("USE_AI_AGENTS", "").strip().lower() == "only"

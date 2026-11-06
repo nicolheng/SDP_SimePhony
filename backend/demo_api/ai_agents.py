@@ -3,9 +3,12 @@
 USE_AI_AGENTS (.env):  "" / false = the rule-based stand-ins in agents.py only (default)
                         true / all = every agent below
                         or a comma list: intake, similar, triage, estimate, verification, inspection, comms
+                        only = every agent, for testing: no rule-based stand-ins at all (see below)
 Direct workflow callers run agents inline. API requests use rule-based results in their transaction and
 defer the agent computations until after commit, where each step loads current case data on a fresh
 connection. AI results do not replace the rule-based action already returned to the caller.
+With "only", API requests run every agent inline too, so the AI result is the one saved, and a failed agent
+step fails the request (nothing is saved) instead of using the stand-in. Slower: the request waits for the model.
 """
 import base64
 import logging
@@ -16,6 +19,7 @@ from pathlib import Path
 
 import db
 import tools
+from agents.simephony.llm_client import ai_only
 from agents.telemetry import record_agent_reasoning, telemetry_payload, telemetry_scope
 
 from . import agents as standins
@@ -32,7 +36,7 @@ def enabled(name: str) -> bool:
     value = os.getenv("USE_AI_AGENTS", "").strip().lower()
     if value in ("", "0", "false", "no", "off"):
         return False
-    if value in ("1", "true", "yes", "on", "all"):
+    if value in ("1", "true", "yes", "on", "all", "only"):
         return True
     return name in {x.strip() for x in value.split(",")}
 
@@ -61,7 +65,7 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
     """Run inline, defer after commit, or use the rule-based result when disabled or unavailable."""
     if not enabled(name):
         return fallback()
-    if ctx.defer_agents:
+    if ctx.defer_agents and not ai_only():
         ctx.defer_agent_step(name, **(background_args or {}))
         return fallback()
     error = None
@@ -87,6 +91,11 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
         return result
     if error is not None:
         e = error
+        if ai_only():
+            from .workflow import WorkflowError
+            log.error("%s agent failed and USE_AI_AGENTS=only: %s", name, e)
+            raise WorkflowError(f"{_agent_label(name)} failed and USE_AI_AGENTS=only, so no rule-based answer was "
+                                f"used: {type(e).__name__}: {e}") from e
         log.warning("%s agent failed, using the stand-in: %s", name, e)
         print(f"[AI AGENTS] {name} failed, using the stand-in: {e}")
         case_id = (background_args or {}).get("case_id")

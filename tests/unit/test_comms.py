@@ -2,7 +2,7 @@
 import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
-from agents.simephony.comms import comms_node
+from agents.simephony.comms import comms_node, message_for_kind
 
 NOTIFY = "agents.simephony.backend_tools.notify_buyer"
 SENT_OK = {"ok": True, "message_id": "BM-1", "email_status": "logged, not sent"}
@@ -230,6 +230,13 @@ def test_llm_failure_sends_neutral_template(fake_llm):
     out, body = _send({"current_status": "VISIT_SCHEDULED", "case_id": "C-1"})
     assert body == NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]
     assert out["comms_result"]["message"] == body
+
+
+def test_llm_failure_is_an_error_in_only_mode(fake_llm, monkeypatch):
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    with pytest.raises(RuntimeError, match="ollama down"):
+        message_for_kind("valid", {"case_id": "C-1", "status": "VALID", "category": "water_leak"})
 
 
 def test_llm_failure_invalid_still_has_closing(fake_llm):

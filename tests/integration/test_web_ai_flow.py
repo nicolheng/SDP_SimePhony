@@ -558,8 +558,51 @@ def test_rain_keeps_rule_based_flow_when_ai_is_off(fake_llm, monkeypatch):
 
 
 @pytest.mark.parametrize("value, name, on", [("", "comms", False), ("all", "intake", True),
-                                             ("comms,triage", "triage", True), ("comms,triage", "intake", False)])
+                                             ("comms,triage", "triage", True), ("comms,triage", "intake", False),
+                                             ("only", "comms", True)])
 def test_switch_values(monkeypatch, value, name, on):
     from demo_api.ai_agents import enabled
     monkeypatch.setenv("USE_AI_AGENTS", value)
     assert enabled(name) is on
+
+
+def _api_report(text="Water dripping from the master bedroom ceiling."):
+    """POST /api/cases the way the browser sends it, with FastAPI's background tasks."""
+    from fastapi import BackgroundTasks
+    from starlette.requests import Request
+
+    import tools
+    from demo_api import routes
+    tools.get_clock()
+    request = Request({"type": "http", "method": "POST", "scheme": "http", "server": ("testserver", 80),
+                       "client": ("testclient", 123), "root_path": "", "path": "/api/cases", "query_string": b"",
+                       "headers": []})
+    tasks = BackgroundTasks()
+    response = routes.create_case(routes.NewReport(unit_id="A-1-01", buyer_id="B-0001", description=text, slot=""),
+                                  request, tasks)
+    return response, tasks
+
+
+def test_only_mode_runs_the_agents_in_the_request(fake_llm, monkeypatch):
+    from demo_api import ai_agents
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    response, tasks = _api_report()
+    assert fake_llm.calls  # the models ran before the request returned
+    assert not any(t.func is ai_agents.run_background_steps for t in tasks.tasks)  # nothing left for later
+    steps = [t for t in _trace(response["caseId"]) if (t.get("data") or {}).get("model")]
+    assert steps and not any((t.get("data") or {}).get("fallback_used") for t in _trace(response["caseId"]))
+
+
+def test_only_mode_fails_the_request_instead_of_using_the_stand_ins(fake_llm, monkeypatch):
+    from fastapi import HTTPException
+
+    import db
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    with db.get_conn() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
+    with pytest.raises(HTTPException) as err:
+        _api_report()
+    assert err.value.status_code == 400 and "IntakeAgent failed" in err.value.detail
+    with db.get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0] == before  # nothing saved

@@ -84,7 +84,7 @@ All settings live in `.env`, and [.env.example](.env.example) has the full list.
 
 | Setting | What it does |
 |---|---|
-| `USE_AI_AGENTS` | Turns the AI agents on. `true` or `all` runs every agent, `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. |
+| `USE_AI_AGENTS` | Turns the AI agents on. `true` or `all` runs every agent, `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. `only` is for testing: every agent runs during the request so its answer is the one saved, and a failed AI step shows an error instead of using the rule-based stand-ins. Each click then waits for the model. |
 | `LLM_BASE_URL`, `LLM_API_KEY` | The AI server. Defaults to local Ollama. |
 | `MODEL_TEXT`, `MODEL_VL` | The text and vision models. Changing a model only needs this `.env` edit. |
 | `LLM_TIMEOUT_TEXT`, `LLM_TIMEOUT_VISION` | Seconds to wait per attempt before retrying once, then falling back to the rules. Raise these if a slow laptop falls back on normal runs. |
