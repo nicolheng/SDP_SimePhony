@@ -604,6 +604,28 @@ def test_only_mode_saves_the_report_first_then_runs_the_agents(fake_llm, monkeyp
     assert {"IntakeAgent", "TriageAgent"} <= agents_with_a_model
     assert not any((t.get("data") or {}).get("fallback_used") for t in trace)
     assert _messages(case_id)  # CommsAgent told the buyer
+    order = [t.get("agent") for t in trace]
+    assert order.index("TriageAgent") < order.index("SimilarDefectAgent")  # booked first, related cases after
+
+
+def test_only_mode_keeps_the_booking_when_similar_cases_fail(fake_llm, monkeypatch):
+    from demo_api import workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    answer = fake_llm.client.chat.completions.create.side_effect
+
+    def create(**kwargs):
+        if "defect analysis expert" in json.dumps(kwargs.get("messages")):
+            raise RuntimeError("similar model down")
+        return answer(**kwargs)
+
+    fake_llm.client.chat.completions.create.side_effect = create
+    response, tasks = _api_report()
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    c = _case(case_id)
+    assert c["status"] == "VISIT_SCHEDULED" and c["technician_id"]  # not held for review, visit kept
+    assert any(t.get("agent") == "SimilarDefectAgent" and t["message"].startswith("Could not link related cases")
+               for t in _trace(case_id))
 
 
 def test_only_mode_holds_the_report_for_review_when_an_agent_fails(fake_llm, monkeypatch):

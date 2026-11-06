@@ -219,9 +219,10 @@ def _save_intake(ctx: Ctx, case_id: str, result: dict) -> bool:
 
 def process_new_report(case_id: str) -> None:
     """USE_AI_AGENTS=only: the agents for a report submit_report saved, run after that request has returned.
-    IntakeAgent's result is committed on its own, then the related cases, booking and buyer message, so the
-    progress screen (3-second refresh) sees each step end. If an agent fails, the case is held for SDP review
-    with the error as the reason, instead of being left at Submitted."""
+    IntakeAgent's result is committed on its own, then the booking and buyer message, then the related cases,
+    so the progress screen (3-second refresh) sees each step end. SimilarDefectAgent comes last because only the
+    case page shows its links: the buyer's visit is booked about 7 s sooner. If intake or booking fails, the case
+    is held for SDP review with the error as the reason, instead of being left at Submitted."""
     try:
         with db.get_conn() as conn:
             ctx = Ctx(conn)
@@ -236,17 +237,33 @@ def process_new_report(case_id: str) -> None:
             ctx = Ctx(conn)
             if load_case(ctx, case_id)["status"] != "SUBMITTED":
                 return  # someone acted on the case meanwhile
-            _continue_new_case(ctx, case_id)
+            _book_new_case(ctx, case_id)
     except Exception as e:
         log.exception("AI agents could not finish new report %s", case_id)
         held = tools.flag_case_for_human_review(case_id, "AI agents", f"The AI agents could not finish this report: {e}", 0.0)
         if held.get("ok") is False:
             log.error("Could not hold report %s for review: %s", case_id, held.get("error"))
+        return
     finally:
-        try:
-            tools.deliver_queued_emails()  # emails these steps queued: the request's own delivery ran before them
-        except Exception:
-            log.exception("Could not send the emails queued for report %s", case_id)
+        _send_queued_emails(case_id)
+    try:
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            if load_case(ctx, case_id)["status"] in ("CLOSED", "INVALID"):
+                return
+            _link_similar_cases(ctx, case_id)
+    except Exception as e:
+        # The visit is already booked: a failed link must not hold the case and release it.
+        log.exception("SimilarDefectAgent could not link related cases for report %s", case_id)
+        tools.log_agent_step(case_id, "SimilarDefectAgent", f"Could not link related cases: {e}")
+
+
+def _send_queued_emails(case_id: str) -> None:
+    """Send the emails a background step queued: the request's own delivery ran before it."""
+    try:
+        tools.deliver_queued_emails()
+    except Exception:
+        log.exception("Could not send the emails queued for report %s", case_id)
 
 
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:
@@ -272,9 +289,14 @@ def _accept_answer(result: dict, answer: str) -> dict:
 
 
 def _continue_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
-    """SimilarDefectAgent then TriageAgent: link related cases and book the inspection visit, at the buyer's
-    chosen time (kept in preferred_visit_at) if a technician is free then. On the 3rd occurrence in the unit
-    or a stack cluster, SDP is also asked for an extra inspection; the visit still goes ahead (keep_status)."""
+    """SimilarDefectAgent then TriageAgent: link related cases and book the inspection visit."""
+    _link_similar_cases(ctx, case_id)
+    _book_new_case(ctx, case_id, reviewed)
+
+
+def _link_similar_cases(ctx: Ctx, case_id: str) -> None:
+    """SimilarDefectAgent: save the related cases shown on the case page. Escalation does not read these links:
+    tools.check_escalation counts from the cases themselves, so booking can come first (process_new_report)."""
     c = load_case(ctx, case_id)
     sim = ai_agents.similar(ctx, c)
     _tool(ctx, tools.save_similar_cases, case_id, [{"related_case_id": r["case_id"], "reason": r["reason"]} for r in sim["refs"]], sim["occurrence"])
@@ -283,6 +305,12 @@ def _continue_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
          if sim["refs"] else "No related cases: treated as a new defect")
     if sim.get("cluster_reason") and sim["refs"]:
         step(ctx, case_id, "SimilarDefectAgent", sim["cluster_reason"])
+
+
+def _book_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
+    """TriageAgent: book the inspection visit, at the buyer's chosen time (kept in preferred_visit_at) if a
+    technician is free then. On the 3rd occurrence in the unit or a stack cluster, SDP is also asked for an
+    extra inspection; the visit still goes ahead (keep_status)."""
     c = load_case(ctx, case_id)
     preferred = _bookable(ctx, c["preferred_visit_at"])
     t = agents.triage(ctx, c, preferred) if reviewed else ai_agents.triage(ctx, c, preferred)

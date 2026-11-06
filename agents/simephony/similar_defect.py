@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 # Direct import from the real backend tools (no stub fallback — tools.py is ready).
 from tools import find_similar_cases
 
-from .llm_client import client, MODEL_TEXT
+from .llm_client import ai_only, client, MODEL_TEXT
 from .structured_output import StructuredOutputError, chat_json
 from agents.telemetry import record_agent_reasoning, record_confidence_score, record_llm_telemetry
 
@@ -108,9 +108,9 @@ def similar_defect_node(state: dict) -> dict:
             confidence_score=confidence_score,
         )
         ai_reason = parsed.get("reasoning") or parsed.get("cluster_reason")
-    except StructuredOutputError:
-        ai_reason = "System detected multiple past cases in the database."
-    except Exception:
+    except Exception:  # StructuredOutputError included
+        if ai_only():
+            raise
         ai_reason = "System detected multiple past cases in the database."
 
     # Force Python-Level Fallbacks (Crucial)
