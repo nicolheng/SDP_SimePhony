@@ -202,6 +202,7 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
     state: i < revealed ? st.state : i === revealed ? (st.state === "attention" || (settled && st.state === "todo") ? st.state : "active") : "todo",
   }));
   const review = c.status === "PENDING_REVIEW";
+  const understood = stages[1]?.state === "done";
   const tech = getTechnician(c.technicianId);
 
 
@@ -232,7 +233,16 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </ol>
         </Section>
 
-        {settled && (
+        {/* Each card appears with its stage: the assessment once "Understanding your report" is ticked (with
+            USE_AI_AGENTS=only that is when IntakeAgent finishes), while the booking is still being found below. */}
+        {!understood && (
+          <Section>
+            <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-100" />
+            <div className="mt-2 h-3 w-2/5 animate-pulse rounded bg-zinc-100" />
+          </Section>
+        )}
+
+        {understood && (
           <Section title="Defect Assessment">
             <div className="flex items-center gap-2">
               <Sparkles className="size-4 text-brand" />
@@ -256,6 +266,14 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
             <p className="text-sm font-semibold text-amber-800">One more question</p>
             <p className="mt-1 text-sm text-zinc-700">{c.followUpQuestion}</p>
             <FollowUpForm caseId={c.id} />
+          </Section>
+        )}
+
+        {understood && !settled && c.status !== "INFO_NEEDED" && !review && (
+          <Section title="Scheduled Inspection">
+            <p className="flex items-center gap-2 text-sm text-zinc-500">
+              <Loader2 className="size-4 shrink-0 animate-spin text-zinc-400" /> Finding a technician for your visit…
+            </p>
           </Section>
         )}
 
