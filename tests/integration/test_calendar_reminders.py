@@ -67,6 +67,7 @@ def test_booking_emails_include_calendar_link_but_in_app_message_does_not(monkey
     import db
     import tools
 
+    monkeypatch.setattr(tools, "_smtp_send", lambda *a, **kw: None)
     _schedule()
     monkeypatch.setenv("API_BASE_URL", "https://demo.example.test/")
     tools.notify_buyer("C-0009", "Visit confirmed", "Your visit is confirmed.")

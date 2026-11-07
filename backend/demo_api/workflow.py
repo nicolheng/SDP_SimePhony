@@ -34,6 +34,7 @@ class Ctx:
         self.defer_agents = defer_agents
         self.deferred_agent_steps: list[dict] = []
         self.deferred_rain_cases: list[str] = []
+        self.deferred_calendar_cases: list[str] = []
         self.pending_agent_fallbacks: list[dict] = []
         self.pending_agent_telemetry: dict[str, dict] = {}
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
@@ -109,6 +110,13 @@ def _tool(ctx: Ctx, fn, *args, **kwargs):
     ctx.invalidate()
     if isinstance(result, dict) and result.get("ok") is False:
         raise WorkflowError(result["error"])
+    if fn in (tools.assign_technician, tools.book_repair, tools.reassign_job):
+        case_id = args[0] if args else kwargs.get("case_id")
+        if case_id:
+            from calendar_service import is_configured
+
+            if is_configured() and case_id not in ctx.deferred_calendar_cases:
+                ctx.deferred_calendar_cases.append(case_id)
     return result
 
 
@@ -540,5 +548,9 @@ def process_rain_agents(case_id: str) -> None:
             _tool(ctx, tools.assign_technician, case_id, triage_result["technician_id"],
                   triage_result["slot"], triage_result["reason"])
             step(ctx, case_id, "TriageAgent", triage_result["reason"])
+        for booked_case_id in ctx.deferred_calendar_cases:
+            from calendar_service import create_booking_invitation
+
+            create_booking_invitation(booked_case_id)
     except Exception:
         log.exception("Could not complete the AI workflow for rain report %s", case_id)

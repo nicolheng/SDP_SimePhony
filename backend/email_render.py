@@ -34,6 +34,7 @@ CASE_LINK = {
 
 _CASE_PREFIX = re.compile(r"^\[([A-Z]+-\d+)\]\s*(.+)$")
 _URL = re.compile(r"(https?://[^\s<]+)")
+_CALENDAR_URL = re.compile(r"Add to Calendar:\s*(https?://[^\s<]+)")
 
 
 def subject_line(subject: str) -> str:
@@ -75,15 +76,25 @@ def render(subject: str, body: str, *, to: str, name: Optional[str] = None, role
 
 
 def _paragraph(text: str) -> str:
-    """One body paragraph as HTML: escaped, line breaks kept, links clickable."""
-    escaped = html.escape(text).replace("\n", "<br>")
-    return _URL.sub(lambda m: f'<a href="{m.group(1)}" style="color:{BRAND}">{m.group(1)}</a>', escaped)
+    """One body paragraph as HTML: escaped, line breaks kept, links clickable.
+    The old 'Add to Calendar' link is omitted from the HTML body since the native
+    calendar invite banner handles this automatically."""
+    cleaned = _CALENDAR_URL.sub("", text).strip()
+    if not cleaned:
+        return ""
+    escaped = html.escape(cleaned).replace("\n", "<br>")
+    escaped = _URL.sub(lambda m: f'<a href="{m.group(1)}" style="color:{BRAND}">{m.group(1)}</a>', escaped)
+    return escaped
 
 
 def _html(greeting: str, body: str, details: list[tuple[str, str]], link: Optional[tuple[str, str]],
           signoff: str, footer: list[str]) -> str:
     e = html.escape
-    paragraphs = "".join(f'<p style="margin:0 0 14px">{_paragraph(p)}</p>' for p in re.split(r"\n\s*\n", body.strip()) if p.strip())
+    paragraphs = "".join(
+        f'<p style="margin:0 0 14px">{p_html}</p>'
+        for p in re.split(r"\n\s*\n", body.strip())
+        if (p_html := _paragraph(p))
+    )
     rows = "".join(
         f'<tr><td style="padding:6px 12px;color:#71717a;width:80px">{e(k)}</td>'
         f'<td style="padding:6px 12px;color:#18181b;font-weight:600">{e(v)}</td></tr>' for k, v in details)
