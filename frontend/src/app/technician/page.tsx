@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { BrandMark, TechAvatar } from "@/components/brand";
 import { QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
-import { StatusBadge } from "@/components/status-badge";
-import { dayKey, fmtDateTime, fmtDay, fmtTime } from "@/lib/dates";
+import { dayKey, fmtDay, fmtTime } from "@/lib/dates";
 import { isOpen, TECH_TODO } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import { jobSlot, useMyJobs } from "./use-my-jobs";
@@ -67,27 +66,6 @@ export default function TechnicianHome() {
               </span>
               <ChevronRight className="size-4 text-amber-700" />
             </Link>
-          )}
-          <ul className="mt-3 divide-y divide-zinc-100">
-            {todo.slice(0, 3).map((c) => (
-              <li key={c.id}>
-                <Link href={`/technician/jobs/${c.id}`} className="flex items-center gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{c.summary}</p>
-                    <p className="text-xs text-zinc-500">
-                      {c.id} · {c.unitId} · {fmtDateTime(jobSlot(c))}
-                    </p>
-                  </div>
-                  <StatusBadge status={c.status} />
-                  <ChevronRight className="size-4 text-zinc-400" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {todo.length === 0 && (
-            <div className="mt-3 rounded-2xl border border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-500">
-              No upcoming jobs.
-            </div>
           )}
         </section>
       </div>

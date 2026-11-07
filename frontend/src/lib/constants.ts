@@ -68,6 +68,12 @@ export const DEMO_BUYER: Buyer = {
 
 let buyerById = new Map<string, Buyer>();
 export const getBuyer = (id?: string) => (id ? buyerById.get(id) : undefined);
+/** Units registered to this buyer (same buyer id or same e-mail in the buyers table); the backend only accepts
+ *  reports for a unit the buyer owns. */
+export const buyerUnits = (b: Buyer): string[] => {
+  const units = [...buyerById.values()].filter((x) => x.id === b.id || x.email === b.email).map((x) => x.unitId);
+  return [...new Set([b.unitId, ...units])];
+};
 
 // In-house technicians: inspection visits and minor repairs.
 export let TECHNICIANS: Technician[] = [

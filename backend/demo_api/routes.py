@@ -1,5 +1,5 @@
 """HTTP endpoints. Every write returns the fresh state read back from the database."""
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -17,6 +17,15 @@ from .state import build_state
 from .workflow import Ctx, WorkflowError
 
 router = APIRouter(prefix="/api", tags=["app"])
+
+UPLOADED_IMAGE = r"^data:image/(png|jpe?g|webp);base64,"
+MAX_PHOTO_CHARS = 4 * -(-tools.MAX_PHOTO_BYTES // 3) + 64
+MAX_BODY_BYTES = MAX_PHOTO_CHARS + 64 * 1024
+
+Photo = Annotated[str, Field(max_length=MAX_PHOTO_CHARS, pattern=UPLOADED_IMAGE)]
+RecordId = Annotated[str, Field(min_length=1, max_length=64)]  # unit, buyer, technician ids
+Timestamp = Annotated[str, Field(max_length=64)]  # ISO date-time picked from a slot list
+Text = Annotated[str, Field(max_length=500)]
 
 
 def _base(request: Request) -> str:
@@ -135,11 +144,11 @@ def repair_options(case_id: str):
 
 
 class NewReport(BaseModel):
-    unit_id: str
-    buyer_id: str
+    unit_id: RecordId
+    buyer_id: RecordId
     description: str = Field(min_length=1, max_length=500)
-    photo: str | None = None  # data URL
-    slot: str
+    photo: Photo | None = None
+    slot: Timestamp
 
 
 @router.post("/cases")
@@ -148,14 +157,10 @@ def create_case(body: NewReport, request: Request, background_tasks: BackgroundT
                 background_tasks=background_tasks)
 
 
-# Images uploaded from the browser only: tools._save_photo also takes server file paths, which a client must not name.
-UPLOADED_IMAGE = r"^data:image/(png|jpe?g|webp);base64,"
-
-
 class FollowUp(BaseModel):
     answer: str = Field(min_length=1, max_length=500)
-    slot: str | None = None
-    photo: str | None = Field(default=None, pattern=UPLOADED_IMAGE)  # data URL
+    slot: Timestamp | None = None
+    photo: Photo | None = None
 
 
 @router.post("/cases/{case_id}/follow-up")
@@ -165,7 +170,7 @@ def follow_up(case_id: str, body: FollowUp, request: Request, background_tasks: 
 
 
 class RepairBooking(BaseModel):
-    start: str
+    start: Timestamp
 
 
 @router.post("/cases/{case_id}/repair-booking")
@@ -175,8 +180,8 @@ def repair_booking(case_id: str, body: RepairBooking, request: Request, backgrou
 
 class Verification(BaseModel):
     result: Literal["FIXED", "NOT_FIXED", "CANNOT_VERIFY"]
-    note: str = ""
-    photo: str | None = None
+    note: Text = ""
+    photo: Photo | None = None
 
 
 @router.post("/cases/{case_id}/verification")
@@ -197,8 +202,8 @@ def rating(case_id: str, body: Rating, request: Request):
 
 
 class Reopen(BaseModel):
-    description: str = ""
-    photo: str
+    description: Text = ""
+    photo: Photo
 
 
 @router.post("/cases/{case_id}/reopen")
@@ -212,7 +217,7 @@ def reopen(case_id: str, body: Reopen, request: Request, background_tasks: Backg
 class Verdict(BaseModel):
     outcome: Literal["VALID", "INVALID"]
     note: str = Field(min_length=1, max_length=500)
-    photo: str | None = None
+    photo: Photo | None = None
 
 
 @router.post("/cases/{case_id}/verdict")
@@ -223,7 +228,7 @@ def verdict(case_id: str, body: Verdict, request: Request, background_tasks: Bac
 
 class Repaired(BaseModel):
     note: str = Field(min_length=1, max_length=500)
-    photo: str | None = None
+    photo: Photo | None = None
 
 
 @router.post("/cases/{case_id}/repaired")
@@ -232,7 +237,7 @@ def repaired(case_id: str, body: Repaired, request: Request, background_tasks: B
 
 
 class Worker(BaseModel):
-    technician_id: str
+    technician_id: RecordId
 
 
 @router.post("/cases/{case_id}/accept")
@@ -241,7 +246,7 @@ def accept(case_id: str, body: Worker, request: Request, background_tasks: Backg
 
 
 class HandOver(BaseModel):
-    technician_id: str
+    technician_id: RecordId
     reason: str = Field(min_length=1, max_length=300)
 
 

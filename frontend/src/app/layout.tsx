@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { DataGate } from "@/components/data-gate";
+import { EmbedMarker } from "@/components/embed-marker";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         {children}
         <DataGate />
+        <EmbedMarker />
         <Toaster position="top-center" richColors />
       </body>
     </html>

@@ -56,6 +56,7 @@ export async function apiAction<T extends object = object>(path: string, payload
   if (!state) throw new Error("The backend is offline, so the app is read-only. Start the backend and try again.");
   const r = await apiFetch<T & { state: DemoState }>(path, { method: "POST", body: payload === undefined ? undefined : JSON.stringify(payload) });
   setState(r.state);
+  announce();
   return r;
 }
 
@@ -82,9 +83,21 @@ export async function refresh() {
   }
 }
 
+// Other tabs and frames (e.g. the /split side-by-side view) refresh as soon as this one changes something.
+let channel: BroadcastChannel | null = null;
+function announce() {
+  try {
+    channel?.postMessage("changed");
+  } catch {}
+}
+
 function start() {
   if (started || typeof window === "undefined") return;
   started = true;
+  try {
+    channel = new BroadcastChannel("simephony-state");
+    channel.onmessage = () => void refresh();
+  } catch {}
   void refresh();
   setInterval(() => {
     if (document.visibilityState === "visible") void refresh();

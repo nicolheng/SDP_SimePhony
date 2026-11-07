@@ -6,20 +6,31 @@ import { Suspense, type ReactNode } from "react";
 import { useOffline } from "@/lib/store";
 import { PHONE_SCREEN_ID } from "./overlay";
 import { cn } from "@/lib/utils";
+import { useEmbedded } from "./embed-marker";
 import { RoleSwitcher } from "./role-switcher";
 
 const OFFLINE_HINT = "The backend is offline, so the app is read-only.";
 
 /** Phone-sized frame: full screen on phones, a device mock-up on desktop. */
 export function MobileFrame({ role, nav, children }: { role: string; nav: ReactNode; children: ReactNode }) {
+  // In the /split side-by-side view the outer page draws the phone and labels it, so the role bar is left out.
+  const embedded = useEmbedded();
   return (
-    <div className="flex h-dvh flex-1 flex-col items-center bg-zinc-200 md:h-auto md:min-h-dvh md:py-6">
-      <div className="flex w-full max-w-[420px] shrink-0 items-center justify-between gap-3 px-3 py-2 text-xs text-zinc-600 md:px-2 md:pb-3 md:pt-0">
-        <Suspense fallback={<div className="h-8 w-52" />}>
-          <RoleSwitcher className="w-52" />
-        </Suspense>
-        <span className="hidden md:inline">{role} View (Mobile)</span>
-      </div>
+    <div
+      className={cn(
+        "flex flex-col items-center bg-zinc-200",
+        // Embedded: exactly the phone's height, so the screen below scrolls inside itself (the page can't scroll).
+        embedded ? "h-dvh max-h-dvh min-h-0 flex-none overflow-hidden" : "h-dvh flex-1 md:h-auto md:min-h-dvh md:py-6",
+      )}
+    >
+      {!embedded && (
+        <div className="flex w-full max-w-[420px] shrink-0 items-center justify-between gap-3 px-3 py-2 text-xs text-zinc-600 md:px-2 md:pb-3 md:pt-0">
+          <Suspense fallback={<div className="h-8 w-52" />}>
+            <RoleSwitcher className="w-52" />
+          </Suspense>
+          <span className="hidden md:inline">{role} View (Mobile)</span>
+        </div>
+      )}
       <div id={PHONE_SCREEN_ID} className="relative flex min-h-0 w-full max-w-[420px] flex-1 flex-col overflow-hidden bg-white md:h-[860px] md:flex-none md:rounded-[2.5rem] md:border-[10px] md:border-zinc-900 md:shadow-2xl">
         <OfflineBanner />
         <div className="no-scrollbar flex-1 overflow-y-auto">{children}</div>
@@ -159,7 +170,17 @@ export function BottomNav({ items }: { items: NavItem[] }) {
 export function Section({ title, children, className }: { title?: string; children: ReactNode; className?: string }) {
   return (
     <section className={cn("rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200/70", className)}>
-      {title && <h2 className="mb-3 text-sm font-semibold text-zinc-900">{title}</h2>}
+      {title && (
+        <h2 className="mb-3 text-sm font-semibold text-zinc-900">
+          {title.endsWith(" *") ? (
+            <>
+              {title.slice(0, -2)} <span className="text-brand">*</span>
+            </>
+          ) : (
+            title
+          )}
+        </h2>
+      )}
       {children}
     </section>
   );

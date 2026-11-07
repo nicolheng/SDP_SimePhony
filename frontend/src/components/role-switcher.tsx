@@ -7,6 +7,7 @@ const ROLES = [
   { href: "/sdp", label: "Sime Darby Property Staff" },
   { href: "/buyer", label: "Buyer" },
   { href: "/technician", label: "Technician / Subcontractor" },
+  { href: "/split", label: "Buyer + Technician (side by side)" },
 ];
 
 /** Demo role picker shown on every view. */
@@ -19,7 +20,10 @@ export function RoleSwitcher({ dark, className }: { dark?: boolean; className?: 
       <Users className={cn("pointer-events-none absolute left-2.5 size-3.5", dark ? "text-zinc-400" : "text-zinc-500")} />
       <select
         value={current}
-        onChange={(e) => router.push(e.target.value)}
+        onChange={(e) => {
+          if (e.target.value === "/split" && window.top && window.top !== window) window.top.location.href = "/split";
+          else router.push(e.target.value);
+        }}
         aria-label="Switch role"
         className={cn(
           "h-8 w-full appearance-none rounded-lg pl-8 pr-8 text-xs font-medium outline-none",

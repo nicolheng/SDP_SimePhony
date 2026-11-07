@@ -258,7 +258,7 @@ export function JobDetail() {
                 </p>
                 <PhotoInput value={photo} onChange={setPhoto} />
                 <p className="mb-1.5 mt-4 text-xs font-medium text-zinc-500">
-                  2. Findings *
+                  2. Findings <span className="text-brand">*</span>
                 </p>
                 <textarea
                   value={note}
@@ -272,7 +272,7 @@ export function JobDetail() {
                   {note.length} / 500
                 </p>
                 <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">
-                  3. Defect validity *
+                  3. Defect validity <span className="text-brand">*</span>
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -313,7 +313,7 @@ export function JobDetail() {
                 </p>
                 <PhotoInput value={photo} onChange={setPhoto} />
                 <p className="mb-1.5 mt-4 text-xs font-medium text-zinc-500">
-                  2. Description of repair works *
+                  2. Description of repair works <span className="text-brand">*</span>
                 </p>
                 <textarea
                   value={note}

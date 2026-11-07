@@ -3,6 +3,7 @@ import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Sparkles 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AssetPicker } from "@/components/asset-picker";
 import { TechAvatar } from "@/components/brand";
 import { useCase, useCaseEvents } from "@/components/case-views";
 import { FollowUpForm } from "@/components/follow-up-form";
@@ -14,6 +15,7 @@ import { UrgencyBadge } from "@/components/status-badge";
 import { fetchVisitSlots, submitReport } from "@/lib/api";
 import { DEMO_BUYER, getTechnician, getUnit, PROJECT_NAME } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
+import { setBuyerUnit, useBuyerUnit } from "@/lib/session";
 import { useDemo } from "@/lib/store";
 import type { Category, Urgency } from "@/lib/types";
 
@@ -60,8 +62,11 @@ export default function ReportDefect() {
   const [busy, setBusy] = useState(false);
   const [caseId, setCaseId] = useState<string | null>(null);
   const [nonDefect, setNonDefect] = useState<string | null>(null);
+  // The asset (unit) this report is for; the buyer can switch to another property registered to them.
+  const unitId = useBuyerUnit();
+  const [picking, setPicking] = useState(false);
   // Defects can be reported until the unit's defect liability period ends (the backend refuses after).
-  const dlpEnd = getUnit(DEMO_BUYER.unitId).dlpExpiry;
+  const dlpEnd = getUnit(unitId).dlpExpiry;
   const dlpOver = !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
 
   async function submit() {
@@ -69,7 +74,7 @@ export default function ReportDefect() {
     setBusy(true);
     setNonDefect(null);
     try {
-      const r = await submitReport({ description: text.trim(), photoUrl: photo, slot, unitId: DEMO_BUYER.unitId, buyerId: DEMO_BUYER.id }, setCaseId);
+      const r = await submitReport({ description: text.trim(), photoUrl: photo, slot, unitId, buyerId: DEMO_BUYER.id }, setCaseId);
       if (r.nonDefect) setNonDefect(r.nonDefect);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not submit. Please try again.");
@@ -90,10 +95,22 @@ export default function ReportDefect() {
         <BuildingBanner />
       </div>
       <div className="relative mx-4 -mt-10 rounded-2xl bg-white p-4 shadow-md ring-1 ring-zinc-200">
-        <p className="text-lg font-semibold">{PROJECT_NAME}</p>
-        <p className="text-sm text-zinc-500">
-          Unit {DEMO_BUYER.unitId} · {DEMO_BUYER.name}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="whitespace-nowrap text-lg font-semibold">{PROJECT_NAME}</p>
+            <p className="text-sm text-zinc-500">
+              Unit {unitId} · {DEMO_BUYER.name}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
+            className="shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-semibold text-brand ring-1 ring-brand/40 hover:bg-red-50"
+          >
+            Select Another Asset
+          </button>
+        </div>
+        {picking && <AssetPicker value={unitId} onPick={setBuyerUnit} onClose={() => setPicking(false)} />}
         {dlpOver && (
           <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
             Your Defect Liability Period ended on {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be reported in the app. Please contact the developer.
