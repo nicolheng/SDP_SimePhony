@@ -110,6 +110,13 @@ class FakeLLM:
         return DEFAULT_RESPONSE
 
 
+@pytest.fixture(autouse=True)
+def _no_real_calendar_events(monkeypatch):
+    """A developer's .env (GOOGLE_CALENDAR_CREATE_EVENT=true plus a signed-in token.json) must never put test
+    bookings into their real Google Calendar. Calendar tests turn it back on with fake credentials."""
+    monkeypatch.setenv("GOOGLE_CALENDAR_CREATE_EVENT", "false")
+
+
 # ---------------------------------------------------------------------------
 # Global LLM Mock Fixture
 # ---------------------------------------------------------------------------
