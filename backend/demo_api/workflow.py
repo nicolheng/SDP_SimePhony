@@ -247,6 +247,14 @@ def process_new_report(case_id: str) -> None:
     finally:
         _send_queued_emails(case_id)
     try:
+        # The booking's calendar invitation (GOOGLE_CALENDAR_CREATE_EVENT): routes.py only sends the request's own
+        for booked_case_id in ctx.deferred_calendar_cases:
+            from calendar_service import create_booking_invitation
+
+            create_booking_invitation(booked_case_id)
+    except Exception:
+        log.exception("Could not send the calendar invitation for report %s", case_id)
+    try:
         with db.get_conn() as conn:
             ctx = Ctx(conn)
             if load_case(ctx, case_id)["status"] in ("CLOSED", "INVALID"):
