@@ -138,7 +138,9 @@ export function JobDetail() {
         <div className="p-6 text-center">
           <Lock className="mx-auto size-10 text-zinc-300" />
           <p className="mt-3 text-sm text-zinc-600">
-            This job is assigned to another technician.
+            {c.status === "PENDING_REVIEW"
+              ? "This booking was cancelled while SDP staff review the case. You'll be notified if it is booked with you again."
+              : "This job is assigned to another technician."}
           </p>
           <Link
             href="/technician/jobs"

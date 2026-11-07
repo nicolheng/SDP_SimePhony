@@ -153,9 +153,12 @@ def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, mes
         merged["confidence_score"] = confidence
 
         reasoning = merged.get("reasoning")
+        # A step whose model ran is the AI's work: label it so, not as a rule-based assessment.
+        default_rule = (f"{agent or 'Agent'} AI assessment ({merged['model']})" if merged.get("model")
+                        else f"Rule-based {agent or 'agent'} assessment")
         if reasoning is None:
             reasoning = {
-                "matched_rule": f"Rule-based {agent or 'agent'} assessment",
+                "matched_rule": default_rule,
                 "evidence": message,
                 "related_cases": [],
             }
@@ -167,7 +170,7 @@ def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, mes
             }
         elif isinstance(reasoning, dict):
             if not reasoning.get("matched_rule") and not reasoning.get("evidence"):
-                reasoning["matched_rule"] = f"Rule-based {agent or 'agent'} assessment"
+                reasoning["matched_rule"] = default_rule
                 reasoning["evidence"] = message
         merged["reasoning"] = reasoning
 
@@ -1185,9 +1188,14 @@ def flag_case_for_human_review(case_id: str, step: str, reason: str, confidence_
             return {"ok": True, "status": "PENDING_REVIEW"}
         if case["status"] in ("CLOSED", "INVALID"):
             raise ToolError(f"Cannot route case {case_id} to review after it is {case['status']}")
-        _release(conn, case_id, "visit")
-        _release(conn, case_id, "repair")
-        _save(conn, case_id, status="PENDING_REVIEW", technician_id=None, booking_status=None)
+        if case["status"] in ("VISIT_SCHEDULED", "EXTRA_INSPECTION", "REPAIR_BOOKED"):
+            # A job not done yet: cancel it, so the time is free and SDP's decision rebooks it.
+            _release(conn, case_id, "visit")
+            _release(conn, case_id, "repair")
+            _save(conn, case_id, status="PENDING_REVIEW", technician_id=None, booking_status=None)
+        else:
+            # Work already done (e.g. a held repair check): the technician keeps the job while SDP reviews it.
+            _save(conn, case_id, status="PENDING_REVIEW")
         _emit(
             conn,
             case_id,
