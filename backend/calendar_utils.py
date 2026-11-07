@@ -46,6 +46,8 @@ def generate_ics(
     end: str | None = None,
     description: str = "",
     job: str = "Inspection Visit",
+    organizer: str | None = None,
+    attendees: list[str] | None = None,
 ) -> str:
     start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
     if start_dt.tzinfo is None:
@@ -56,9 +58,10 @@ def generate_ics(
     title = summary or f"SDP {job} - Case {case_id}"
     lines = [
         "BEGIN:VCALENDAR",
-        "VERSION:2.0",
         "PRODID:-//SimePhony//SDP Calendar//EN",
+        "VERSION:2.0",
         "CALSCALE:GREGORIAN",
+        "METHOD:REQUEST",
         "BEGIN:VEVENT",
         f"UID:{quote(case_id, safe='')}-{quote(job, safe='')}@simephony",
         f"DTSTAMP:{now}",
@@ -66,9 +69,18 @@ def generate_ics(
         f"DTEND:{_utc_stamp(end)}",
         f"SUMMARY:{_escape(title)}",
         f"DESCRIPTION:{_escape(description)}",
+    ]
+    if organizer:
+        lines.append(f"ORGANIZER:{organizer}")
+    if attendees:
+        for att in attendees:
+            lines.append(f"ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{att}")
+    lines.extend([
+        "STATUS:CONFIRMED",
+        "SEQUENCE:0",
         "END:VEVENT",
         "END:VCALENDAR",
-    ]
+    ])
     return "\r\n".join(part for line in lines for part in _fold(line)) + "\r\n"
 
 

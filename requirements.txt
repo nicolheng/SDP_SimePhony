@@ -10,6 +10,9 @@ uvicorn[standard]
 python-dotenv
 python-multipart
 pyyaml
+google-api-python-client
+google-auth
+google-auth-oauthlib
 
 # Data & Embeddings
 numpy

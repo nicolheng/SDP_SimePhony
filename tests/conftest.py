@@ -198,11 +198,16 @@ def seed_db(tmp_path, monkeypatch):
         sys.path.insert(0, backend)
     import db
     import tools
+    import calendar_service
 
+    monkeypatch.delenv("EMAIL_REDIRECT_TO", raising=False)
+    monkeypatch.delenv("GOOGLE_CALENDAR_ID", raising=False)
     path = tmp_path / "seed_copy.db"
     shutil.copyfile(os.path.join(_ROOT, "data", "seed.db"), path)
     monkeypatch.setattr(db, "DB_PATH", path)
     monkeypatch.setattr(tools, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(calendar_service, "TOKEN_FILE", tmp_path / "token.json")
+    monkeypatch.setattr(calendar_service, "OAUTH_CREDENTIALS_FILE", tmp_path / "oauth-credentials.json")
     monkeypatch.setenv("EMAIL_ENABLED", "false")
     monkeypatch.setenv("EMBEDDINGS_ENABLED", "false")
     return path

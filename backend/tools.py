@@ -30,6 +30,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from email.message import EmailMessage
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
 from typing import Optional
@@ -276,6 +279,22 @@ def _calendar_email_body(body: str, case_id: str, event: Optional[dict]) -> str:
     if event is None:
         return body
     return f"{body.rstrip()}\n\nAdd to Calendar: {calendar_url(case_id)}"
+
+
+def _send_calendar_invite_if_standalone(case_id: str) -> None:
+    if os.getenv("GOOGLE_CALENDAR_CREATE_EVENT", "false").lower() != "true":
+        return
+    if _shared_conn.get() is not None:
+        return
+    try:
+        from calendar_service import create_booking_invitation
+
+        create_booking_invitation(case_id)
+    except Exception as e:
+        print(f"⚠️ Calendar API failed, falling back to .ics: {e}")
+
+
+_create_calendar_invitation_if_standalone = _send_calendar_invite_if_standalone
 
 
 # ---------- scheduling rules (same as demo_api/agents.py) ----------
@@ -1114,8 +1133,15 @@ def assign_technician(
         _emit(conn, case_id, "case.assigned", f"Assigned to {tech['name']}", technician_id=technician_id, start=start)
         _emit(conn, case_id, "booking.requested", f"Visit requested from {tech['name']} for {fmt_datetime(start)}; waiting for the technician to accept",
               technician_id=technician_id, slot_id=slot_id, start=start)
+    try:
+        _send_calendar_invite_if_standalone(case_id)
+    except Exception as e:
+        print(f"⚠️ Calendar API failed, falling back to .ics: {e}")
     return {"ok": True, "status": fields["status"], "booking_status": "PENDING", "technician_id": technician_id,
             "start": start, "start_local": fmt_datetime(start)}
+
+
+book_visit = assign_technician
 
 
 @_returns_errors
@@ -1216,6 +1242,10 @@ def reassign_job(case_id: str, technician_id: str, start: str) -> dict:
               assignment_attempts=(case.get("assignment_attempts") or 0) + 1)
         _emit(conn, case_id, "case.assigned", f"Handed over to {option['name']} "
               + ("(same time)" if option["same_time"] else f"(moved to {option['start_local']})"), technician_id=technician_id)
+    try:
+        _send_calendar_invite_if_standalone(case_id)
+    except Exception as e:
+        print(f"⚠️ Calendar API failed, falling back to .ics: {e}")
     return {"ok": True, "status": case["status"], "booking_status": "PENDING", "technician_id": technician_id,
             "start": option["start"], "start_local": option["start_local"], "same_time": option["same_time"]}
 
@@ -1401,17 +1431,51 @@ def _smtp_send(to: str, subject: str, body: str, case_id: Optional[str] = None) 
     """Send one email via Gmail SMTP, laid out by email_render (sender name, clean subject, HTML + plain text);
     EMAIL_REDIRECT_TO sends it to the demo inbox instead. Returns None when sent, otherwise the error."""
     sender = os.getenv("GMAIL_ADDRESS", "")
-    redirect = os.getenv("EMAIL_REDIRECT_TO", "")
+    redirect = os.getenv("EMAIL_REDIRECT_TO", "").strip()
     try:
         subject, text, html = email_render.render(
             subject, body, to=to, redirected=bool(redirect) and redirect != to,
             app_url=os.getenv("FRONTEND_BASE_URL") or config.APP_URL, **_email_context(to, case_id))
-        msg = EmailMessage()
+        msg = MIMEMultipart("mixed")
         msg["From"] = formataddr((os.getenv("EMAIL_FROM_NAME") or "SimePhony Defect Care", sender))
         msg["To"] = redirect or to
         msg["Subject"] = subject
-        msg.set_content(text)
-        msg.add_alternative(html, subtype="html")
+
+        alt_part = MIMEMultipart("alternative")
+        alt_part.attach(MIMEText(text, "plain", "utf-8"))
+        alt_part.attach(MIMEText(html, "html", "utf-8"))
+        msg.attach(alt_part)
+
+        ics_data = None
+        if case_id:
+            try:
+                from calendar_utils import generate_ics
+
+                event = get_calendar_event(case_id)
+                if event:
+                    recipient_email = redirect or to
+                    organizer_mail = f"mailto:{sender}" if sender else None
+                    attendee_list = [recipient_email] if recipient_email else None
+                    ics_data = generate_ics(
+                        event["case_id"],
+                        event["summary"],
+                        event["start"],
+                        end=event.get("end"),
+                        description=event.get("description", ""),
+                        job=event.get("job", "Inspection Visit"),
+                        organizer=organizer_mail,
+                        attendees=attendee_list,
+                    )
+            except Exception as e:
+                log.warning("Could not generate .ics for case %s: %s", case_id, e)
+
+        if ics_data:
+            cal_part = MIMEBase("text", "calendar")
+            cal_part.set_payload(ics_data)
+            cal_part.replace_header("Content-Type", 'text/calendar; method=REQUEST; charset="utf-8"')
+            cal_part.add_header("Content-Disposition", "attachment", filename="invite.ics")
+            msg.attach(cal_part)
+
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
             smtp.login(sender, os.getenv("GMAIL_APP_PASSWORD", ""))
             smtp.send_message(msg)
@@ -1426,12 +1490,13 @@ def send_email(to: str, subject: str, body: str, case_id: Optional[str] = None) 
     Inside a web request (use_connection) the email is only queued: routes.py sends it with
     deliver_queued_emails after the commit, so a rolled-back request sends nothing.
     Returns {status: "sent" | "queued" | "logged, not sent", email_id, error}."""
+    recipient = os.getenv("EMAIL_REDIRECT_TO", "").strip() or to
     status, error = "logged, not sent", _email_disabled_reason()
     if error is None:
         if _shared_conn.get() is not None:
             status = "queued"
         else:
-            error = _smtp_send(to, subject, body, case_id)
+            error = _smtp_send(recipient, subject, body, case_id)
             status = "sent" if error is None else "logged, not sent"
 
     email_id = None
@@ -1440,9 +1505,9 @@ def send_email(to: str, subject: str, body: str, case_id: Optional[str] = None) 
             email_id = db.next_record_id(conn, "outbox")
             conn.execute(
                 "INSERT INTO outbox (email_id, case_id, to_addr, subject, body, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (email_id, case_id, to, subject, body, status, error, _now(conn)),
+                (email_id, case_id, recipient, subject, body, status, error, _now(conn)),
             )
-            _emit(conn, case_id, "email.sent", f"📧 Email to {to}: {subject}", to=to, subject=subject, status=status)
+            _emit(conn, case_id, "email.sent", f"📧 Email to {recipient}: {subject}", to=recipient, subject=subject, status=status)
     except Exception as e:
         email_id = None
         error = f"{error + '; ' if error else ''}outbox write failed: {e}"
@@ -1659,6 +1724,10 @@ def book_repair(case_id: str, start: str, technician_id: Optional[str] = None) -
         _emit(conn, case_id, "repair.booked",
               f"Repair booked for {fmt_datetime(option['start'])} ({duration}) with {_worker_label(_worker(conn, worker_id))}",
               technician_id=worker_id, start=option["start"])
+    try:
+        _send_calendar_invite_if_standalone(case_id)
+    except Exception as e:
+        print(f"⚠️ Calendar API failed, falling back to .ics: {e}")
     return {"ok": True, "status": "REPAIR_BOOKED", "start": option["start"], "technician_id": worker_id,
             "repair_hours": plan["hours"], "duration": duration}
 

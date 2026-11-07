@@ -49,12 +49,20 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
             )
             if case_id:
                 background_tasks.add_task(ai_agents.run_background_steps, case_id, ctx.deferred_agent_steps)
-        # Emails queued by this request (tools.send_email) are sent only now that it has committed.
+        # Send queued fallback emails first so a slow Google API cannot delay them.
         if conn.execute("SELECT 1 FROM outbox WHERE status = 'queued' LIMIT 1").fetchone():
             if background_tasks:
                 background_tasks.add_task(tools.deliver_queued_emails)
             else:
                 tools.deliver_queued_emails()
+        if ctx.deferred_calendar_cases:
+            from calendar_service import create_booking_invitation
+
+            for case_id in ctx.deferred_calendar_cases:
+                if background_tasks:
+                    background_tasks.add_task(create_booking_invitation, case_id)
+                else:
+                    create_booking_invitation(case_id)
         return {**extra, "state": build_state(Ctx(conn), _base(request))}
 
 
