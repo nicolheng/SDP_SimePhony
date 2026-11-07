@@ -194,6 +194,15 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
     const t = setTimeout(() => setRevealed((r) => r + 1), 700);
     return () => clearTimeout(t);
   }, [currentDone, revealed]);
+  // The care tip is picked from the category, so it waits for IntakeAgent's result on the case (a new case has
+  // no category yet and reads as "other"), then shows one tick after the title, like the stages above.
+  const categorized = revealed > 1 && real[1]?.state === "done" && !!c?.summary;
+  const [tipShown, setTipShown] = useState(false);
+  useEffect(() => {
+    if (!categorized || tipShown) return;
+    const t = setTimeout(() => setTipShown(true), 700);
+    return () => clearTimeout(t);
+  }, [categorized, tipShown]);
   if (!c) return null;
   // Also not settled while a stage is still running (e.g. re-processing after the buyer answers a question).
   const settled = done && (revealed >= real.length || (real[revealed].state !== "done" && real[revealed].state !== "active"));
@@ -250,13 +259,15 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
               <UrgencyBadge urgency={c.urgency} />
             </div>
             <p className="mt-1 text-xs text-zinc-500">{PRIORITY_NOTE[c.urgency] ?? PRIORITY_NOTE.normal}</p>
-            <div className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
-              <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
-              <p>
-                <span className="font-semibold">Until the visit: </span>
-                {CARE_TIP[c.category] ?? CARE_TIP.other}
-              </p>
-            </div>
+            {tipShown && (
+              <div className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
+                <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <p>
+                  <span className="font-semibold">Until the visit: </span>
+                  {CARE_TIP[c.category] ?? CARE_TIP.other}
+                </p>
+              </div>
+            )}
           </Section>
         )}
 
