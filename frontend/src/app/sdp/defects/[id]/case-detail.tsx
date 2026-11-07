@@ -1,5 +1,5 @@
 "use client";
-import { AlertTriangle, ArrowLeft, BrainCircuit } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, ChevronDown, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -19,10 +19,25 @@ import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { agentLabel } from "@/lib/agents";
 import { useDemo, useOffline } from "@/lib/store";
 import type { CaseEvent } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+/** Generic text the backend writes when an agent step recorded no reasoning (tools._emit / state.py): no model, nothing to explain. */
+function isPlaceholder(event: CaseEvent) {
+  const t = event.telemetry!;
+  const rule = typeof t.reasoning === "string" ? t.reasoning : t.reasoning?.matched_rule;
+  const agent = event.agent ?? "agent";
+  return (
+    !t.model &&
+    !t.fallback_used &&
+    t.guardrail_hits.length === 0 &&
+    !(typeof t.reasoning === "object" && t.reasoning?.related_cases?.length) &&
+    (rule === `Rule-based ${agent} assessment` || rule === `Rule-based decision: ${agent}`)
+  );
+}
 
 function hasWhyData(event: CaseEvent) {
   const telemetry = event.telemetry;
-  return event.type === "agent.step" && Boolean(telemetry && (
+  return event.type === "agent.step" && !!telemetry && !isPlaceholder(event) && Boolean(
     telemetry.model ||
     telemetry.timing_ms > 0 ||
     telemetry.confidence_score !== null ||
@@ -32,78 +47,150 @@ function hasWhyData(event: CaseEvent) {
     telemetry.reasoning?.evidence ||
     telemetry.reasoning?.related_cases?.length ||
     telemetry.reasoning?.cluster_reason
-  ));
+  );
 }
 
-function WhyPanel({ event }: { event: CaseEvent }) {
+/** "urgency_guardrail_triggered" -> "Urgency guardrail" */
+const guardrailLabel = (hit: string) => {
+  const name = hit.replace(/_guardrail_triggered$/, "").replace(/_/g, " ");
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} guardrail`;
+};
+
+function WhyRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt className="pt-0.5 text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</dt>
+      <dd className="min-w-0 text-zinc-800">{children}</dd>
+    </>
+  );
+}
+
+function WhyCard({ event }: { event: CaseEvent }) {
   const telemetry = event.telemetry!;
   const reasoning = telemetry.reasoning;
-  const guardrails = telemetry.guardrail_hits.map((hit) => hit.replace(/_guardrail_triggered$/, ""));
+  const rule = typeof reasoning === "string" ? reasoning : reasoning?.matched_rule;
+  const details = typeof reasoning === "object" ? reasoning : null;
+  const score = telemetry.confidence_score !== null ? Math.round(telemetry.confidence_score * 100) : null;
+  const runInfo = [telemetry.model, telemetry.timing_ms > 0 && `${(telemetry.timing_ms / 1000).toFixed(1)} s`].filter(Boolean);
 
   return (
-    <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="size-4 text-indigo-700" aria-hidden="true" />
-          <h3 className="font-semibold text-zinc-900">{event.agent ? agentLabel(event.agent) : "AI agent"}</h3>
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-600">
-          {telemetry.model && <span>Model: <strong className="font-medium text-zinc-800">{telemetry.model}</strong></span>}
-          {telemetry.timing_ms > 0 && <span>Timing: <strong className="font-medium text-zinc-800">{(telemetry.timing_ms / 1000).toFixed(1)}s</strong></span>}
-          {telemetry.confidence_score !== null && (
-            <span>Self-reported confidence: <strong className="font-medium text-zinc-800">{Math.round(telemetry.confidence_score * 100)}%</strong></span>
-          )}
-        </div>
+    <li className="relative overflow-hidden rounded-xl bg-white p-4 pl-5 ring-1 ring-zinc-200/70">
+      <span className="absolute inset-y-0 left-0 w-1 bg-violet-400" aria-hidden="true" />
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 font-semibold text-zinc-900">
+          <span className="grid size-7 place-items-center rounded-lg bg-violet-50 text-violet-700">
+            <Bot className="size-4" aria-hidden="true" />
+          </span>
+          {event.agent ? agentLabel(event.agent) : "AI agent"}
+        </h3>
+        <time dateTime={event.at} className="text-sm text-zinc-500">{fmtDateTime(event.at)}</time>
       </header>
 
-      <div className="mt-3 space-y-3 text-sm">
-        {typeof reasoning === "string" ? (
-          <p className="text-zinc-700">{reasoning}</p>
-        ) : (
-          (reasoning?.matched_rule || reasoning?.evidence) && (
-            <div>
-              {reasoning.matched_rule && (
-                <p><span className="font-medium text-zinc-700">Matched rule:</span> {reasoning.matched_rule}</p>
-              )}
-              {reasoning.evidence && (
-                <blockquote className="mt-1 border-l-2 border-indigo-300 pl-3 italic text-zinc-600">
-                  &ldquo;{reasoning.evidence}&rdquo;
-                </blockquote>
-              )}
-            </div>
-          )
+      <dl className="mt-3 grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2 text-sm">
+        {rule && <WhyRow label="Rule">{rule}</WhyRow>}
+        {details?.evidence && (
+          <WhyRow label="Evidence">
+            <blockquote className="border-l-2 border-violet-300 pl-3 text-zinc-700">&ldquo;{details.evidence}&rdquo;</blockquote>
+          </WhyRow>
         )}
-        {typeof reasoning === "object" && reasoning?.cluster_reason && (
-          <p className="text-zinc-700">{reasoning.cluster_reason}</p>
+        {details?.cluster_reason && details.cluster_reason !== details.evidence && (
+          <WhyRow label="Pattern">{details.cluster_reason}</WhyRow>
         )}
-        {!!reasoning?.related_cases?.length && (
-          <div>
-            <p className="font-medium text-zinc-700">Related cases</p>
+        {!!details?.related_cases?.length && (
+          <WhyRow label="Related">
+            <p className="text-zinc-500">Related cases: {details.related_cases.length}</p>
             <ul className="mt-1 space-y-1">
-              {reasoning.related_cases.map((related) => (
-                <li key={related.case_id} className="flex flex-wrap gap-x-2 text-zinc-600">
-                  <span className="font-mono text-zinc-800">{related.case_id}</span>
-                  {related.score !== null && <span>{Math.round(related.score * 100)}% similarity</span>}
-                  <span>{related.reason}</span>
+              {details.related_cases.map((related) => (
+                <li key={related.case_id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <Link href={`/sdp/defects/${related.case_id}`} className="font-mono text-zinc-900 hover:underline">
+                    {related.case_id}
+                  </Link>
+                  <span className="text-zinc-600">{related.reason}</span>
+                  {related.score !== null && (
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs tabular-nums text-zinc-600">
+                      {Math.round(related.score * 100)}% similarity
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
-          </div>
+          </WhyRow>
         )}
-      </div>
+      </dl>
 
-      {(telemetry.fallback_used || guardrails.length > 0) && (
-        <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-indigo-100 pt-2 text-xs text-zinc-500">
-          {telemetry.fallback_used && (
-            <span className="inline-flex items-center gap-1">
-              <AlertTriangle className="size-3.5 text-amber-700" aria-hidden="true" />
-              Rule-based fallback used
-            </span>
-          )}
-          {guardrails.length > 0 && <span>Guardrail triggered: {guardrails.join(", ")}</span>}
-        </p>
+      {score !== null && (
+        <div className="mt-3 flex items-center gap-3" title="The model's own estimate, not a measured accuracy">
+          <span className="text-xs text-zinc-500">Self-reported confidence</span>
+          <div className="h-2 max-w-48 flex-1 rounded-full bg-violet-100">
+            <div className={cn("h-2 rounded-full", score < 70 ? "bg-amber-500" : "bg-violet-500")} style={{ width: `${score}%` }} />
+          </div>
+          <span className="text-sm tabular-nums text-violet-800">{score}%</span>
+        </div>
       )}
-    </section>
+
+      {(runInfo.length > 0 || telemetry.fallback_used || telemetry.guardrail_hits.length > 0) && (
+        <footer className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-2.5">
+          <span className="font-mono text-xs text-zinc-500">{runInfo.join(" · ")}</span>
+          <span className="flex flex-wrap gap-1.5">
+            {telemetry.fallback_used && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200"
+                title={telemetry.fallback_reason ?? undefined}
+              >
+                <AlertTriangle className="size-3" aria-hidden="true" /> Rule-based fallback
+              </span>
+            )}
+            {telemetry.guardrail_hits.map((hit) => (
+              <span key={hit} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 ring-1 ring-inset ring-zinc-200">
+                <ShieldCheck className="size-3" aria-hidden="true" /> {guardrailLabel(hit)}
+              </span>
+            ))}
+          </span>
+        </footer>
+      )}
+    </li>
+  );
+}
+
+/** Newest step per agent first; each agent's older steps sit behind "Show earlier steps". */
+function WhyList({ events }: { events: CaseEvent[] }) {
+  const [showEarlier, setShowEarlier] = useState(false);
+  const { latest, earlier } = useMemo(() => {
+    const seen = new Set<string>();
+    const latest: CaseEvent[] = [];
+    const earlier: CaseEvent[] = [];
+    for (const event of [...events].reverse()) {
+      const agent = event.agent ?? "AI agent";
+      (seen.has(agent) ? earlier : latest).push(event);
+      seen.add(agent);
+    }
+    return { latest, earlier };
+  }, [events]);
+
+  return (
+    <>
+      <ol className="space-y-3">
+        {latest.map((event) => <WhyCard key={event.id} event={event} />)}
+      </ol>
+      {earlier.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowEarlier((v) => !v)}
+            aria-expanded={showEarlier}
+            className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-violet-700 hover:text-violet-900"
+          >
+            {showEarlier ? "Hide" : "Show"} {earlier.length} earlier step{earlier.length === 1 ? "" : "s"}
+            <ChevronDown className={cn("size-4 transition-transform", showEarlier && "rotate-180")} aria-hidden="true" />
+          </button>
+          {showEarlier && (
+            <ol className="mt-3 space-y-3 opacity-90">
+              {earlier.map((event) => <WhyCard key={event.id} event={event} />)}
+            </ol>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -165,10 +252,14 @@ export function SdpCaseDetail() {
           </Panel>
 
           {whyEvents.length > 0 && (
-            <Panel title="AI decision rationale">
-              <div className="space-y-3">
-                {[...whyEvents].reverse().map((event) => <WhyPanel key={event.id} event={event} />)}
-              </div>
+            <Panel
+              title="Why the AI decided this"
+              action={<span className="text-sm text-zinc-500">{whyEvents.length} AI step{whyEvents.length === 1 ? "" : "s"}</span>}
+            >
+              <p className="-mt-2 mb-4 text-sm text-zinc-500">
+                The rule each AI step applied, the evidence from the report, and the model&apos;s self-reported confidence.
+              </p>
+              <WhyList events={whyEvents} />
             </Panel>
           )}
 
