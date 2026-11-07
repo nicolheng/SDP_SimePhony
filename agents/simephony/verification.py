@@ -50,11 +50,23 @@ _VISION_SYSTEM = (
     '"observations": "one or two short sentences describing what you see", '
     '"matches_location": true | false, "confidence_score": 0.9}. '
     "matches_location is true only if the repair photo shows the location and defect type described. "
+    "Judge only what the repair photo itself shows. Use looks_resolved only when the repair photo clearly "
+    "shows the reported fault is gone; if it looks the same as the original defect photo, use not_resolved. "
     "If the photo is blurry, unrelated or you are not sure, use \"unclear\". Output a confidence_score "
     "between 0.0 and 1.0 representing how certain you are about this classification based on the photo "
     "and text. Use 1.0 for absolute certainty, and below 0.7 if the image is blurry, text is vague, "
     "or the defect is ambiguous."
 )
+
+
+def _same_photo(original: str | None, repair: str | None) -> bool:
+    """True when the repair photo is byte-for-byte the original defect photo."""
+    if not original or not repair or not os.path.exists(original) or not os.path.exists(repair):
+        return False
+    if os.path.getsize(original) != os.path.getsize(repair):
+        return False
+    with open(original, "rb") as a, open(repair, "rb") as b:
+        return a.read() == b.read()
 
 
 def _location(state: dict) -> str:
@@ -90,7 +102,8 @@ def assess_repair_photo(state: dict) -> dict:
             f"Buyer description: {state.get('user_description', '')}\n"
             f"Category: {category}\n"
             f"Location: {location}\n"
-            f"Technician repair note: {state.get('repair_note', '')}\n"
+            # The technician's note is left out on purpose: llava copied it into its verdict ("the door
+            # now closes fully") even for an unchanged photo, so the photo is judged on its own.
             "The first image (if two are given) is the original defect; the last image is the repair photo."
         ),
     })
@@ -236,6 +249,19 @@ def verification_node(state: dict) -> dict:
             state, category, "unclear", "",
             f"Please add the {' and '.join(missing)} so the repair can be verified before the buyer is contacted.",
         )
+
+    if _same_photo(state.get("image_path"), photo):
+        # The "after" photo is the buyer's original: there is nothing new for the model to judge,
+        # so a person looks at it instead (the model would only repeat the repair note).
+        flag_for_human_review(state, "VerificationAgent", 0.0,
+                              abstain_reason="the repair photo is the same as the original defect photo")
+        state["verification_result"] = {
+            "category": category, "assessment": "unclear",
+            "observations": "The repair photo is the same file as the buyer's original defect photo.",
+            "protocol": None, "needs_technician_input": False, "needs_human_review": True,
+            "review_reason": state["review_reason"], "confidence_score": 0.0,
+        }
+        return state
 
     photo_check = assess_repair_photo(state)
     if photo_check.get("_structured_output_error"):

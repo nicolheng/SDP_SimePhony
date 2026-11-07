@@ -135,7 +135,30 @@ def test_vision_prompt_has_case_details(state, fake_llm, tmp_path):
     assert len(images) == 2
     assert all(p["image_url"]["url"].startswith("data:image/jpeg;base64,") for p in images)
     assert "master bedroom ceiling" in text
-    assert state["repair_note"] in text
+    # The repair note is kept from the vision model: llava copied it into its verdict.
+    assert state["repair_note"] not in text
+
+
+def test_same_photo_as_original_is_held_without_a_model_call(state, fake_llm, tmp_path):
+    photo = tmp_path / "same.jpg"
+    photo.write_bytes(b"\xff\xd8\xff\xe0same")
+    state["image_path"] = state["repair_photo_path"] = str(photo)
+    out = verification_node(state)
+    r = out["verification_result"]
+    assert fake_llm.calls == []
+    assert r["needs_human_review"] is True and r["protocol"] is None
+    assert "same as the original" in r["review_reason"]
+
+
+def test_different_photo_with_same_size_still_goes_to_the_model(state, fake_llm, tmp_path):
+    a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    a.write_bytes(b"\xff\xd8\xff\xe0aaaa")
+    b.write_bytes(b"\xff\xd8\xff\xe0bbbb")
+    state["image_path"], state["repair_photo_path"] = str(a), str(b)
+    fake_llm.responses = [_vision(), "Look at the patched area for damp or staining."]
+    out = verification_node(state)
+    assert len(fake_llm.calls) >= 1
+    assert out["verification_result"].get("needs_human_review") is not True
 
 
 def test_resolved_builds_safe_guide(state, fake_llm):

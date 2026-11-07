@@ -3,6 +3,7 @@ import { Bot, Check, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PhotoThumb } from "@/components/photo";
 import { decideReview } from "@/lib/api";
 import { fmtDateTime } from "@/lib/dates";
 import { useOffline } from "@/lib/store";
@@ -26,6 +27,9 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
   const r = c.review;
   const o = outcomes(r?.previousStatus ?? "SUBMITTED");
   const score = typeof r?.confidence === "number" ? Math.round(r.confidence * 100) : null;
+  // A held repair check: show the before and after photos side by side, so SDP can compare them here.
+  const before = r?.previousStatus === "REPAIRED" ? c.photos.find((p) => p.kind === "original") : undefined;
+  const after = r?.previousStatus === "REPAIRED" ? [...c.photos].reverse().find((p) => p.kind === "repair") : undefined;
 
   async function decide(approve: boolean) {
     if (!approve && !note.trim()) {
@@ -67,6 +71,12 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
           </div>
         )}
       </div>
+      {(before || after) && (
+        <div className="mt-4 grid max-w-md grid-cols-2 gap-3">
+          {before && <PhotoThumb photo={before} className="aspect-[4/3]" />}
+          {after && <PhotoThumb photo={after} className="aspect-[4/3]" />}
+        </div>
+      )}
       <ul className="mt-4 space-y-1 text-sm text-zinc-600">
         <li>
           <span className="font-medium text-emerald-700">Approve:</span> {o.approve}
