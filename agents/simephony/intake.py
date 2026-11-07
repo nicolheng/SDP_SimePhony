@@ -127,6 +127,17 @@ def _location_from_text(text: str) -> str | None:
     return room or ("ceiling" if ceiling else None)
 
 
+def _room_in_text(text: str) -> str | None:
+    """The room a report names ('bilik tidur utama' -> 'master bedroom'), or None."""
+    return next((name for name, words in _ROOM_KEYWORDS if any(w in text for w in words)), None)
+
+
+def _names_room(location: str, room: str) -> bool:
+    """Whether the model's location keeps the resident's room: 'bedroom, beside bed' keeps 'master bedroom'."""
+    words = set(re.findall(r"[a-z]+", location.lower()))
+    return bool(words & (set(room.split()) - {"room"}))
+
+
 def _evidence_quote(text: str, terms: tuple[str, ...]) -> str | None:
     for sentence in re.split(r"(?<=[.!?])\s+|\n+", text.strip()):
         if any(term in sentence.lower() for term in terms):
@@ -236,7 +247,10 @@ def intake_node(state: dict) -> dict:
         "retak = crack, pintu = door, tingkap = window, jubin = tile, longkang = drain, "
         "bilik tidur = bedroom, bilik air / tandas = bathroom, dapur = kitchen, lagi = again. "
         "Only use 'other' when the text names none of these defects.\n"
-        "   location_in_unit: the room and surface, e.g. 'bedroom ceiling'.\n"
+        "   location_in_unit: 'room, spot', in English. The room is the one the resident names (bilik tidur utama = "
+        "master bedroom). The spot is a few words from the report saying where in that room, such as the fitting, "
+        "furniture or surface it is next to, above or under; leave it out if the report gives none. Never add a "
+        "ceiling, wall or floor that is not mentioned or shown.\n"
         "   summary: a short title for the case in English, 3 to 8 words, no full stop: the defect and where it is, "
         "e.g. 'Hairline crack on living room wall' or 'Loose handle on second bedroom door'. "
         "Never copy the resident's description.\n"
@@ -345,8 +359,12 @@ def intake_node(state: dict) -> dict:
                 term for terms in _CATEGORY_KEYWORDS if terms[0] == parsed_intake["category"] for term in terms[1]
             )
 
-    # 1b. Location: live qwen returned none for "Ceiling bocor lagi in the bedroom"
-    if str(parsed_intake.get("location_in_unit") or "").strip().lower() in _NO_LOCATION:
+    # 1b. Location: live qwen returned none for "Ceiling bocor lagi in the bedroom", and live llava put
+    # "Pintu bilik tidur" in the living room: the room the resident names wins over the model's
+    location = str(parsed_intake.get("location_in_unit") or "").strip()
+    named_room = _room_in_text(desc_lower)
+    other_room = named_room and _room_in_text(location.lower()) and not _names_room(location, named_room)
+    if location.lower() in _NO_LOCATION or other_room:
         parsed_intake["location_in_unit"] = _location_from_text(desc_lower)
 
     # 2. Recurrence detection from user description text
@@ -434,8 +452,14 @@ def intake_node(state: dict) -> dict:
     elif "mismatch_detected" not in parsed_intake:
         parsed_intake["mismatch_detected"] = False
 
-    # The title stays plain: the app shows urgency as its own badge (and technician emails as "Urgency: high")
-    parsed_intake["summary"] = _short_title(parsed_intake.get("summary") or "")
+    # The title stays plain: the app shows urgency as its own badge (and technician emails as "Urgency: high").
+    # Live llava sometimes returns the resident's own sentence (Malay included) as the title: build one instead.
+    summary = parsed_intake.get("summary") or ""
+    if summary.strip(" .!?").lower() == user_description.strip(" .!?").lower():
+        where = parsed_intake.get("location_in_unit")
+        label = str(parsed_intake.get("category") or "defect").replace("_", " ").capitalize()
+        summary = f"{label} in {where}" if where else label
+    parsed_intake["summary"] = _short_title(summary)
 
     state["intake_result"] = parsed_intake
     state["missing_info"] = parsed_intake.get("missing_info", [])
