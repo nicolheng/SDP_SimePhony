@@ -208,8 +208,9 @@ class TestScenario_FirstTimeDefect:
 
     def test_missing_info_propagated_from_intake(self, monkeypatch):
         payload = {**self.INTAKE_PAYLOAD, "missing_info": []}
-        state = _run_pipeline(_initial_state(), monkeypatch,
-                              past_cases=[], intake_payload=payload)
+        # The report names the room: without one, IntakeAgent asks for it instead of trusting the model's room
+        state = _run_pipeline(_initial_state(user_description="Siling bilik tidur utama bocor lagi, dah 3 kali ni!"),
+                              monkeypatch, past_cases=[], intake_payload=payload)
         assert state["missing_info"] == []
 
     def test_all_three_result_keys_set(self, monkeypatch):
