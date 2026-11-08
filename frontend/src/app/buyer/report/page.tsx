@@ -165,7 +165,9 @@ type Stage = { label: string; state: "done" | "active" | "attention" | "todo" };
 
 /** Buyer-facing progress only: no agent names, no related-case details. */
 function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnType<typeof useCaseEvents>): Stage[] {
-  const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent);
+  // After the buyer answers a follow-up question the agents run again: only their steps since that answer count.
+  const since = Math.max(0, ...events.filter((e) => e.type === "case.answered").map((e) => e.id));
+  const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent && e.id > since);
   const review = c.status === "PENDING_REVIEW";
   const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
   return [
@@ -203,6 +205,15 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
     const t = setTimeout(() => setTipShown(true), 700);
     return () => clearTimeout(t);
   }, [categorized, tipShown]);
+  // Answering the follow-up question sends the report through the agents again: replay from "Understanding".
+  const [waiting, setWaiting] = useState(false);
+  if (c && (c.status === "INFO_NEEDED") !== waiting) {
+    setWaiting(c.status === "INFO_NEEDED");
+    if (waiting) {
+      setRevealed(1);
+      setTipShown(false);
+    }
+  }
   if (!c) return null;
   // Also not settled while a stage is still running (e.g. re-processing after the buyer answers a question).
   const settled = done && (revealed >= real.length || (real[revealed].state !== "done" && real[revealed].state !== "active"));
@@ -251,7 +262,16 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </Section>
         )}
 
-        {understood && (
+        {understood && c.status === "INFO_NEEDED" && (
+          /* The AI's first look isn't shown while it is still missing details: it would only be a guess. */
+          <Section title="Defect Assessment">
+            <p className="text-sm text-zinc-700">
+              We need a little more information before we can assess your report. Please answer the question below.
+            </p>
+          </Section>
+        )}
+
+        {understood && c.status !== "INFO_NEEDED" && (
           <Section title="Defect Assessment">
             <div className="flex items-center gap-2">
               <Sparkles className="size-4 text-brand" />

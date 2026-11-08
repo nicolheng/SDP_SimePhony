@@ -53,6 +53,9 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
                 background_tasks.add_task(workflow.process_rain_agents, case_id)
         if background_tasks and ctx.after_click:
             background_tasks.add_task(workflow.run_after_click, list(ctx.after_click))
+        if background_tasks and ctx.deferred_answers:
+            for case_id, answer in ctx.deferred_answers:
+                background_tasks.add_task(workflow.process_new_report, case_id, answer)
         if background_tasks and ctx.deferred_reports:
             for case_id in ctx.deferred_reports:
                 background_tasks.add_task(workflow.process_new_report, case_id)

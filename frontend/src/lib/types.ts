@@ -43,6 +43,7 @@ export type AgentName =
 export type EventType =
   | "case.created"
   | "case.info_needed"
+  | "case.answered"
   | "case.assigned"
   | "booking.requested"
   | "booking.confirmed"

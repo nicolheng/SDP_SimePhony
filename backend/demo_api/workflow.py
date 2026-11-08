@@ -38,6 +38,7 @@ class Ctx:
         self.deferred_rain_cases: list[str] = []
         self.deferred_calendar_cases: list[str] = []
         self.deferred_reports: list[str] = []
+        self.deferred_answers: list[tuple[str, str]] = []  # (case_id, answer): agents run after the request (only mode)
         # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
         # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id)
         # | ("extra_inspection", case_id, approval_id).
@@ -227,12 +228,13 @@ def _save_intake(ctx: Ctx, case_id: str, result: dict) -> bool:
     return True
 
 
-def process_new_report(case_id: str) -> None:
+def process_new_report(case_id: str, answer: str | None = None) -> None:
     """USE_AI_AGENTS=only: the agents for a report submit_report saved, run after that request has returned.
     IntakeAgent's result is committed on its own, then the booking and buyer message, then the related cases,
     so the progress screen (3-second refresh) sees each step end. SimilarDefectAgent comes last because only the
     case page shows its links: the buyer's visit is booked about 7 s sooner. If intake or booking fails, the case
-    is held for SDP review with the error as the reason, instead of being left at Submitted."""
+    is held for SDP review with the error as the reason, instead of being left at Submitted.
+    answer: the buyer's answer to the follow-up question; it is taken as given (no second question)."""
     try:
         with db.get_conn() as conn:
             ctx = Ctx(conn)
@@ -240,7 +242,11 @@ def process_new_report(case_id: str) -> None:
             if c["status"] != "SUBMITTED":
                 return
             result = ai_agents.intake(ctx, c["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
+            if answer is not None:
+                result = {**_accept_answer(result, answer), "needs_human_review": False}
             go_on = _save_intake(ctx, case_id, result)
+            if answer is not None:
+                step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit'] or 'as described'}")
         if not go_on:
             return
         with db.get_conn() as conn:
@@ -315,6 +321,12 @@ def _send_queued_emails(case_id: str) -> None:
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:
     """The buyer answers once: their answer is taken as given (it fills what was missing) and the case moves on to
     booking, even if the IntakeAgent is still unsure. The technician's inspection visit checks the details."""
+    if ctx.defer_agents and ai_agents.ai_only():
+        # USE_AI_AGENTS=only: save the answer now; IntakeAgent and the booking run after the request returns
+        # (process_new_report), so the Send button doesn't wait about 15 s for the models.
+        _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot, resume=True)
+        ctx.deferred_answers.append((case_id, answer))
+        return
     description = _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot)["description"]
     result = _accept_answer(ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id), answer)
     _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))

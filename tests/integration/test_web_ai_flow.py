@@ -835,3 +835,28 @@ def test_only_mode_failed_brief_can_be_tried_again(fake_llm, monkeypatch):
     assert _brief(case_id) is not None and _case(case_id)["status"] == "EXTRA_INSPECTION"
     with pytest.raises(Exception):  # nothing left to retry
         routes.retry_brief(approval_id, _request("/retry-brief"), BackgroundTasks())
+
+
+def test_only_mode_follow_up_answer_returns_before_the_agents_run(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from demo_api import routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    response, tasks = _api_report(text="Water keeps dripping from the ceiling.")  # names no room: IntakeAgent asks
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    assert _case(case_id)["status"] == "INFO_NEEDED"
+
+    calls = len(fake_llm.calls)
+    tasks = BackgroundTasks()
+    routes.follow_up(case_id, routes.FollowUp(answer="In the master bedroom, above the wardrobe."), _request("/follow-up"), tasks)
+    c = _case(case_id)
+    assert len(fake_llm.calls) == calls  # Send returned before any model call
+    assert c["status"] == "SUBMITTED" and not c["follow_up_question"]
+
+    _run_task(tasks, workflow.process_new_report)
+    c = _case(case_id)
+    assert c["status"] == "VISIT_SCHEDULED" and c["technician_id"]  # no second question: the answer is taken as given
+    assert "bedroom" in (c["location_in_unit"] or "").lower()
+    import db
+    with db.get_conn() as conn:
+        assert conn.execute("SELECT 1 FROM case_events WHERE case_id = ? AND type = 'case.answered'", (case_id,)).fetchone()

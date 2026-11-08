@@ -1639,9 +1639,11 @@ def add_photo(case_id: str, photo: str, kind: str) -> dict:
 
 
 @_returns_errors
-def answer_follow_up(case_id: str, answer: str, photo: Optional[str] = None, preferred_slot: Optional[str] = None) -> dict:
+def answer_follow_up(case_id: str, answer: str, photo: Optional[str] = None, preferred_slot: Optional[str] = None,
+                     resume: bool = False) -> dict:
     """Buyer answers IntakeAgent's question (optionally with a photo or a new visit time). Appends it to the
-    description; the case stays INFO_NEEDED until intake runs again (save_intake_result).
+    description; the case stays INFO_NEEDED until intake runs again (save_intake_result). resume=True: the case
+    goes back to SUBMITTED now, for agents that run after the request (the web app with USE_AI_AGENTS=only).
     Returns {ok, description, preferred_visit_at}."""
     if not answer.strip():
         raise ToolError("Please type an answer.")
@@ -1650,8 +1652,11 @@ def answer_follow_up(case_id: str, answer: str, photo: Optional[str] = None, pre
         _require_status(case, ("INFO_NEEDED",), "answer a follow-up question", "This case isn't waiting for more information.")
         description = f"{case['description']}\n{answer.strip()}"
         preferred = norm(preferred_slot) if preferred_slot else norm(case.get("preferred_visit_at"))
-        _save(conn, case_id, description=description, preferred_visit_at=preferred)
+        _save(conn, case_id, description=description, preferred_visit_at=preferred,
+              **({"status": "SUBMITTED", "follow_up_question": None} if resume else {}))
         _save_photo(conn, case_id, photo, "original")
+        if resume:
+            _emit(conn, case_id, "case.answered", f'Buyer answered: "{answer.strip()[:200]}"')
     return {"ok": True, "description": description, "preferred_visit_at": preferred}
 
 
