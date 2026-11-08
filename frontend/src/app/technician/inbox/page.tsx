@@ -27,7 +27,7 @@ export default function TechnicianInbox() {
                   <span className="ml-auto rounded bg-zinc-100 px-1.5 py-0.5">{e.status}</span>
                 </p>
                 <p className="mt-1 text-sm font-medium">{e.subject}</p>
-                <p className="whitespace-pre-line text-xs text-zinc-600">{e.body}</p>
+                <p className="whitespace-pre-line text-xs text-zinc-600">{withoutCalendarLink(e.body)}</p>
               </Link>
             </li>
           ))}
@@ -35,4 +35,10 @@ export default function TechnicianInbox() {
       )}
     </div>
   );
+}
+
+/** The emailed copy ends with an "Add to Calendar: <link>" line (the real email shows a calendar invite instead);
+ *  the in-app inbox leaves it out. */
+function withoutCalendarLink(body: string): string {
+  return body.replace(/\s*Add to Calendar:\s*\S+/g, "").trim();
 }

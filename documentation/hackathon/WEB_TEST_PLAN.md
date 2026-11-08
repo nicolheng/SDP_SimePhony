@@ -43,8 +43,10 @@ ollama serve
 ```powershell
 .venv\Scripts\Activate.ps1
 cd backend
-uvicorn main:app --port 8001
+python main.py
 ```
+
+It restarts by itself when backend or agent code changes; restart it by hand after editing `.env`.
 
 Check: http://localhost:8001/health shows `{"ok":true}`.
 

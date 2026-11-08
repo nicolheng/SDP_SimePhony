@@ -6,6 +6,7 @@ use rule-based stand-ins and queue enabled LangGraph agents for post-commit exec
 can still run the agents inline. This module also sends buyer / technician notifications.
 """
 import json
+import logging
 import sqlite3
 
 import db
@@ -17,6 +18,7 @@ from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
 signoff_deadline = tools.signoff_deadline
+log = logging.getLogger("simephony.workflow")
 
 
 class WorkflowError(ValueError):
@@ -35,6 +37,14 @@ class Ctx:
         self.deferred_agent_steps: list[dict] = []
         self.deferred_rain_cases: list[str] = []
         self.deferred_calendar_cases: list[str] = []
+        self.deferred_reports: list[str] = []
+        self.deferred_answers: list[tuple[str, str]] = []  # (case_id, answer): agents run after the request (only mode)
+        # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
+        # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id)
+        # | ("extra_inspection", case_id, approval_id).
+        self.after_click: list[tuple] = []
+        from agents.simephony.llm_client import ai_only
+        self.async_ai = defer_agents and ai_only() and ai_agents.enabled("comms")
         self.pending_agent_fallbacks: list[dict] = []
         self.pending_agent_telemetry: dict[str, dict] = {}
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
@@ -126,7 +136,11 @@ def step(ctx: Ctx, case_id: str | None, agent: str, message: str) -> None:
 
 
 def notify_buyer(ctx: Ctx, case_id: str, kind: str, **extra) -> None:
-    """CommsAgent stand-in: the template for this situation, posted in the app and emailed."""
+    """CommsAgent stand-in: the template for this situation, posted in the app and emailed. On a web click in
+    USE_AI_AGENTS=only it is queued instead and written right after the click is saved (run_after_click)."""
+    if ctx.async_ai:
+        ctx.after_click.append(("message", case_id, kind, extra))
+        return
     title, body = ai_agents.comms(ctx, kind, load_case(ctx, case_id), extra)
     _tool(ctx, tools.notify_buyer, case_id, title, body)
 
@@ -179,28 +193,140 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     if left is not None and left < 0:
         raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
                             "so new defects can no longer be reported here. Please contact the developer directly.")
+    if ctx.defer_agents and ai_agents.ai_only():
+        # USE_AI_AGENTS=only: save the report now and let the agents work after the request returns
+        # (process_new_report), so the buyer's progress screen shows each step as it really finishes.
+        non_defect = agents.intake(description, bool(photo)).get("non_defect")
+        if non_defect:
+            return {"nonDefect": non_defect}
+        case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
+        ctx.deferred_reports.append(case_id)
+        return {"caseId": case_id}
     result = ai_agents.intake(ctx, description, photo)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
     case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
     ai_agents.record_pending_fallbacks(ctx, case_id)
+    if _save_intake(ctx, case_id, result):
+        _continue_new_case(ctx, case_id)
+    return {"caseId": case_id}
+
+
+def _save_intake(ctx: Ctx, case_id: str, result: dict) -> bool:
+    """Save IntakeAgent's result on a new report. True when the case goes on to booking; False when it waits for
+    SDP review or for the buyer's answer to a follow-up question."""
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     c = load_case(ctx, case_id)
     step(ctx, case_id, "IntakeAgent", f"Category: {config.CATEGORY_LABEL.get(c['category'])} › {c['sub_category']}; location: {c['location_in_unit'] or 'missing'}; urgency: {c['urgency']}")
     if result.get("needs_human_review"):
         _route_to_human_review(ctx, case_id, result)
-        return {"caseId": case_id}
+        return False
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", f"Missing info ({', '.join(result['missing_info'])}): asking a follow-up question")
         notify_buyer(ctx, case_id, "info_needed")
-    else:
-        _continue_new_case(ctx, case_id)
-    return {"caseId": case_id}
+        return False
+    return True
+
+
+def process_new_report(case_id: str, answer: str | None = None) -> None:
+    """USE_AI_AGENTS=only: the agents for a report submit_report saved, run after that request has returned.
+    IntakeAgent's result is committed on its own, then the booking and buyer message, then the related cases,
+    so the progress screen (3-second refresh) sees each step end. SimilarDefectAgent comes last because only the
+    case page shows its links: the buyer's visit is booked about 7 s sooner. If intake or booking fails, the case
+    is held for SDP review with the error as the reason, instead of being left at Submitted.
+    answer: the buyer's answer to the follow-up question; it is taken as given (no second question)."""
+    try:
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            c = load_case(ctx, case_id)
+            if c["status"] != "SUBMITTED":
+                return
+            result = ai_agents.intake(ctx, c["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
+            if answer is not None:
+                result = {**_accept_answer(result, answer), "needs_human_review": False}
+            go_on = _save_intake(ctx, case_id, result)
+            if answer is not None:
+                step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit'] or 'as described'}")
+        if not go_on:
+            return
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            if load_case(ctx, case_id)["status"] != "SUBMITTED":
+                return  # someone acted on the case meanwhile
+            _book_new_case(ctx, case_id)
+    except Exception as e:
+        log.exception("AI agents could not finish new report %s", case_id)
+        held = tools.flag_case_for_human_review(case_id, "AI agents", f"The AI agents could not finish this report: {e}", 0.0)
+        if held.get("ok") is False:
+            log.error("Could not hold report %s for review: %s", case_id, held.get("error"))
+        return
+    finally:
+        _send_queued_emails(case_id)
+    try:
+        # The booking's calendar invitation (GOOGLE_CALENDAR_CREATE_EVENT): routes.py only sends the request's own
+        for booked_case_id in ctx.deferred_calendar_cases:
+            from calendar_service import create_booking_invitation
+
+            create_booking_invitation(booked_case_id)
+    except Exception:
+        log.exception("Could not send the calendar invitation for report %s", case_id)
+    try:
+        with db.get_conn() as conn:
+            ctx = Ctx(conn)
+            if load_case(ctx, case_id)["status"] in ("CLOSED", "INVALID"):
+                return
+            _link_similar_cases(ctx, case_id)
+    except Exception as e:
+        # The visit is already booked: a failed link must not hold the case and release it.
+        log.exception("SimilarDefectAgent could not link related cases for report %s", case_id)
+        tools.log_agent_step(case_id, "SimilarDefectAgent", f"Could not link related cases: {e}")
+
+
+def run_after_click(jobs: list[tuple]) -> None:
+    """The AI work a click queued (Ctx.after_click), in order, each committed on its own so the buyer's inbox fills
+    in as it goes. A failure is logged and shown in the case trace; it never undoes the click."""
+    for job in jobs:
+        case_id = job[1]
+        try:
+            with db.get_conn() as conn:
+                ctx = Ctx(conn)
+                if job[0] == "estimate":
+                    ai_agents.repair_estimate(ctx, load_case(ctx, case_id))
+                elif job[0] == "extra_inspection":
+                    start_extra_inspection(ctx, case_id, job[2])
+                else:
+                    notify_buyer(ctx, case_id, job[2], **job[3])
+        except Exception as e:
+            log.exception("AI step after the click failed for %s: %s", case_id, job[0])
+            try:
+                with db.get_conn() as conn:
+                    agent, what = {"estimate": ("RepairEstimateAgent", "repair estimate"),
+                                   "extra_inspection": ("InitialInspectionAgent", "inspection brief and booking")
+                                   }.get(job[0], ("CommsAgent", f"buyer message ({job[2]})"))
+                    step(Ctx(conn), case_id, agent, f"Could not finish the {what}: {type(e).__name__}: {str(e)[:200]}")
+            except Exception:
+                log.exception("Could not record the failed AI step for %s", case_id)
+    if jobs:
+        _send_queued_emails(jobs[0][1])
+
+
+def _send_queued_emails(case_id: str) -> None:
+    """Send the emails a background step queued: the request's own delivery ran before it."""
+    try:
+        tools.deliver_queued_emails()
+    except Exception:
+        log.exception("Could not send the emails queued for report %s", case_id)
 
 
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:
     """The buyer answers once: their answer is taken as given (it fills what was missing) and the case moves on to
     booking, even if the IntakeAgent is still unsure. The technician's inspection visit checks the details."""
+    if ctx.defer_agents and ai_agents.ai_only():
+        # USE_AI_AGENTS=only: save the answer now; IntakeAgent and the booking run after the request returns
+        # (process_new_report), so the Send button doesn't wait about 15 s for the models.
+        _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot, resume=True)
+        ctx.deferred_answers.append((case_id, answer))
+        return
     description = _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot)["description"]
     result = _accept_answer(ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id), answer)
     _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))
@@ -221,9 +347,14 @@ def _accept_answer(result: dict, answer: str) -> dict:
 
 
 def _continue_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
-    """SimilarDefectAgent then TriageAgent: link related cases and book the inspection visit, at the buyer's
-    chosen time (kept in preferred_visit_at) if a technician is free then. On the 3rd occurrence in the unit
-    or a stack cluster, SDP is also asked for an extra inspection; the visit still goes ahead (keep_status)."""
+    """SimilarDefectAgent then TriageAgent: link related cases and book the inspection visit."""
+    _link_similar_cases(ctx, case_id)
+    _book_new_case(ctx, case_id, reviewed)
+
+
+def _link_similar_cases(ctx: Ctx, case_id: str) -> None:
+    """SimilarDefectAgent: save the related cases shown on the case page. Escalation does not read these links:
+    tools.check_escalation counts from the cases themselves, so booking can come first (process_new_report)."""
     c = load_case(ctx, case_id)
     sim = ai_agents.similar(ctx, c)
     _tool(ctx, tools.save_similar_cases, case_id, [{"related_case_id": r["case_id"], "reason": r["reason"]} for r in sim["refs"]], sim["occurrence"])
@@ -232,6 +363,12 @@ def _continue_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
          if sim["refs"] else "No related cases: treated as a new defect")
     if sim.get("cluster_reason") and sim["refs"]:
         step(ctx, case_id, "SimilarDefectAgent", sim["cluster_reason"])
+
+
+def _book_new_case(ctx: Ctx, case_id: str, reviewed: bool = False) -> None:
+    """TriageAgent: book the inspection visit, at the buyer's chosen time (kept in preferred_visit_at) if a
+    technician is free then. On the 3rd occurrence in the unit or a stack cluster, SDP is also asked for an
+    extra inspection; the visit still goes ahead (keep_status)."""
     c = load_case(ctx, case_id)
     preferred = _bookable(ctx, c["preferred_visit_at"])
     t = agents.triage(ctx, c, preferred) if reviewed else ai_agents.triage(ctx, c, preferred)
@@ -316,7 +453,9 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
         _tool(ctx, tools.start_verification, case_id, guide)
         step(ctx, case_id, "VerificationAgent",
              f"Standard {config.CATEGORY_LABEL.get(c['category'], '').lower()} checklist after SDP review; {len(guide['steps'])} checks for the buyer")
-        notify_buyer(ctx, case_id, "verify")
+        # SDP has just checked the repair photos, so approving the held check is the developer's sign-off:
+        # the buyer can check and sign off straight away, without a second SDP click.
+        developer_signoff(ctx, case_id)
     elif r["status"] == "VALID":
         _tool(ctx, tools.notify_buyer, case_id, "Please book your repair",
               f"Case {case_id} ({c['summary']}). Our team has checked your case. Please choose a repair slot in the app.")
@@ -328,6 +467,20 @@ def developer_signoff(ctx: Ctx, case_id: str) -> None:
         notify_buyer(ctx, case_id, "closed")
     else:
         notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(signoff_deadline(load_case(ctx, case_id))))
+
+
+def reject_repair(ctx: Ctx, case_id: str, note: str) -> None:
+    """SDP won't sign off the repair (e.g. the photo check showed the fault is still there): the buyer books a
+    new repair and the technician is told why."""
+    _tool(ctx, tools.reject_repair, case_id, note)
+    c = load_case(ctx, case_id)
+    reason = " ".join(note.split())
+    _tool(ctx, tools.notify_buyer, case_id, "Your repair needs another visit",
+          f"Case {case_id} ({c['summary']}). Our team checked the repair and it needs more work: \"{reason}\" "
+          "Please book a new repair slot in the app.")
+    notify_tech(ctx, case_id, "Repair not accepted",
+                f"SDP did not accept the repair at {c['unit_id']}.\n\n{_defect(c)}\n"
+                f'Reason: "{reason}"\n\nThe buyer will book a new repair slot; you will be emailed if you are assigned.')
 
 
 def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> None:
@@ -375,7 +528,10 @@ def _book_revisit(ctx: Ctx, case_id: str, t: dict, occurrence: int, description:
 def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.record_verdict, case_id, outcome, note, photo)
     if outcome == "VALID":
-        ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
+        if ctx.async_ai:  # after the click, before the "please book a repair" message that quotes the hours
+            ctx.after_click.append(("estimate", case_id))
+        else:
+            ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
     notify_buyer(ctx, case_id, "valid" if outcome == "VALID" else "invalid", note=note.strip())
 
 
@@ -436,6 +592,29 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
         if load_case(ctx, case_id)["status"] == "VALID":  # a new report's request leaves its visit as booked
             notify_buyer(ctx, case_id, "valid", note="Our team will repair this as a normal case")
         return
+    if ctx.async_ai:  # the brief (about 12 s of model time) and the booking run right after the click
+        ctx.after_click.append(("extra_inspection", case_id, approval_id))
+        return
+    start_extra_inspection(ctx, case_id, approval_id)
+
+
+def retry_extra_inspection(ctx: Ctx, approval_id: str) -> None:
+    """SDP's "Try again" when the brief or booking failed after an approval (e.g. Ollama was down)."""
+    a = ctx.conn.execute("SELECT case_id, status, decided_at FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+    if a is None or a["status"] != "approved":
+        raise WorkflowError("This extra inspection hasn't been approved.")
+    b = ctx.conn.execute("SELECT created_at FROM inspection_briefs WHERE case_id = ?", (a["case_id"],)).fetchone()
+    if b and a["decided_at"] and b["created_at"] >= a["decided_at"]:
+        raise WorkflowError("The inspection brief is already ready.")
+    if ctx.async_ai:
+        ctx.after_click.append(("extra_inspection", a["case_id"], approval_id))
+    else:
+        start_extra_inspection(ctx, a["case_id"], approval_id)
+
+
+def start_extra_inspection(ctx: Ctx, case_id: str, approval_id: str) -> None:
+    """After SDP approves: InitialInspectionAgent writes the brief, TriageAgent books the joint inspection, and the
+    technicians and buyer are told."""
     c = load_case(ctx, case_id)
     brief = ai_agents.initial_inspection(ctx, c, c.get("verdict_note"), latest_verification(ctx, case_id))
     _tool(ctx, tools.attach_inspection_brief, case_id, brief)

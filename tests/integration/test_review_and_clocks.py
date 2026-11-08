@@ -60,12 +60,35 @@ def test_rejecting_a_held_report_closes_it_as_not_a_defect(client):
     assert any(m["caseId"] == "C-0013" and "Condensation" in m["body"] for m in state["messages"])
 
 
+def test_held_repair_check_stays_with_the_technician(client):
+    # C-0007: REPAIRED in seed.db. The repair is done, so the technician keeps the job while SDP reviews it
+    tech = _case(client.get("/api/state").json()["state"], "C-0007")["technicianId"]
+    assert tech
+    _hold("C-0007", "VerificationAgent", 0.0)
+    c = _case(client.get("/api/state").json()["state"], "C-0007")
+    assert c["status"] == "PENDING_REVIEW" and c["technicianId"] == tech
+    c = _case(client.post("/api/cases/C-0007/review-decision", json={"approve": True}).json()["state"], "C-0007")
+    assert c["technicianId"] == tech
+
+
+def test_held_booked_visit_is_cancelled(client):
+    # A visit not done yet: the booking is cancelled and SDP's approval books it again
+    state = client.post("/api/cases/C-0013/follow-up", json={"answer": "Beside the window, near the floor."}).json()["state"]
+    assert _case(state, "C-0013")["status"] == "VISIT_SCHEDULED"
+    _hold("C-0013", "TriageAgent")
+    c = _case(client.get("/api/state").json()["state"], "C-0013")
+    assert c["status"] == "PENDING_REVIEW" and not c["technicianId"]
+
+
 def test_approving_a_held_repair_check_asks_the_buyer_to_sign_off(client):
     # C-0007: REPAIRED in seed.db; the VerificationAgent was unsure about the repair photo
     _hold("C-0007", "VerificationAgent", 0.5)
     state = client.post("/api/cases/C-0007/review-decision", json={"approve": True}).json()["state"]
     c = _case(state, "C-0007")
     assert c["status"] == "PENDING_SIGNOFF" and c["verificationGuide"]["steps"]
+    # SDP checked the repair photos, so the approval is the developer's sign-off: the buyer can sign off now
+    assert c["signoff"]["developer"]
+    assert any(m["caseId"] == "C-0007" and "sign off" in m["body"].lower() for m in state["messages"])
 
 
 def test_review_decision_needs_a_held_case(client):

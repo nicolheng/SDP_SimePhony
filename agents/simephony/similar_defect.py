@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 # Direct import from the real backend tools (no stub fallback — tools.py is ready).
 from tools import find_similar_cases
 
-from .llm_client import client, MODEL_TEXT
+from .llm_client import ai_only, client, MODEL_TEXT
 from .structured_output import StructuredOutputError, chat_json
 from agents.telemetry import record_agent_reasoning, record_confidence_score, record_llm_telemetry
 
@@ -56,6 +56,9 @@ def similar_defect_node(state: dict) -> dict:
     # Total occurrences = past non-INVALID cases + the current submission.
     total_occurrences = past_case_count + 1
 
+    # The checked English location: from the raw Malay alone, qwen read "bilik tidur utama" as a bathroom.
+    location = ((state.get("intake_result") or {}).get("location_in_unit") or "").strip()
+
     # Let the AI explain the cluster in plain text.
     messages = [
         {
@@ -74,7 +77,9 @@ def similar_defect_node(state: dict) -> dict:
             "role": "user",
             "content": (
                 f"Unit {unit_id} has had {past_case_count} past cases of '{category}'. "
-                f"The user says: '{state['user_description']}'. Explain why this may indicate a cluster."
+                + (f"Location (already checked; use these words for the place, never guess another room): "
+                   f"{location}. " if location else "")
+                + f"The user says: '{state['user_description']}'. Explain why this may indicate a cluster."
             )
         }
     ]
@@ -108,9 +113,9 @@ def similar_defect_node(state: dict) -> dict:
             confidence_score=confidence_score,
         )
         ai_reason = parsed.get("reasoning") or parsed.get("cluster_reason")
-    except StructuredOutputError:
-        ai_reason = "System detected multiple past cases in the database."
-    except Exception:
+    except Exception:  # StructuredOutputError included
+        if ai_only():
+            raise
         ai_reason = "System detected multiple past cases in the database."
 
     # Force Python-Level Fallbacks (Crucial)

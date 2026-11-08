@@ -51,6 +51,14 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
         if background_tasks and ctx.deferred_rain_cases:
             for case_id in ctx.deferred_rain_cases:
                 background_tasks.add_task(workflow.process_rain_agents, case_id)
+        if background_tasks and ctx.after_click:
+            background_tasks.add_task(workflow.run_after_click, list(ctx.after_click))
+        if background_tasks and ctx.deferred_answers:
+            for case_id, answer in ctx.deferred_answers:
+                background_tasks.add_task(workflow.process_new_report, case_id, answer)
+        if background_tasks and ctx.deferred_reports:
+            for case_id in ctx.deferred_reports:
+                background_tasks.add_task(workflow.process_new_report, case_id)
         if background_tasks and ctx.deferred_agent_steps:
             case_id = extra.get("caseId") or next(
                 (step.get("case_id") for step in ctx.deferred_agent_steps if step.get("case_id")),
@@ -263,6 +271,16 @@ def developer_signoff(case_id: str, request: Request, background_tasks: Backgrou
     return _run(request, workflow.developer_signoff, case_id, background_tasks=background_tasks)
 
 
+class RepairRejection(BaseModel):
+    note: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/cases/{case_id}/reject-repair")
+def reject_repair(case_id: str, body: RepairRejection, request: Request, background_tasks: BackgroundTasks):
+    """SDP refuses the developer sign-off: the repair needs more work and the buyer books a new repair."""
+    return _run(request, workflow.reject_repair, case_id, body.note, background_tasks=background_tasks)
+
+
 class ReviewDecision(BaseModel):
     approve: bool
     note: str = Field(default="", max_length=500)
@@ -276,6 +294,12 @@ def review_decision(case_id: str, body: ReviewDecision, request: Request, backgr
 
 class Decision(BaseModel):
     approve: bool
+
+
+@router.post("/approvals/{approval_id}/retry-brief")
+def retry_brief(approval_id: str, request: Request, background_tasks: BackgroundTasks):
+    """Try the inspection brief and booking again after they failed following an approval."""
+    return _run(request, workflow.retry_extra_inspection, approval_id, background_tasks=background_tasks)
 
 
 @router.post("/approvals/{approval_id}/decision")

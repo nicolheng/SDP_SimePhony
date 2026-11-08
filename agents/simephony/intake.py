@@ -94,6 +94,7 @@ _CATEGORY_KEYWORDS = (
     ("wall_crack", ("retak", "crack")),
     ("drainage", ("longkang", "tersumbat", "tak turun", "drain", "pooling")),
     ("tiles", ("jubin", "tile")),
+    ("sanitary_fittings", ("flush", "cistern", "pam tandas", "mangkuk tandas", "faucet")),
     ("water_leak", ("bocor", "leak", "rembes", "titis", "drip")),
     ("door_window", ("pintu", "tingkap", "door", "window")),
 )
@@ -108,6 +109,7 @@ _ROOM_KEYWORDS = (
     ("balcony", ("balcony", "balkoni")),
 )
 _NO_LOCATION = {"", "none", "null", "unknown", "n/a"}
+ROOM_QUESTION = "Which room is this in, and roughly where (e.g. ceiling above the wardrobe)?"
 
 
 def _category_from_keywords(text: str) -> str | None:
@@ -124,6 +126,59 @@ def _location_from_text(text: str) -> str | None:
     if room and ceiling:
         return f"{room} ceiling"
     return room or ("ceiling" if ceiling else None)
+
+
+# Strength (0-255) of the photo's crispest edges: the top 1% of edge pixels, photo scaled to 256 px wide with the
+# border cut off. Blur flattens every edge; even a plain ceiling has a few crisp ones (a stain's outline).
+# Measured on the test photos: sharp 13 (plain ceiling) to 255, heavily blurred copies 4-8, blur.jpg 0,
+# mildly blurred copies 5-34 (some are flagged, some not).
+_MIN_EDGE_STRENGTH = 10
+_MIN_PHOTO_SIDE = 200  # px
+
+
+def _photo_too_unclear(path: str) -> bool:
+    """True when the photo is too small or too blurred to show a defect."""
+    try:
+        from PIL import Image, ImageFilter
+        with Image.open(path) as img:
+            if min(img.size) < _MIN_PHOTO_SIDE:
+                return True
+            g = img.convert("L")
+            g = g.resize((256, max(8, round(256 * g.height / g.width))))
+            edges = g.filter(ImageFilter.FIND_EDGES)
+            edges = edges.crop((2, 2, edges.width - 2, edges.height - 2))  # FIND_EDGES marks the border itself
+            counts, seen = edges.histogram(), 0
+            for strength in range(255, -1, -1):  # walk down from the strongest edges to the top 1%
+                seen += counts[strength]
+                if seen >= sum(counts) * 0.01:
+                    return strength < _MIN_EDGE_STRENGTH
+            return True
+    except ImportError:
+        return os.path.getsize(path) < 2000  # Pillow missing: only a tiny file counts as unclear
+    except Exception:
+        return False  # unreadable here; the vision model still looks at it
+
+
+def _room_in_text(text: str) -> str | None:
+    """The room a report names ('bilik tidur utama' -> 'master bedroom'), or None."""
+    return next((name for name, words in _ROOM_KEYWORDS if any(w in text for w in words)), None)
+
+
+def _drop_room(title: str) -> str | None:
+    """The title without its room phrase: 'Hairline crack on living room wall' -> 'Hairline crack'.
+    None if nothing sensible is left."""
+    words = "|".join(re.escape(w) for _, ws in _ROOM_KEYWORDS for w in ws)
+    cut = re.sub(rf"\s+(?:in|on|at|of|near|inside|from|beside)\s+(?:the\s+)?(?:{words})\b(?:\s+(?:wall|ceiling|floor))?"
+                 r"(?=\s*$|\s*[,.;]|\s+(?:is|are|was|has|keeps|does|not|won't|can't|cannot)\b)",
+                 "", title, flags=re.IGNORECASE)
+    cut = " ".join(cut.split()).strip(" ,.-")
+    return cut if cut != title.strip(" ,.-") and len(cut.split()) >= 2 else None
+
+
+def _names_room(location: str, room: str) -> bool:
+    """Whether the model's location keeps the resident's room: 'bedroom, beside bed' keeps 'master bedroom'."""
+    words = set(re.findall(r"[a-z]+", location.lower()))
+    return bool(words & (set(room.split()) - {"room"}))
 
 
 def _evidence_quote(text: str, terms: tuple[str, ...]) -> str | None:
@@ -172,6 +227,18 @@ def image_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode('utf-8')}"
 
 
+_TITLE_MAX_WORDS = 10
+
+
+def _short_title(summary: str) -> str:
+    """The case title shown in lists, cards and messages: no full stop, and an over-long model answer cut at its
+    first clause ("Toilet flush button sticks after flushing and water keeps running…" -> "…after flushing")."""
+    title = summary.strip().rstrip(".").strip()
+    if len(title.split()) > _TITLE_MAX_WORDS:
+        title = re.split(r",|;| and | which | until | when ", title, maxsplit=1)[0].strip()
+    return title
+
+
 def intake_node(state: dict) -> dict:
     """P1: Parse photo + text into structured JSON aligned with rules.yaml."""
     image_content = []
@@ -216,12 +283,20 @@ def intake_node(state: dict) -> dict:
         "   - 'door' / 'window' stuck or misaligned -> 'door_window'\n"
         "   - 'retak' / 'crack on wall' -> 'wall_crack'\n"
         "   - 'spark' / 'socket' / 'wiring' -> 'electrical'\n"
+        "   - a faulty toilet flush, cistern, tap, basin or shower fitting -> 'sanitary_fittings', even when water "
+        "keeps running (that is the fitting, not a leak)\n"
         "   - 'aircond' / 'air conditioning' -> 'other'\n"
         "   Reports are often in Manglish (Malay mixed with English): bocor = leak, siling = ceiling, "
         "retak = crack, pintu = door, tingkap = window, jubin = tile, longkang = drain, "
         "bilik tidur = bedroom, bilik air / tandas = bathroom, dapur = kitchen, lagi = again. "
         "Only use 'other' when the text names none of these defects.\n"
-        "   location_in_unit: the room and surface, e.g. 'bedroom ceiling'.\n"
+        "   location_in_unit: 'room, spot', in English. The room is the one the resident names (bilik tidur utama = "
+        "master bedroom). The spot is a few words from the report saying where in that room, such as the fitting, "
+        "furniture or surface it is next to, above or under; leave it out if the report gives none. Never add a "
+        "ceiling, wall or floor that is not mentioned or shown.\n"
+        "   summary: a short title for the case in English, 3 to 8 words, no full stop: the defect and where it is, "
+        "e.g. 'Hairline crack on living room wall' or 'Loose handle on second bedroom door'. "
+        "Never copy the resident's description.\n"
         "2. preliminary_outcome is 'VALID_DEFECT' for all genuine property defects.\n"
         "3. urgency triggers:\n"
         f"   - high:\n{high_triggers_str}\n"
@@ -327,9 +402,21 @@ def intake_node(state: dict) -> dict:
                 term for terms in _CATEGORY_KEYWORDS if terms[0] == parsed_intake["category"] for term in terms[1]
             )
 
-    # 1b. Location: live qwen returned none for "Ceiling bocor lagi in the bedroom"
-    if str(parsed_intake.get("location_in_unit") or "").strip().lower() in _NO_LOCATION:
+    # 1b. Location: live qwen returned none for "Ceiling bocor lagi in the bedroom", and live llava put
+    # "Pintu bilik tidur" in the living room: the room the resident names wins over the model's
+    location = str(parsed_intake.get("location_in_unit") or "").strip()
+    named_room = _room_in_text(desc_lower)
+    other_room = named_room and _room_in_text(location.lower()) and not _names_room(location, named_room)
+    if location.lower() in _NO_LOCATION or other_room:
         parsed_intake["location_in_unit"] = _location_from_text(desc_lower)
+    elif not named_room:
+        # The report names no room, so any room the model gives is a guess from the photo (live llava turned a
+        # blurry "There's a mark here" into "living room wall"). Keep only what the text says and ask for the room.
+        parsed_intake["location_in_unit"] = _location_from_text(desc_lower)
+    if not named_room:
+        parsed_intake["missing_info"] = [*(parsed_intake.get("missing_info") or []), "location_in_unit"]
+        if not (parsed_intake.get("follow_up_question") or "").strip():
+            parsed_intake["follow_up_question"] = ROOM_QUESTION
 
     # 2. Recurrence detection from user description text
     match_count = re.search(r'(\d+)(?:st|nd|rd|th)?\s*(?:time|kali)', desc_lower)
@@ -393,16 +480,13 @@ def intake_node(state: dict) -> dict:
         "related_cases": [],
     })
 
-    # 4. Blur / missing photo detection
-    is_blur_image = False
-    if image_path and os.path.exists(image_path):
-        size = os.path.getsize(image_path)
-        if size < 2000 or "blur" in os.path.basename(image_path).lower():
-            is_blur_image = True
+    # 4. Blur / missing photo detection: measured from the picture itself (not its file name)
+    is_blur_image = bool(image_path and os.path.exists(image_path) and _photo_too_unclear(image_path))
 
     if is_blur_image:
         parsed_intake["preliminary_outcome"] = "INSUFFICIENT_INFORMATION"
-        parsed_intake["missing_info"] = ["Photo is too blurry or lacks clear defect details. Please upload a clear photo."]
+        parsed_intake["missing_info"] = [*(parsed_intake.get("missing_info") or []),
+                                         "Photo is too blurry or lacks clear defect details. Please upload a clear photo."]
     elif not parsed_intake.get("preliminary_outcome"):
         parsed_intake["preliminary_outcome"] = "VALID_DEFECT"
         if not parsed_intake.get("missing_info"):
@@ -416,11 +500,23 @@ def intake_node(state: dict) -> dict:
     elif "mismatch_detected" not in parsed_intake:
         parsed_intake["mismatch_detected"] = False
 
-    # 6. Safety rule
-    if parsed_intake.get("urgency") == "high":
-        summary = parsed_intake.get("summary", "")
-        if not summary.startswith("URGENT:"):
-            parsed_intake["summary"] = f"URGENT: {summary}".strip()
+    # The title stays plain: the app shows urgency as its own badge (and technician emails as "Urgency: high").
+    # Live llava sometimes returns the resident's own sentence (Malay included) as the title: build one instead.
+    summary = parsed_intake.get("summary") or ""
+    where = str(parsed_intake.get("location_in_unit") or "")
+    # The title must not name another room than the (already checked) location: live llava titled
+    # "Siling bilik tidur utama bocor" as "Water leak in the bathroom" while the location was right.
+    title_room = _room_in_text(summary.lower())
+    named_room = _room_in_text(desc_lower)
+    if title_room and not named_room:
+        summary = _drop_room(summary) or summary  # "Hairline crack on living room wall" -> "Hairline crack"
+        title_room = _room_in_text(summary.lower())
+    wrong_room = bool(title_room and _room_in_text(where.lower()) and not _names_room(where, title_room))
+    if wrong_room or summary.strip(" .!?").lower() == user_description.strip(" .!?").lower():
+        where = parsed_intake.get("location_in_unit")
+        label = str(parsed_intake.get("category") or "defect").replace("_", " ").capitalize()
+        summary = f"{label} in {where}" if where else label
+    parsed_intake["summary"] = _short_title(summary)
 
     state["intake_result"] = parsed_intake
     state["missing_info"] = parsed_intake.get("missing_info", [])

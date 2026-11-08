@@ -138,7 +138,8 @@ class TestOutputContract:
         expected = ["No photo provided", "Location unclear"]
         _patch_llm(monkeypatch, {"category": "other", "missing_info": expected})
         result = intake_node(_base_state())
-        assert result["missing_info"] == expected
+        assert result["missing_info"] == result["intake_result"]["missing_info"]
+        assert result["missing_info"][:2] == expected  # plus "location_in_unit": the report names no room
 
 
 # ===========================================================================
@@ -390,6 +391,21 @@ def test_model_location_is_kept(fake_llm):
     assert out["intake_result"]["location_in_unit"] == "above the wardrobe"
 
 
+def test_title_naming_another_room_is_rebuilt_from_the_location(fake_llm):
+    # Live llava: "Siling bilik tidur utama bocor" titled "Water leak in the bathroom", location right
+    _model_says(fake_llm, category="water_leak", location_in_unit="master bedroom ceiling",
+                summary="Water leak in the bathroom")
+    out = _intake_node({"user_description": "Siling bilik tidur utama bocor lagi, ini kali ketiga!"})
+    assert out["intake_result"]["summary"] == "Water leak in master bedroom ceiling"
+
+
+def test_title_with_the_same_room_is_kept(fake_llm):
+    _model_says(fake_llm, category="water_leak", location_in_unit="master bedroom ceiling",
+                summary="Ceiling leaking in the bedroom")
+    out = _intake_node({"user_description": "Siling bilik tidur utama bocor"})
+    assert out["intake_result"]["summary"] == "Ceiling leaking in the bedroom"
+
+
 def test_result_is_saved_to_the_case(fake_llm, monkeypatch):
     from agents.simephony import backend_tools
     save = MagicMock(return_value={"ok": True, "status": "SUBMITTED", "warnings": []})
@@ -418,3 +434,30 @@ def test_save_refusal_is_recorded_not_raised(fake_llm, monkeypatch):
     _model_says(fake_llm, category="water_leak")
     out = _intake_node({"case_id": "C-1", "user_description": "Ceiling bocor"})
     assert "VISIT_SCHEDULED" in out["intake_save"]["error"]
+
+
+def test_room_guessed_without_one_in_the_report_is_left_out_and_asked_for(fake_llm):
+    # Live llava: blurry photo + "There's a mark here" -> "Hairline crack on living room wall", location living room wall
+    _model_says(fake_llm, category="wall_crack", location_in_unit="living room wall",
+                summary="Hairline crack on living room wall")
+    out = _intake_node({"user_description": "There's a mark here; I'm not sure what caused it."})["intake_result"]
+    assert not out["location_in_unit"]
+    assert "location_in_unit" in out["missing_info"] and out["follow_up_question"]
+    assert out["summary"] == "Hairline crack"
+
+
+def test_unclear_photo_is_measured_not_judged_by_file_name(tmp_path):
+    from PIL import Image, ImageFilter
+    from agents.simephony.intake import _photo_too_unclear
+    images = "tests/data/test_cases/images/"
+    assert _photo_too_unclear(images + "blur.jpg")  # 100 x 100, no detail
+    for sharp in ("door_misaligned.jpg", "sparks.jpg", "image.jpg", "bocor.jpg"):  # image.jpg: a plain ceiling
+        assert not _photo_too_unclear(images + sharp), sharp
+    renamed = tmp_path / "blurry_but_named_door.jpg"
+    with Image.open(images + "door_misaligned.jpg") as img:
+        img.filter(ImageFilter.GaussianBlur(12)).save(renamed)
+    assert _photo_too_unclear(str(renamed))
+    clear_named_blur = tmp_path / "blur_copy.jpg"
+    with Image.open(images + "door_misaligned.jpg") as img:
+        img.save(clear_named_blur)
+    assert not _photo_too_unclear(str(clear_named_blur))

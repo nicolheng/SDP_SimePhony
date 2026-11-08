@@ -321,3 +321,14 @@ def test_save_failure_is_recorded_not_raised(fake_llm, monkeypatch):
     with patch("agents.simephony.similar_defect.find_similar_cases", return_value=[_make_case("H-0001")]):
         out = similar_defect_node(_base_state(case_id="C-0016"))
     assert "locked" in out["similar_cases_result"]["save_error"]
+
+
+def test_prompt_gives_the_checked_location(monkeypatch):
+    # From the raw Malay alone, qwen called "siling bilik tidur utama" a bathroom ceiling
+    monkeypatch.setattr("agents.simephony.similar_defect.find_similar_cases", lambda **_: [])
+    llm = MagicMock(**{"chat.completions.create.return_value": _llm_response()})
+    monkeypatch.setattr("agents.simephony.similar_defect.client", llm)
+    similar_defect_node(_base_state(user_description="Siling bilik tidur utama bocor lagi",
+                                     intake_result={"category": "water_leak", "location_in_unit": "master bedroom ceiling"}))
+    prompt = json.dumps(llm.chat.completions.create.call_args.kwargs["messages"])
+    assert "master bedroom ceiling" in prompt and "never guess another room" in prompt

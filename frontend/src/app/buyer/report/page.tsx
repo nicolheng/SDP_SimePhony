@@ -165,12 +165,16 @@ type Stage = { label: string; state: "done" | "active" | "attention" | "todo" };
 
 /** Buyer-facing progress only: no agent names, no related-case details. */
 function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnType<typeof useCaseEvents>): Stage[] {
-  const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent);
+  // After the buyer answers a follow-up question the agents run again: only their steps since that answer count.
+  const since = Math.max(0, ...events.filter((e) => e.type === "case.answered").map((e) => e.id));
+  const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent && e.id > since);
   const review = c.status === "PENDING_REVIEW";
   const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
   return [
     { label: "Report received", state: "done" },
-    { label: "Understanding your report", state: did("IntakeAgent") ? "done" : "active" },
+    // With USE_AI_AGENTS=only the agents run after the report is saved: a case that has left SUBMITTED is past
+    // this stage even without an IntakeAgent step (e.g. held for review when the AI failed).
+    { label: "Understanding your report", state: did("IntakeAgent") || c.status !== "SUBMITTED" ? "done" : "active" },
     c.status === "INFO_NEEDED"
       ? { label: "Waiting for one more detail from you", state: "attention" }
       : review
@@ -192,6 +196,24 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
     const t = setTimeout(() => setRevealed((r) => r + 1), 700);
     return () => clearTimeout(t);
   }, [currentDone, revealed]);
+  // The care tip is picked from the category, so it waits for IntakeAgent's result on the case (a new case has
+  // no category yet and reads as "other"), then shows one tick after the title, like the stages above.
+  const categorized = revealed > 1 && real[1]?.state === "done" && !!c?.summary;
+  const [tipShown, setTipShown] = useState(false);
+  useEffect(() => {
+    if (!categorized || tipShown) return;
+    const t = setTimeout(() => setTipShown(true), 700);
+    return () => clearTimeout(t);
+  }, [categorized, tipShown]);
+  // Answering the follow-up question sends the report through the agents again: replay from "Understanding".
+  const [waiting, setWaiting] = useState(false);
+  if (c && (c.status === "INFO_NEEDED") !== waiting) {
+    setWaiting(c.status === "INFO_NEEDED");
+    if (waiting) {
+      setRevealed(1);
+      setTipShown(false);
+    }
+  }
   if (!c) return null;
   // Also not settled while a stage is still running (e.g. re-processing after the buyer answers a question).
   const settled = done && (revealed >= real.length || (real[revealed].state !== "done" && real[revealed].state !== "active"));
@@ -200,6 +222,7 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
     state: i < revealed ? st.state : i === revealed ? (st.state === "attention" || (settled && st.state === "todo") ? st.state : "active") : "todo",
   }));
   const review = c.status === "PENDING_REVIEW";
+  const understood = stages[1]?.state === "done";
   const tech = getTechnician(c.technicianId);
 
 
@@ -230,7 +253,25 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </ol>
         </Section>
 
-        {settled && (
+        {/* Each card appears with its stage: the assessment once "Understanding your report" is ticked (with
+            USE_AI_AGENTS=only that is when IntakeAgent finishes), while the booking is still being found below. */}
+        {!understood && (
+          <Section>
+            <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-100" />
+            <div className="mt-2 h-3 w-2/5 animate-pulse rounded bg-zinc-100" />
+          </Section>
+        )}
+
+        {understood && c.status === "INFO_NEEDED" && (
+          /* The AI's first look isn't shown while it is still missing details: it would only be a guess. */
+          <Section title="Defect Assessment">
+            <p className="text-sm text-zinc-700">
+              We need a little more information before we can assess your report. Please answer the question below.
+            </p>
+          </Section>
+        )}
+
+        {understood && c.status !== "INFO_NEEDED" && (
           <Section title="Defect Assessment">
             <div className="flex items-center gap-2">
               <Sparkles className="size-4 text-brand" />
@@ -238,13 +279,15 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
               <UrgencyBadge urgency={c.urgency} />
             </div>
             <p className="mt-1 text-xs text-zinc-500">{PRIORITY_NOTE[c.urgency] ?? PRIORITY_NOTE.normal}</p>
-            <div className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
-              <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
-              <p>
-                <span className="font-semibold">Until the visit: </span>
-                {CARE_TIP[c.category] ?? CARE_TIP.other}
-              </p>
-            </div>
+            {tipShown && (
+              <div className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
+                <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <p>
+                  <span className="font-semibold">Until the visit: </span>
+                  {CARE_TIP[c.category] ?? CARE_TIP.other}
+                </p>
+              </div>
+            )}
           </Section>
         )}
 
@@ -254,6 +297,14 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
             <p className="text-sm font-semibold text-amber-800">One more question</p>
             <p className="mt-1 text-sm text-zinc-700">{c.followUpQuestion}</p>
             <FollowUpForm caseId={c.id} />
+          </Section>
+        )}
+
+        {understood && !settled && c.status !== "INFO_NEEDED" && !review && (
+          <Section title="Scheduled Inspection">
+            <p className="flex items-center gap-2 text-sm text-zinc-500">
+              <Loader2 className="size-4 shrink-0 animate-spin text-zinc-400" /> Finding a technician for your visit…
+            </p>
           </Section>
         )}
 

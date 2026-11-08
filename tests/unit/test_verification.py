@@ -135,7 +135,30 @@ def test_vision_prompt_has_case_details(state, fake_llm, tmp_path):
     assert len(images) == 2
     assert all(p["image_url"]["url"].startswith("data:image/jpeg;base64,") for p in images)
     assert "master bedroom ceiling" in text
-    assert state["repair_note"] in text
+    # The repair note is kept from the vision model: llava copied it into its verdict.
+    assert state["repair_note"] not in text
+
+
+def test_same_photo_as_original_is_held_without_a_model_call(state, fake_llm, tmp_path):
+    photo = tmp_path / "same.jpg"
+    photo.write_bytes(b"\xff\xd8\xff\xe0same")
+    state["image_path"] = state["repair_photo_path"] = str(photo)
+    out = verification_node(state)
+    r = out["verification_result"]
+    assert fake_llm.calls == []
+    assert r["needs_human_review"] is True and r["protocol"] is None
+    assert "same as the original" in r["review_reason"]
+
+
+def test_different_photo_with_same_size_still_goes_to_the_model(state, fake_llm, tmp_path):
+    a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    a.write_bytes(b"\xff\xd8\xff\xe0aaaa")
+    b.write_bytes(b"\xff\xd8\xff\xe0bbbb")
+    state["image_path"], state["repair_photo_path"] = str(a), str(b)
+    fake_llm.responses = [_vision(), "Look at the patched area for damp or staining."]
+    out = verification_node(state)
+    assert len(fake_llm.calls) >= 1
+    assert out["verification_result"].get("needs_human_review") is not True
 
 
 def test_resolved_builds_safe_guide(state, fake_llm):
@@ -427,3 +450,33 @@ def test_rules_yaml_never_sends_the_buyer_into_another_unit():
     for category, steps in load_rules()["verification_protocols"].items():
         for step in steps:
             assert "unit above" not in step.lower(), (category, step)
+
+
+_IMAGES = "tests/data/test_cases/images/"
+
+
+def _retake(src, dest):
+    """The same scene photographed again: slightly cropped, brighter and smaller, so the file differs."""
+    from PIL import Image, ImageEnhance
+    with Image.open(src) as img:
+        w, h = img.size
+        img = img.convert("RGB").crop((int(w * .03), int(h * .03), int(w * .98), int(h * .98)))
+        ImageEnhance.Brightness(img).enhance(1.1).resize((w // 2, h // 2)).save(dest, "JPEG", quality=70)
+
+
+def test_retaken_photo_of_the_same_scene_is_flagged_but_still_checked_by_the_ai(state, fake_llm, tmp_path):
+    retake = tmp_path / "retake.jpg"
+    _retake(_IMAGES + "door_misaligned.jpg", retake)
+    state["image_path"], state["repair_photo_path"] = _IMAGES + "door_misaligned.jpg", str(retake)
+    fake_llm.responses = [_vision(), "Look at the door."]
+    out = verification_node(state)
+    assert fake_llm.calls  # unlike an identical file, the AI still judges the photo
+    assert out["photo_similarity"]["similar"] is True and out["photo_similarity"]["distance"] <= 10
+
+
+def test_a_different_photo_is_not_flagged_as_similar(state, fake_llm):
+    state["image_path"] = _IMAGES + "ceiling-water-leak.jpg"
+    state["repair_photo_path"] = _IMAGES + "ceiling_repaired.jpg"
+    fake_llm.responses = [_vision(), "Look at the ceiling."]
+    out = verification_node(state)
+    assert out["photo_similarity"]["similar"] is False and out["photo_similarity"]["distance"] > 10

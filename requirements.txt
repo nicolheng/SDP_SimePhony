@@ -16,6 +16,7 @@ google-auth-oauthlib
 
 # Data & Embeddings
 numpy
+pillow>=13.0.0             # repair photo similarity check; 13.0.0 fixes the Oct 2026 security issues
 sentence-transformers
 
 # Testing

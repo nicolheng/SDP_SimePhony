@@ -1,9 +1,10 @@
 "use client";
-import { Bot, Check, CircleHelp, X } from "lucide-react";
+import { Bot, Check, CircleHelp, ShieldCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
+import { PhotoCheckSummary } from "@/components/developer-signoff";
 import { MobileHeader, Section } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
 import { RatingDialog } from "@/components/rating";
@@ -67,6 +68,11 @@ export function VerifyRepair() {
           </p>
           {/* Shown without the technician's note or the stored intro's "check only these points" line. */}
           <p className="mt-1 text-sm text-zinc-700">Your {c.summary.toLowerCase()} has been repaired.</p>
+          {/* The developer has signed by the time this page opens. */}
+          <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-800">
+            <ShieldCheck className="size-3.5" /> Repair photo checked by SDP
+            {c.signoff?.developer?.at ? ` on ${fmtDate(c.signoff.developer.at)}` : ""}
+          </p>
           <p className="mt-2 text-xs font-medium text-amber-800">
             Sign off by {fmtDate(signoffDeadline(c))}. {c.urgency === "high" ? "After that our team will follow up." : "After that the case closes automatically."}
           </p>
@@ -81,6 +87,12 @@ export function VerifyRepair() {
               <div className="grid aspect-[4/3] place-items-center rounded-lg bg-zinc-100 text-xs text-zinc-400">No repair photo</div>
             )}
           </div>
+          {/* What the VerificationAgent found in the repair photo, as SDP saw it before approving. */}
+          {c.photoCheck && (
+            <div className="mt-3">
+              <PhotoCheckSummary check={c.photoCheck} />
+            </div>
+          )}
         </Section>
 
         <Section title="1. Verification Checklist">

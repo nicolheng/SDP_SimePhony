@@ -43,6 +43,7 @@ export type AgentName =
 export type EventType =
   | "case.created"
   | "case.info_needed"
+  | "case.answered"
   | "case.assigned"
   | "booking.requested"
   | "booking.confirmed"
@@ -50,6 +51,7 @@ export type EventType =
   | "verdict.recorded"
   | "repair.booked"
   | "repair.done"
+  | "repair.rejected"
   | "verification.requested"
   | "verification.completed"
   | "case.reopened"
@@ -156,6 +158,8 @@ export interface Case {
   followUpQuestion?: string;
   verdict?: { outcome: "VALID" | "INVALID"; note: string; at: string };
   repairNote?: string;
+  /** VerificationAgent's check of the repair photo, for SDP's developer sign-off (null when the AI did not run). */
+  photoCheck?: PhotoCheck | null;
   verificationGuide?: VerificationGuide;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
@@ -394,4 +398,19 @@ export interface Rules {
   bookingWindowDays: number;
   urgency: { default: string; high: string[]; low: string[] };
   verificationProtocols: Record<string, string[]>;
+}
+
+/** What the VerificationAgent saw in the technician's repair photo. flagged: it could not confirm the repair
+ *  (unsure, not resolved, or the same photo as the original), so SDP should look closely before signing off. */
+export interface PhotoCheck {
+  assessment: "looks_resolved" | "unclear" | "not_resolved";
+  observations: string;
+  confidence: number | null;
+  flagged: boolean;
+  /** "ai": the vision model judged the photo. "rule": a code check (the repair photo is the original file). */
+  source: "ai" | "rule";
+  model: string | null;
+  /** The repair photo looks almost the same as the original (a picture-fingerprint check, not AI). */
+  similarToOriginal: boolean;
+  at: string | null;
 }

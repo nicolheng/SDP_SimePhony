@@ -3,6 +3,7 @@ import { Bot, Check, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PhotoThumb } from "@/components/photo";
 import { decideReview } from "@/lib/api";
 import { fmtDateTime } from "@/lib/dates";
 import { useOffline } from "@/lib/store";
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 function outcomes(previous: string): { approve: string; reject: string } {
   if (["REOPENED", "EXTRA_INSPECTION", "ESCALATION_PENDING"].includes(previous))
     return { approve: "Book a revisit (or an extra inspection if it keeps recurring)", reject: "Keep the case closed: the reopen is not accepted" };
-  if (previous === "REPAIRED") return { approve: "Accept the repair: the buyer gets the standard sign-off checklist", reject: "Repair needs more work: the buyer books a new repair" };
+  if (previous === "REPAIRED") return { approve: "Accept the repair and sign off as the developer: the buyer is asked to check it and sign off", reject: "Repair needs more work: the buyer books a new repair" };
   if (["VALID", "REPAIR_BOOKED"].includes(previous)) return { approve: "The buyer books the repair", reject: "Repair needs more work: the buyer books a new repair" };
   return { approve: "Accept the report as it is and book the inspection visit", reject: "Close as not a defect (the buyer is told why)" };
 }
@@ -26,6 +27,9 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
   const r = c.review;
   const o = outcomes(r?.previousStatus ?? "SUBMITTED");
   const score = typeof r?.confidence === "number" ? Math.round(r.confidence * 100) : null;
+  // A held repair check: show the before and after photos side by side, so SDP can compare them here.
+  const before = r?.previousStatus === "REPAIRED" ? c.photos.find((p) => p.kind === "original") : undefined;
+  const after = r?.previousStatus === "REPAIRED" ? [...c.photos].reverse().find((p) => p.kind === "repair") : undefined;
 
   async function decide(approve: boolean) {
     if (!approve && !note.trim()) {
@@ -67,6 +71,12 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
           </div>
         )}
       </div>
+      {(before || after) && (
+        <div className="mt-4 grid max-w-md grid-cols-2 gap-3">
+          {before && <PhotoThumb photo={before} className="aspect-[4/3]" />}
+          {after && <PhotoThumb photo={after} className="aspect-[4/3]" />}
+        </div>
+      )}
       <ul className="mt-4 space-y-1 text-sm text-zinc-600">
         <li>
           <span className="font-medium text-emerald-700">Approve:</span> {o.approve}

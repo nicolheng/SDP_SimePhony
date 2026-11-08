@@ -50,11 +50,49 @@ _VISION_SYSTEM = (
     '"observations": "one or two short sentences describing what you see", '
     '"matches_location": true | false, "confidence_score": 0.9}. '
     "matches_location is true only if the repair photo shows the location and defect type described. "
+    "Judge only what the repair photo itself shows. Use looks_resolved only when the repair photo clearly "
+    "shows the reported fault is gone; if it looks the same as the original defect photo, use not_resolved. "
     "If the photo is blurry, unrelated or you are not sure, use \"unclear\". Output a confidence_score "
     "between 0.0 and 1.0 representing how certain you are about this classification based on the photo "
     "and text. Use 1.0 for absolute certainty, and below 0.7 if the image is blurry, text is vague, "
     "or the defect is ambiguous."
 )
+
+
+def _same_photo(original: str | None, repair: str | None) -> bool:
+    """True when the repair photo is byte-for-byte the original defect photo."""
+    if not original or not repair or not os.path.exists(original) or not os.path.exists(repair):
+        return False
+    if os.path.getsize(original) != os.path.getsize(repair):
+        return False
+    with open(original, "rb") as a, open(repair, "rb") as b:
+        return a.read() == b.read()
+
+
+# Photos whose fingerprints differ in this many of 64 points or fewer look almost the same. Measured on the test
+# photos: the same photo re-saved smaller 0-6, a shifted / brighter retake up to 11, different photos 13 or more.
+_SIMILAR_MAX_DISTANCE = 10
+
+
+def _fingerprint(path: str) -> list[bool]:
+    """A 64-point "difference hash": the photo shrunk to 9x8 greyscale, each point = brighter than its right
+    neighbour. Similar-looking photos get similar fingerprints, whatever their size or JPEG quality."""
+    from PIL import Image
+    with Image.open(path) as img:
+        px = img.convert("L").resize((9, 8), Image.LANCZOS).tobytes()
+    return [px[r * 9 + c] > px[r * 9 + c + 1] for r in range(8) for c in range(8)]
+
+
+def _photo_distance(original: str | None, repair: str | None) -> int | None:
+    """How many of the 64 fingerprint points differ (0 = look the same), or None when it can't be measured."""
+    if not original or not repair or not os.path.exists(original) or not os.path.exists(repair):
+        return None
+    try:
+        a, b = _fingerprint(original), _fingerprint(repair)
+    except Exception as e:  # Pillow missing or an unreadable image: the AI still checks the photo
+        print(f"[VERIFICATION] photo similarity unavailable: {e}")
+        return None
+    return sum(x != y for x, y in zip(a, b))
 
 
 def _location(state: dict) -> str:
@@ -90,7 +128,8 @@ def assess_repair_photo(state: dict) -> dict:
             f"Buyer description: {state.get('user_description', '')}\n"
             f"Category: {category}\n"
             f"Location: {location}\n"
-            f"Technician repair note: {state.get('repair_note', '')}\n"
+            # The technician's note is left out on purpose: llava copied it into its verdict ("the door
+            # now closes fully") even for an unchanged photo, so the photo is judged on its own.
             "The first image (if two are given) is the original defect; the last image is the repair photo."
         ),
     })
@@ -236,6 +275,25 @@ def verification_node(state: dict) -> dict:
             state, category, "unclear", "",
             f"Please add the {' and '.join(missing)} so the repair can be verified before the buyer is contacted.",
         )
+
+    if _same_photo(state.get("image_path"), photo):
+        # The "after" photo is the buyer's original: there is nothing new for the model to judge,
+        # so a person looks at it instead (the model would only repeat the repair note).
+        flag_for_human_review(state, "VerificationAgent", 0.0,
+                              abstain_reason="the repair photo is the same as the original defect photo")
+        state["verification_result"] = {
+            "category": category, "assessment": "unclear", "checked_by": "same_photo_rule",
+            "observations": "The repair photo is the same file as the buyer's original defect photo.",
+            "protocol": None, "needs_technician_input": False, "needs_human_review": True,
+            "review_reason": state["review_reason"], "confidence_score": 0.0,
+        }
+        return state
+
+    # Almost the same picture (e.g. retaken from the same spot): the AI still judges it, since a repaired door
+    # can look much like the original, but SDP is told to compare the photos before signing off.
+    distance = _photo_distance(state.get("image_path"), photo)
+    state["photo_similarity"] = {"distance": distance,
+                                 "similar": distance is not None and distance <= _SIMILAR_MAX_DISTANCE}
 
     photo_check = assess_repair_photo(state)
     if photo_check.get("_structured_output_error"):

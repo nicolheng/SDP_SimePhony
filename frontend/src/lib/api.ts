@@ -75,6 +75,11 @@ export async function developerSignOff(caseId: string) {
   await apiAction(`/api/cases/${caseId}/developer-signoff`);
 }
 
+/** SDP won't sign off the repair: it needs more work and the buyer books a new repair. note is shown to both. */
+export async function rejectRepair(caseId: string, note: string) {
+  await apiAction(`/api/cases/${caseId}/reject-repair`, { note });
+}
+
 /** Approve or reject a case an AI agent held for a person to check (PENDING_REVIEW). */
 export async function decideReview(caseId: string, approve: boolean, note: string) {
   await apiAction(`/api/cases/${caseId}/review-decision`, { approve, note });
@@ -82,6 +87,11 @@ export async function decideReview(caseId: string, approve: boolean, note: strin
 
 export async function decideApproval(approvalId: string, approve: boolean) {
   await apiAction(`/api/approvals/${approvalId}/decision`, { approve });
+}
+
+/** Write the inspection brief and book the joint inspection again, after they failed following an approval. */
+export async function retryInspectionBrief(approvalId: string) {
+  await apiAction(`/api/approvals/${approvalId}/retry-brief`);
 }
 
 // ---------- availability (read from the backend) ----------

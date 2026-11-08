@@ -2,7 +2,7 @@
 import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
-from agents.simephony.comms import comms_node
+from agents.simephony.comms import comms_node, message_for_kind
 
 NOTIFY = "agents.simephony.backend_tools.notify_buyer"
 SENT_OK = {"ok": True, "message_id": "BM-1", "email_status": "logged, not sent"}
@@ -230,6 +230,13 @@ def test_llm_failure_sends_neutral_template(fake_llm):
     out, body = _send({"current_status": "VISIT_SCHEDULED", "case_id": "C-1"})
     assert body == NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]
     assert out["comms_result"]["message"] == body
+
+
+def test_llm_failure_is_an_error_in_only_mode(fake_llm, monkeypatch):
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    with pytest.raises(RuntimeError, match="ollama down"):
+        message_for_kind("valid", {"case_id": "C-1", "status": "VALID", "category": "water_leak"})
 
 
 def test_llm_failure_invalid_still_has_closing(fake_llm):
@@ -599,3 +606,16 @@ def test_detailed_inspection_booked_message(fake_llm):
                        "booking_result": {"booking_status": "PENDING", "start_local": "Thu, 22 Oct, 9:00 am"}})
     assert out["comms_result"]["title"] == "Detailed inspection scheduled"
     assert body.endswith("Inspection time: Thu, 22 Oct, 9:00 am.")
+
+
+def test_signoff_message_lists_just_the_checks(fake_llm):
+    # The stored guide's intro repeats the title and technician's note; the message keeps only the numbered checks
+    fake_llm.responses = ["Your door repair is ready for you to check."]
+    case = {"case_id": "C-1", "status": "PENDING_SIGNOFF", "category": "door_window", "location_in_unit": "bedroom"}
+    _, body = message_for_kind("ready_signoff", case, {
+        "deadline": "22 Nov 2026",
+        "guide": "Your door was repaired. Technician's note: \"Planed the frame\". Please check only these points:\nOpen and close it 10 times.",
+        "guide_steps": ["Open and close the door 10 times.", "Lock and unlock it 3 times."]})
+    assert "sign off by 22 Nov 2026" in body
+    assert "1. Open and close the door 10 times.\n2. Lock and unlock it 3 times." in body
+    assert "Technician's note" not in body and "Please check only these points" not in body

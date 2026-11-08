@@ -3,9 +3,14 @@
 USE_AI_AGENTS (.env):  "" / false = the rule-based stand-ins in agents.py only (default)
                         true / all = every agent below
                         or a comma list: intake, similar, triage, estimate, verification, inspection, comms
+                        only = every agent, for testing: no rule-based stand-ins at all (see below)
 Direct workflow callers run agents inline. API requests use rule-based results in their transaction and
 defer the agent computations until after commit, where each step loads current case data on a fresh
 connection. AI results do not replace the rule-based action already returned to the caller.
+With "only", the AI result is the one saved, and a failed agent step is an error instead of using the stand-in.
+A new report is saved straight away and its agents run after the request (workflow.process_new_report); a
+failure there holds the case for SDP review. Other actions run their agents inline, so the request waits for
+the model, and a failure fails the request (nothing is saved).
 """
 import base64
 import logging
@@ -16,6 +21,7 @@ from pathlib import Path
 
 import db
 import tools
+from agents.simephony.llm_client import ai_only
 from agents.telemetry import record_agent_reasoning, telemetry_payload, telemetry_scope
 
 from . import agents as standins
@@ -32,7 +38,7 @@ def enabled(name: str) -> bool:
     value = os.getenv("USE_AI_AGENTS", "").strip().lower()
     if value in ("", "0", "false", "no", "off"):
         return False
-    if value in ("1", "true", "yes", "on", "all"):
+    if value in ("1", "true", "yes", "on", "all", "only"):
         return True
     return name in {x.strip() for x in value.split(",")}
 
@@ -61,7 +67,7 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
     """Run inline, defer after commit, or use the rule-based result when disabled or unavailable."""
     if not enabled(name):
         return fallback()
-    if ctx.defer_agents:
+    if ctx.defer_agents and not ai_only():
         ctx.defer_agent_step(name, **(background_args or {}))
         return fallback()
     error = None
@@ -87,6 +93,11 @@ def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, fail
         return result
     if error is not None:
         e = error
+        if ai_only():
+            from .workflow import WorkflowError
+            log.error("%s agent failed and USE_AI_AGENTS=only: %s", name, e)
+            raise WorkflowError(f"{_agent_label(name)} failed and USE_AI_AGENTS=only, so no rule-based answer was "
+                                f"used: {type(e).__name__}: {e}") from e
         log.warning("%s agent failed, using the stand-in: %s", name, e)
         print(f"[AI AGENTS] {name} failed, using the stand-in: {e}")
         case_id = (background_args or {}).get("case_id")
@@ -247,7 +258,8 @@ def similar(ctx, case: dict) -> dict:
         from agents.simephony.similar_defect import similar_defect_node
         r = similar_defect_node({"case_id": case["case_id"], "unit_id": case["unit_id"],
                                  "user_description": case.get("description") or case.get("summary") or "",
-                                 "intake_result": {"category": case["category"]}, "decide_only": True})["similar_cases_result"]
+                                 "intake_result": {"category": case["category"], "location_in_unit": case.get("location_in_unit")},
+                                 "decide_only": True})["similar_cases_result"]
         return {**stand, "cluster_reason": r.get("cluster_reason")}
     return _run(ctx, "similar", ai, lambda: stand, {"case_id": case["case_id"]})
 
@@ -326,10 +338,25 @@ def repair_estimate(ctx, case: dict) -> dict | None:
 
 # ---------- VerificationAgent ----------
 
+def _save_photo_check(case_id: str, v: dict, similarity: dict | None = None) -> None:
+    """Keep the photo check for the developer sign-off, where SDP accepts or rejects the repair."""
+    similar = bool((similarity or {}).get("similar"))
+    from agents.simephony.llm_client import get_models
+    rule = v.get("checked_by") == "same_photo_rule"  # a file comparison in code: the model never saw the photo
+    check = {"assessment": v.get("assessment") or "unclear", "observations": v.get("observations") or "",
+             "confidence": None if rule else v.get("confidence_score"),
+             "flagged": bool(v.get("needs_human_review") or v.get("needs_technician_input") or similar),
+             "similar_to_original": similar,
+             "source": "rule" if rule else "ai", "model": None if rule else get_models()[0]}
+    result = tools.save_repair_photo_check(case_id, check)
+    if result.get("ok") is False:
+        log.error("Could not save the repair photo check for %s: %s", case_id, result["error"])
+
+
 def verification_guide(ctx, case: dict) -> tuple[dict | None, str | None, dict | None]:
-    """(guide, note for the SDP trace). The repair photo is checked against the original; if it doesn't look
-    resolved, the standard guide is used and the note asks SDP to check the photo before signing off (SDP
-    signs before the buyer, so a person always looks at it)."""
+    """(guide, note for the SDP trace, None). The repair photo is checked against the original and the check is
+    saved for the developer sign-off: SDP signs before the buyer, so a person always decides. A flagged photo is
+    never held for review: the buyer gets the standard checklist and SDP sees the flag at sign-off."""
     def ai():
         from agents.simephony.verification import verification_node
         temporary_photos = []
@@ -346,16 +373,15 @@ def verification_guide(ctx, case: dict) -> tuple[dict | None, str | None, dict |
         if v.get("_structured_output_error"):
             from agents.simephony.structured_output import StructuredOutputError
             raise StructuredOutputError()
-        if v.get("needs_human_review"):
-            return None, v.get("review_reason"), {
-                "needs_human_review": True,
-                "review_reason": v.get("review_reason"),
-                "confidence_score": v.get("confidence_score", 0.0),
-                "review_step": "VerificationAgent",
-            }
-        if v.get("needs_technician_input"):
-            return standins.verification_guide(case), f"Photo check: {v['technician_message']} SDP: please check the repair photo before signing off.", None
-        return v["guide"], f"Photo check: {v['assessment']} ({v.get('observations') or 'no notes'})", None
+        _save_photo_check(case["case_id"], v, state.get("photo_similarity"))
+        obs = v.get("observations") or "no notes"
+        if v.get("needs_human_review") or v.get("needs_technician_input"):
+            return (standins.verification_guide(case),
+                    f"Photo check: {v.get('assessment') or 'unclear'} ({obs}). Flagged for SDP to check at sign-off.", None)
+        if (state.get("photo_similarity") or {}).get("similar"):
+            return (v["guide"], f"Photo check: {v['assessment']} ({obs}). The repair photo looks almost the same as "
+                                "the original: flagged for SDP to compare at sign-off.", None)
+        return v["guide"], f"Photo check: {v['assessment']} ({obs})", None
     result = _run(ctx, "verification", ai, lambda: (standins.verification_guide(case), None, None),
                   {"case_id": case["case_id"]})
     if len(result) == 2:
@@ -400,7 +426,10 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
         from agents.simephony.verification import _guide_text
         if kind == "ready_signoff" and "guide" not in extra:
             from agents.simephony import backend_tools
-            extra["guide"] = _guide_text(backend_tools.get_signoff_info(case["case_id"]).get("guide"))
+            guide = backend_tools.get_signoff_info(case["case_id"]).get("guide")
+            extra["guide"] = _guide_text(guide)
+            if isinstance(guide, dict) and guide.get("steps"):
+                extra["guide_steps"] = list(guide["steps"])  # the message lists just the checks
         return message_for_kind(kind, case, extra)
     return _run(ctx, "comms", ai, lambda: standins.comms(ctx, kind, case, extra),
                 {"case_id": case["case_id"], "kind": kind, "extra": extra})

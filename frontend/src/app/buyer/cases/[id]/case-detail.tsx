@@ -105,6 +105,8 @@ export function CaseDetail() {
   const [rating, setRating] = useState(false);
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
+  // IntakeAgent hasn't finished: still missing a detail, or rerunning with the buyer's answer.
+  const assessing = c.status === "INFO_NEEDED" || c.status === "SUBMITTED";
   const reopenable = canReopen(c, now);
   const graceEnd = c.closedAt ? addDays(c.closedAt, RULES.gracePeriodDays) : null;
   const daysLeft = c.closedAt ? Math.max(0, Math.ceil(RULES.gracePeriodDays - daysBetween(c.closedAt, now))) : 0;
@@ -126,8 +128,10 @@ export function CaseDetail() {
             <Section>
               {c.photos[0] && <PhotoThumb photo={c.photos[0]} className="mb-3 aspect-[16/9] w-full" />}
               <div className="flex items-start justify-between gap-2">
-                <h2 className="text-lg font-semibold leading-snug">{c.summary}</h2>
-                <UrgencyBadge urgency={c.urgency} />
+                {/* While IntakeAgent still lacks details or is rerunning with the buyer's answer, its title and
+                    priority are only a first guess: show neutral wording until the assessment is final. */}
+                <h2 className="text-lg font-semibold leading-snug">{assessing ? "Your report" : c.summary}</h2>
+                {!assessing && <UrgencyBadge urgency={c.urgency} />}
               </div>
               <p className="text-xs text-zinc-500">
                 {c.unitId} · Reported {fmtDate(c.createdAt)}
@@ -135,7 +139,11 @@ export function CaseDetail() {
               </p>
               <div className="mt-3 rounded-xl bg-zinc-50 p-3">
                 <StatusBadge status={c.status} buyer />
-                <p className="mt-1.5 text-sm text-zinc-700">{BUYER_EXPLAIN[c.status] ?? "We're working on your case."}</p>
+                <p className="mt-1.5 text-sm text-zinc-700">
+                  {c.status === "PENDING_SIGNOFF" && c.signoff?.developer && !c.signoff?.buyer
+                    ? "The developer has approved the repair. Please check it and sign off."
+                    : (BUYER_EXPLAIN[c.status] ?? "We're working on your case.")}
+                </p>
                 {c.repairClock && !c.repairClock.doneAt && isOpen(c.status) && (
                   <p className="mt-1.5 text-xs text-zinc-500">
                     The developer aims to repair confirmed defects by {fmtDate(c.repairClock.dueAt)}.
@@ -247,14 +255,21 @@ export function CaseDetail() {
               <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
                 <Bot className="size-4 text-violet-600" /> Defect Assessment
               </h2>
-              <dl>
-                <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
-                <Row label="Defect type">{c.subCategory}</Row>
-                <Row label="Location">{c.location || "—"}</Row>
-                <Row label="Priority">
-                  <UrgencyBadge urgency={c.urgency} />
-                </Row>
-              </dl>
+              {c.status === "INFO_NEEDED" ? (
+                // Only a guess until the buyer answers the follow-up question.
+                <p className="text-sm text-zinc-700">We&apos;ll show our assessment once you&apos;ve answered the question above.</p>
+              ) : assessing ? (
+                <p className="text-sm text-zinc-700">Checking your report…</p>
+              ) : (
+                <dl>
+                  <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
+                  <Row label="Defect type">{c.subCategory}</Row>
+                  <Row label="Location">{c.location || "—"}</Row>
+                  <Row label="Priority">
+                    <UrgencyBadge urgency={c.urgency} />
+                  </Row>
+                </dl>
+              )}
             </Section>
 
             {/* Inspection + repair */}

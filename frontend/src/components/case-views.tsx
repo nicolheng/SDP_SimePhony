@@ -97,10 +97,12 @@ export function CaseProgress({ c }: { c: Case }) {
 const EVENT_LABEL: Partial<Record<CaseEvent["type"], string>> = {
   "case.created": "Reported",
   "case.info_needed": "Info needed",
+  "case.answered": "Answered",
   "case.assigned": "Assigned",
   "verdict.recorded": "Inspection result",
   "repair.booked": "Repair booked",
   "repair.done": "Repaired",
+  "repair.rejected": "Repair not accepted",
   "verification.requested": "Sign-off requested",
   "verification.completed": "Buyer check",
   "signoff.completed": "Signed off",
