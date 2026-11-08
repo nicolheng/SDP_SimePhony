@@ -455,7 +455,12 @@ def intake_node(state: dict) -> dict:
     # The title stays plain: the app shows urgency as its own badge (and technician emails as "Urgency: high").
     # Live llava sometimes returns the resident's own sentence (Malay included) as the title: build one instead.
     summary = parsed_intake.get("summary") or ""
-    if summary.strip(" .!?").lower() == user_description.strip(" .!?").lower():
+    where = str(parsed_intake.get("location_in_unit") or "")
+    # The title must not name another room than the (already checked) location: live llava titled
+    # "Siling bilik tidur utama bocor" as "Water leak in the bathroom" while the location was right.
+    title_room = _room_in_text(summary.lower())
+    wrong_room = bool(title_room and _room_in_text(where.lower()) and not _names_room(where, title_room))
+    if wrong_room or summary.strip(" .!?").lower() == user_description.strip(" .!?").lower():
         where = parsed_intake.get("location_in_unit")
         label = str(parsed_intake.get("category") or "defect").replace("_", " ").capitalize()
         summary = f"{label} in {where}" if where else label

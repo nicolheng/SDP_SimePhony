@@ -390,6 +390,21 @@ def test_model_location_is_kept(fake_llm):
     assert out["intake_result"]["location_in_unit"] == "above the wardrobe"
 
 
+def test_title_naming_another_room_is_rebuilt_from_the_location(fake_llm):
+    # Live llava: "Siling bilik tidur utama bocor" titled "Water leak in the bathroom", location right
+    _model_says(fake_llm, category="water_leak", location_in_unit="master bedroom ceiling",
+                summary="Water leak in the bathroom")
+    out = _intake_node({"user_description": "Siling bilik tidur utama bocor lagi, ini kali ketiga!"})
+    assert out["intake_result"]["summary"] == "Water leak in master bedroom ceiling"
+
+
+def test_title_with_the_same_room_is_kept(fake_llm):
+    _model_says(fake_llm, category="water_leak", location_in_unit="master bedroom ceiling",
+                summary="Ceiling leaking in the bedroom")
+    out = _intake_node({"user_description": "Siling bilik tidur utama bocor"})
+    assert out["intake_result"]["summary"] == "Ceiling leaking in the bedroom"
+
+
 def test_result_is_saved_to_the_case(fake_llm, monkeypatch):
     from agents.simephony import backend_tools
     save = MagicMock(return_value={"ok": True, "status": "SUBMITTED", "warnings": []})
