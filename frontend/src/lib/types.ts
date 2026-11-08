@@ -144,6 +144,8 @@ export interface Case {
   handover?: { fromId: string; reason: string; at: string; previousSlot?: string };
   /** Estimated repair duration, set when the repair is booked. */
   repairHours?: number;
+  /** Why repairHours was set; TECHNICIAN_ESTIMATE when the technician chose it at the inspection. */
+  repairEstimateReason?: string | null;
   visitSlot?: string; // ISO start
   /** The inspection time the buyer picked when reporting (the booked visit can differ). */
   preferredVisitAt?: string;

@@ -1,9 +1,23 @@
 "use client";
-import { Camera, Loader2, RefreshCw, X } from "lucide-react";
+import { Camera, Lightbulb, Loader2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /** True when the browser can open a live camera (needs https or localhost). */
 export const canUseCamera = () => typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && window.isSecureContext;
+
+/** One short tip under the camera, a different one each time it opens (helps first-time and older users). */
+const PHOTO_TIPS = [
+  "Turn on the room lights for a clearer photo.",
+  "Hold the phone steady with both hands.",
+  "Move closer so the problem fills the screen.",
+  "Wipe the camera lens with a soft cloth first.",
+  "Tap the screen on the problem to focus.",
+  "Step back a little if it looks blurry.",
+  "Avoid flash on shiny tiles or glass.",
+  "Show a door or wall nearby so we know where.",
+  "Take the photo in daylight if you can.",
+];
+let nextTip = Math.floor(Math.random() * PHOTO_TIPS.length);
 
 /** Full-screen live camera with a shutter button. Returns a JPEG data URL. */
 export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture: (url: string) => void; onClose: () => void; onUnavailable: () => void }) {
@@ -14,6 +28,8 @@ export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture
   const [index, setIndex] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Picked once when the camera opens; the next opening shows the next tip.
+  const [tip] = useState(() => PHOTO_TIPS[nextTip++ % PHOTO_TIPS.length]);
 
   const stop = useCallback(() => {
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -111,7 +127,10 @@ export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture
         )}
       </div>
       {!error && (
-        <div className="grid place-items-center p-6">
+        <div className="grid place-items-center gap-4 px-6 pb-6 pt-3">
+          <p className="flex max-w-full items-center justify-center gap-1.5 whitespace-nowrap text-sm font-medium text-white">
+            <Lightbulb className="size-4 shrink-0 text-amber-300" /> <span className="truncate">{tip}</span>
+          </p>
           <button
             type="button"
             onClick={shoot}

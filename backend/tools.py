@@ -1752,16 +1752,25 @@ def _require_accepted_job(case: dict, action: str) -> None:
         raise ToolError("This job is waiting for a technician.")
 
 
+# repair_estimate_reason when the technician chose the duration (the web app shows "set by your technician").
+TECHNICIAN_ESTIMATE = "Set by the technician at the inspection"
+
+
 @_returns_errors
-def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] = None) -> dict:
+def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] = None,
+                   repair_hours: Optional[float] = None) -> dict:
     """Technician's inspection result (the visit must be accepted). VALID -> buyer books a repair.
-    INVALID -> terminal (a new report becomes a new case). Returns {ok, status}."""
+    INVALID -> terminal (a new report becomes a new case). repair_hours (VALID only): the technician's
+    expected repair duration, 2, 4 or 8 (whole 2-hour blocks, at most a day); repair options and the
+    buyer's pages then use it instead of the RepairEstimateAgent. Returns {ok, status}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
         _require_status(case, ("VISIT_SCHEDULED", "EXTRA_INSPECTION"), "record a verdict", "This case isn't waiting for an inspection result.")
         _require_accepted_job(case, "recording the result")
         if verdict not in ("VALID", "INVALID") or not note.strip():
             raise ToolError("Choose Valid or Invalid and add a note.")
+        if repair_hours is not None and (verdict != "VALID" or repair_hours not in (2, 4, 8)):
+            raise ToolError("The expected repair duration must be 2, 4 or 8 hours, for a valid defect.")
         _save_photo(conn, case_id, photo, "verdict")
         _finish(conn, case_id, "visit")
         now = _now(conn)
@@ -1769,8 +1778,13 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
                   "verdict_at": now, "inspector_id": case["technician_id"], "status": verdict}
         if verdict == "INVALID":
             fields["closed_at"] = now
+        if repair_hours is not None:
+            fields["repair_hours"] = repair_hours
+            fields["repair_estimate_reason"] = TECHNICIAN_ESTIMATE
         _save(conn, case_id, **fields)
-        _emit(conn, case_id, "verdict.recorded", f'Technician marked {verdict}: "{note.strip()}"', verdict=verdict)
+        duration = f"; expected repair about {repair_hours:g} hours" if repair_hours is not None else ""
+        _emit(conn, case_id, "verdict.recorded", f'Technician marked {verdict}: "{note.strip()}"{duration}', verdict=verdict,
+              **({"repair_hours": repair_hours} if repair_hours is not None else {}))
     return {"ok": True, "status": verdict}
 
 

@@ -226,11 +226,12 @@ class Verdict(BaseModel):
     outcome: Literal["VALID", "INVALID"]
     note: str = Field(min_length=1, max_length=500)
     photo: Photo | None = None
+    repair_hours: Literal[2, 4, 8] | None = None  # technician's expected repair duration (VALID only)
 
 
 @router.post("/cases/{case_id}/verdict")
 def verdict(case_id: str, body: Verdict, request: Request, background_tasks: BackgroundTasks):
-    return _run(request, workflow.record_verdict, case_id, body.outcome, body.note, body.photo,
+    return _run(request, workflow.record_verdict, case_id, body.outcome, body.note, body.photo, body.repair_hours,
                 background_tasks=background_tasks)
 
 
