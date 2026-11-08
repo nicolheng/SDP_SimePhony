@@ -1,5 +1,5 @@
 "use client";
-import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Sparkles } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Plus, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -9,7 +9,9 @@ import { useCase, useCaseEvents } from "@/components/case-views";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { BuildingBanner } from "@/components/illustrations";
 import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
-import { PhotoInput } from "@/components/photo";
+import { PhotoInput, PhotoThumb } from "@/components/photo";
+import { CaseMembers } from "@/components/case-members";
+import { StatusBadge } from "@/components/status-badge";
 import { SlotPicker } from "@/components/slot-picker";
 import { UrgencyBadge } from "@/components/status-badge";
 import { fetchVisitSlots, submitReport } from "@/lib/api";
@@ -44,6 +46,13 @@ const CARE_TIP: Record<Category, string> = {
   other: "Avoid using or disturbing the affected area until the technician has inspected it.",
 };
 
+/** One defect in the report: its photo and what the buyer says about it. Each becomes its own case. */
+interface DefectItem {
+  id: number;
+  photo: string;
+  text: string;
+}
+
 export default function ReportDefect() {
   const now = useDemo((s) => s.now);
   const [slots, setSlots] = useState<string[] | null>(null);
@@ -56,11 +65,13 @@ export default function ReportDefect() {
       })
       .catch((e: Error) => setSlotError(e.message));
   }, [now]);
+  // Defects already added to this report, plus the one being written now.
+  const [items, setItems] = useState<DefectItem[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [slot, setSlot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [caseId, setCaseId] = useState<string | null>(null);
+  const [caseIds, setCaseIds] = useState<string[]>([]);
   const [nonDefect, setNonDefect] = useState<string | null>(null);
   // The asset (unit) this report is for; the buyer can switch to another property registered to them.
   const unitId = useBuyerUnit();
@@ -69,24 +80,41 @@ export default function ReportDefect() {
   const dlpEnd = getUnit(unitId).dlpExpiry;
   const dlpOver = !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
 
-  async function submit() {
-    if (!photo || !text.trim() || !slot) return;
-    setBusy(true);
-    setNonDefect(null);
-    try {
-      const r = await submitReport({ description: text.trim(), photoUrl: photo, slot, unitId, buyerId: DEMO_BUYER.id }, setCaseId);
-      if (r.nonDefect) setNonDefect(r.nonDefect);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not submit. Please try again.");
-    } finally {
-      setBusy(false);
-    }
+  const draftReady = !!photo && !!text.trim();
+  const draftStarted = !!photo || !!text.trim();
+  // Everything that will be submitted: the added defects, plus the current one when it is complete.
+  const toSubmit = draftReady ? [...items, { id: -1, photo: photo!, text: text.trim() }] : items;
+  const canSubmit = toSubmit.length > 0 && (!draftStarted || draftReady) && !!slot && !busy && !dlpOver;
+
+  function addAnother() {
+    if (!draftReady) return;
+    setItems((xs) => [...xs, { id: Date.now(), photo: photo!, text: text.trim() }]);
+    setPhoto(null);
+    setText("");
   }
 
-  if (caseId)
-    return (
-      <Processing caseId={caseId} done={!busy} />
-    );
+  async function submit() {
+    if (!canSubmit || !slot) return;
+    setBusy(true);
+    setNonDefect(null);
+    const created: string[] = [];
+    // One case per photo: the system files each defect separately, so each gets its own technician and record.
+    for (const it of toSubmit) {
+      try {
+        const r = await submitReport({ description: it.text, photoUrl: it.photo, slot, unitId, buyerId: DEMO_BUYER.id }, (id) => {
+          created.push(id);
+          setCaseIds([...created]);
+        });
+        if (r.nonDefect) setNonDefect(r.nonDefect);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not submit. Please try again.");
+      }
+    }
+    setBusy(false);
+  }
+
+  if (caseIds.length === 1 && toSubmit.length <= 1) return <Processing caseId={caseIds[0]} done={!busy} />;
+  if (caseIds.length > 0) return <MultiSubmitted caseIds={caseIds} total={toSubmit.length} done={!busy} />;
 
   return (
     <div>
@@ -116,32 +144,75 @@ export default function ReportDefect() {
             Your Defect Liability Period ended on {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be reported in the app. Please contact the developer.
           </p>
         )}
+        <div className="mt-4 border-t border-zinc-100 pt-3">
+          <CaseMembers unitId={unitId} />
+        </div>
       </div>
       <div className="space-y-4 p-4">
-        <Section title="1. Defect Photo *">
-          <PhotoInput value={photo} onChange={setPhoto} />
-        </Section>
+        <Section title="1. Defect Photos & Descriptions *">
+          <p className="-mt-1 mb-3 text-xs text-zinc-500">One photo per defect. Each photo is filed as its own defect case.</p>
 
-        <Section title="2. Defect Description *">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={4}
-            maxLength={500}
-            placeholder="Tell us what's wrong."
-            className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-          />
-          <p className="-mt-1 text-right text-xs text-zinc-400">{text.length} / 500</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {EXAMPLES.map((e) => (
-              <button key={e} type="button" onClick={() => setText(e)} className="rounded-full bg-zinc-100 px-2.5 py-1 text-left text-[11px] text-zinc-600 hover:bg-zinc-200">
-                {e}
-              </button>
-            ))}
+          {items.length > 0 && (
+            <ul className="mb-3 space-y-2">
+              {items.map((it, i) => (
+                <li key={it.id} className="flex gap-3 rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={it.photo} alt={`Defect ${i + 1}`} className="size-16 shrink-0 rounded-lg object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Defect {i + 1}</p>
+                    <p className="line-clamp-2 text-sm text-zinc-800">{it.text}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setItems((xs) => xs.filter((x) => x.id !== it.id))}
+                    className="grid size-7 shrink-0 place-items-center self-start rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
+                    aria-label={`Remove defect ${i + 1}`}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="rounded-xl ring-1 ring-zinc-200 p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Defect {items.length + 1}</p>
+            <PhotoInput value={photo} onChange={setPhoto} />
+            {photo && (
+              <div className="mt-3">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  autoFocus
+                  placeholder="Tell us what's wrong."
+                  className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                />
+                <p className="-mt-1 text-right text-xs text-zinc-400">{text.length} / 500</p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {EXAMPLES.map((e) => (
+                    <button key={e} type="button" onClick={() => setText(e)} className="rounded-full bg-zinc-100 px-2.5 py-1 text-left text-[11px] text-zinc-600 hover:bg-zinc-200">
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
+          <button
+            type="button"
+            onClick={addAnother}
+            disabled={!draftReady}
+            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-brand ring-1 ring-brand/40 transition hover:bg-red-50 disabled:text-zinc-400 disabled:ring-zinc-200 disabled:hover:bg-transparent"
+          >
+            <Plus className="size-4" /> Add Another Defect
+          </button>
+          {draftStarted && !draftReady && <p className="mt-1.5 text-center text-[11px] text-zinc-500">Add a photo and a description to finish this defect.</p>}
         </Section>
 
-        <Section title="3. Book Your Inspection Visit *">
+        <Section title="2. Book Your Inspection Visit *">
           {slotError ? (
             <p className="text-sm text-red-600">{slotError}</p>
           ) : slots ? (
@@ -153,11 +224,63 @@ export default function ReportDefect() {
 
         {nonDefect && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{nonDefect}</p>}
 
-        <PrimaryButton disabled={!photo || !text.trim() || !slot || busy || dlpOver} onClick={submit}>
-          {busy ? "Submitting…" : "Submit Defect"}
+        <PrimaryButton disabled={!canSubmit} onClick={submit}>
+          {busy ? "Submitting…" : toSubmit.length > 1 ? `Submit ${toSubmit.length} Defects` : "Submit Defect"}
         </PrimaryButton>
       </div>
     </div>
+  );
+}
+
+/** Several defects in one go: one card per new case, each opening its own case page. */
+function MultiSubmitted({ caseIds, total, done }: { caseIds: string[]; total: number; done: boolean }) {
+  return (
+    <div>
+      <MobileHeader title="Reports Submitted" back="/buyer" />
+      <div className="space-y-4 p-4">
+        <Section>
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            {done ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-zinc-400" />}
+            {done ? `${caseIds.length} defect case${caseIds.length > 1 ? "s" : ""} created` : `Submitting ${caseIds.length} of ${total}…`}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">Each photo was filed as its own case, so each defect gets its own inspection and record.</p>
+        </Section>
+        <ul className="space-y-3">
+          {caseIds.map((id) => (
+            <li key={id}>
+              <SubmittedCase id={id} />
+            </li>
+          ))}
+        </ul>
+        {done && (
+          <Link href="/buyer/cases" className={primaryButtonClass}>
+            View My Defects
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SubmittedCase({ id }: { id: string }) {
+  const c = useCase(id);
+  if (!c) return null;
+  return (
+    <Link href={`/buyer/cases/${id}`} className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200">
+      <PhotoThumb photo={c.photos[0]} className="size-16 shrink-0" label={false} zoom={false} />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">{id}</p>
+        <p className="truncate text-xs text-zinc-500">{c.summary || c.description}</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={c.status} buyer className="px-1.5 text-[11px]" />
+          {c.visitSlot && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
+              <CalendarClock className="size-3.5" /> {fmtDateTime(c.visitSlot)}
+            </span>
+          )}
+        </div>
+      </div>
+    </Link>
   );
 }
 

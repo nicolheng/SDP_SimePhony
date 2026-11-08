@@ -21,6 +21,7 @@ import {
   useCaseEvents,
   useCaseId,
 } from "@/components/case-views";
+import { CaseChat } from "@/components/case-chat";
 import { DefectRecordCard } from "@/components/defect-record";
 import { buyerName, recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
@@ -39,7 +40,8 @@ import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
 import { CATEGORY_LABEL, getUnit, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
-import { TECH_TODO } from "@/lib/status";
+import { fmtRepairHours, REPAIR_DURATIONS, TECH_TODO } from "@/lib/status";
+import { cn } from "@/lib/utils";
 import { useTechnicianId } from "@/lib/session";
 import { useDemo, useOffline } from "@/lib/store";
 import { jobSlot } from "../../use-my-jobs";
@@ -87,10 +89,11 @@ const TECH_ACTIVITY = new Set<string>([
   "case.closed",
 ]);
 
-type Tab = "details" | "history" | "record";
+type Tab = "details" | "history" | "chat" | "record";
 const TABS: { id: Tab; label: string }[] = [
   { id: "details", label: "Details" },
   { id: "history", label: "History" },
+  { id: "chat", label: "Chat" },
   { id: "record", label: "Defect record" },
 ];
 
@@ -127,6 +130,7 @@ export function JobDetail() {
   );
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
+  const [hours, setHours] = useState<2 | 4 | 8 | null>(null);
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
   const now = useDemo((st) => st.now);
@@ -275,15 +279,33 @@ export function JobDetail() {
                   {note.length} / 500
                 </p>
                 <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">
-                  3. Defect validity <span className="text-brand">*</span>
+                  3. Expected repair duration (if valid) <span className="text-brand">*</span>
+                </p>
+                <div className="mb-3 grid grid-cols-3 gap-2">
+                  {REPAIR_DURATIONS.map((d) => (
+                    <button
+                      key={d.hours}
+                      type="button"
+                      onClick={() => setHours(d.hours)}
+                      className={cn(
+                        "h-11 rounded-xl px-1 text-xs font-semibold ring-1 transition",
+                        hours === d.hours ? "bg-brand text-white ring-brand" : "bg-white text-zinc-700 ring-zinc-200 hover:ring-brand",
+                      )}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">
+                  4. Defect validity <span className="text-brand">*</span>
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    disabled={!note.trim() || busy || offline}
+                    disabled={!note.trim() || !hours || busy || offline}
                     onClick={() =>
                       run(
-                        () => recordVerdict(c.id, "VALID", note.trim(), photo),
+                        () => recordVerdict(c.id, "VALID", note.trim(), photo, hours ?? undefined),
                         "Marked valid: buyer asked to book a repair",
                       )
                     }
@@ -419,6 +441,9 @@ export function JobDetail() {
                         : `Invalid · ${fmtDate(c.verdict.at)}`}
                     </Row>
                   )}
+                  {c.verdict?.outcome === "VALID" && !!c.repairHours && (
+                    <Row label="Expected repair">{fmtRepairHours(c.repairHours)}</Row>
+                  )}
                   {c.repairedAt && (
                     <Row label="Repaired">{fmtDate(c.repairedAt)}</Row>
                   )}
@@ -474,6 +499,8 @@ export function JobDetail() {
             )}
           </>
         )}
+
+        {tab === "chat" && <CaseChat c={c} viewer="technician" onClose={() => setTab("details")} />}
 
         {tab === "record" &&
           (recordAvailable(c) ? (

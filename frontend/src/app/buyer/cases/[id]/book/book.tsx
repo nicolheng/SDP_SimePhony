@@ -6,9 +6,9 @@ import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { MobileHeader, PrimaryButton, Section } from "@/components/mobile";
 import { SlotPicker } from "@/components/slot-picker";
-import { fmtHours } from "@/lib/agents";
 import { bookRepair, fetchRepairOptions, type RepairOption } from "@/lib/api";
 import { REPAIR_PLAN } from "@/lib/constants";
+import { fmtRepairHours, TECHNICIAN_ESTIMATE } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 
 export function BookRepair() {
@@ -45,7 +45,8 @@ export function BookRepair() {
             <li className="flex items-center gap-2">
               <Clock className="size-4 text-brand" />
               <span>
-                Estimated job duration: <span className="font-semibold">{fmtHours(plan.hours).replace(/^about /, "")}</span>
+                Expected repair duration: <span className="font-semibold">{fmtRepairHours(c.repairHours ?? plan.hours)}</span>
+                {c.repairEstimateReason === TECHNICIAN_ESTIMATE && <span className="block text-xs text-zinc-500">Set by your technician at the inspection</span>}
               </span>
             </li>
             <li className="flex items-center gap-2">

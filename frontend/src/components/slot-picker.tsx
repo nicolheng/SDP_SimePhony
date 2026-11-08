@@ -18,7 +18,6 @@ export function SlotPicker({ available, value, onChange }: { available: string[]
 
   return (
     <div className="space-y-3">
-      <p className="whitespace-nowrap text-center text-xs font-semibold tracking-tight text-brand">Please select an available date and time slot</p>
       <p className="text-center text-xs font-medium text-zinc-500">{mon.format(new Date(`${current}T12:00:00+08:00`))}</p>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 pt-1">
         {days.map((d) => {

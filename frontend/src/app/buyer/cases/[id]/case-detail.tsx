@@ -3,6 +3,7 @@ import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, Mess
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
+import { CaseChat } from "@/components/case-chat";
 import { CaseProgress, useCase, useCaseId } from "@/components/case-views";
 import { TechAvatar } from "@/components/brand";
 import { DefectRecordCard } from "@/components/defect-record";
@@ -15,7 +16,7 @@ import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { canReopen, signoffDeadline } from "@/lib/api";
 import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, RULES, workerName } from "@/lib/constants";
 import { addDays, daysBetween, fmtDate, fmtDateTime } from "@/lib/dates";
-import { BUYER_EXPLAIN, isOpen } from "@/lib/status";
+import { BUYER_EXPLAIN, fmtRepairHours, isOpen, TECHNICIAN_ESTIMATE } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import type { Case } from "@/lib/types";
 
@@ -88,10 +89,11 @@ function YourTechnician({ c }: { c: Case }) {
   );
 }
 
-type Tab = "details" | "history" | "record";
+type Tab = "details" | "history" | "chat" | "record";
 const TABS: { id: Tab; label: string }[] = [
   { id: "details", label: "Details" },
   { id: "history", label: "History" },
+  { id: "chat", label: "Chat" },
   { id: "record", label: "Defect record" },
 ];
 
@@ -144,6 +146,12 @@ export function CaseDetail() {
                     ? "The developer has approved the repair. Please check it and sign off."
                     : (BUYER_EXPLAIN[c.status] ?? "We're working on your case.")}
                 </p>
+                {(c.status === "VALID" || c.status === "REPAIR_BOOKED") && !!c.repairHours && (
+                  <p className="mt-1.5 text-xs text-zinc-700">
+                    Expected repair duration: <span className="font-semibold">{fmtRepairHours(c.repairHours)}</span>
+                    {c.repairEstimateReason === TECHNICIAN_ESTIMATE && <span className="text-zinc-500"> (set by your technician)</span>}
+                  </p>
+                )}
                 {c.repairClock && !c.repairClock.doneAt && isOpen(c.status) && (
                   <p className="mt-1.5 text-xs text-zinc-500">
                     The developer aims to repair confirmed defects by {fmtDate(c.repairClock.dueAt)}.
@@ -328,6 +336,8 @@ export function CaseDetail() {
             )}
           </>
         )}
+
+        {tab === "chat" && <CaseChat c={c} viewer="buyer" onClose={() => setTab("details")} />}
 
         {tab === "record" &&
           (recordAvailable(c) ? (

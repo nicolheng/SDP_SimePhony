@@ -129,3 +129,15 @@ export const TECH_TABS = [
 
 /** Statuses where the technician has to act. */
 export const TECH_TODO: CaseStatus[] = ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "REPAIR_BOOKED"];
+
+/** backend tools.TECHNICIAN_ESTIMATE: the technician chose the expected repair duration at the inspection. */
+export const TECHNICIAN_ESTIMATE = "Set by the technician at the inspection";
+
+/** Expected repair durations a technician can pick (whole 2-hour booking blocks, at most a day). */
+export const REPAIR_DURATIONS = [
+  { hours: 2, label: "2 hours" },
+  { hours: 4, label: "Half day (4 hours)" },
+  { hours: 8, label: "Full day (8 hours)" },
+] as const;
+
+export const fmtRepairHours = (h: number) => (h >= 8 ? "Full day (8 hours)" : h === 4 ? "Half day (4 hours)" : `${h} hours`);

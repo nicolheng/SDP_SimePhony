@@ -525,9 +525,10 @@ def _book_revisit(ctx: Ctx, case_id: str, t: dict, occurrence: int, description:
 # ---------- technician / subcontractor ----------
 
 
-def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None) -> None:
-    _tool(ctx, tools.record_verdict, case_id, outcome, note, photo)
-    if outcome == "VALID":
+def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None, repair_hours: float | None = None) -> None:
+    _tool(ctx, tools.record_verdict, case_id, outcome, note, photo, repair_hours)
+    # The technician chose the expected repair duration: no RepairEstimateAgent run.
+    if outcome == "VALID" and repair_hours is None:
         if ctx.async_ai:  # after the click, before the "please book a repair" message that quotes the hours
             ctx.after_click.append(("estimate", case_id))
         else:

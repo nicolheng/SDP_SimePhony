@@ -51,8 +51,9 @@ export async function reopenCase(caseId: string, description: string, photoUrl: 
 
 // ---------- technician / subcontractor ----------
 
-export async function recordVerdict(caseId: string, outcome: "VALID" | "INVALID", note: string, photoUrl: string | null) {
-  await apiAction(`/api/cases/${caseId}/verdict`, { outcome, note, photo: photoUrl });
+/** repairHours (VALID only): the technician's expected repair duration, 2, 4 or 8. */
+export async function recordVerdict(caseId: string, outcome: "VALID" | "INVALID", note: string, photoUrl: string | null, repairHours?: 2 | 4 | 8) {
+  await apiAction(`/api/cases/${caseId}/verdict`, { outcome, note, photo: photoUrl, ...(outcome === "VALID" && repairHours ? { repair_hours: repairHours } : {}) });
 }
 
 export async function markRepaired(caseId: string, note: string, photoUrl: string | null) {

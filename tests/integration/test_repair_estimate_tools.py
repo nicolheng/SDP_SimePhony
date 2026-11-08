@@ -49,3 +49,18 @@ def test_estimator_agent_saves_its_estimate(fake_llm):
     assert out["repair_estimate"]["hours"] == 4
     plan = _tools().get_case(CASE)["repair_plan"]
     assert plan["hours"] == 4 and "replace" in plan["estimate_reason"].lower()
+
+
+def test_technician_sets_the_repair_duration_with_the_verdict():
+    tools = _tools()
+    r = tools.record_verdict("C-0001", "VALID", "Breaker trips under load; replace the RCCB.", None, 8)  # VISIT_SCHEDULED in seed.db
+    assert r == {"ok": True, "status": "VALID"}
+    plan = tools.get_booking_options("C-0001", "repair")["plan"]
+    assert plan["hours"] == 8 and plan["estimate_reason"] == tools.TECHNICIAN_ESTIMATE
+
+
+@pytest.mark.parametrize("verdict, hours", [("VALID", 3), ("INVALID", 4)])
+def test_technician_duration_only_whole_blocks_and_only_for_valid(verdict, hours):
+    r = _tools().record_verdict("C-0005", verdict, "Checked on site.", None, hours)
+    assert r["ok"] is False and "2, 4 or 8" in r["error"]
+    assert _tools().get_case("C-0005")["status"] == "VISIT_SCHEDULED"  # nothing saved
