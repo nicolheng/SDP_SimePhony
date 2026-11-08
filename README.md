@@ -66,8 +66,14 @@ Then run each in its own terminal (Ollama keeps running in the background):
 ```bash
 # Backend API: http://localhost:8001 (health check: /health)
 cd backend
-uvicorn main:app --port 8001
+python main.py
 ```
+
+`python main.py` restarts the backend by itself when you save a change in `backend/`, `agents/` or
+`rules.yaml`. It ignores `frontend/`, `.venv/`, `data/`, `uploads/` and `tests/`. Two things still need a
+manual restart (Ctrl+C, then run it again): a change to `.env`, and a reload that happens while the AI agents
+are working, since that cancels their work and the report stays at Submitted. If you'd rather start uvicorn
+yourself, use `uvicorn main:app --port 8001 --reload --reload-dir ..` so the `agents/` folder is watched too.
 
 ```bash
 # Web app: http://localhost:3000 (role picker: buyer, technician, SDP staff)
@@ -84,7 +90,7 @@ All settings live in `.env`, and [.env.example](.env.example) has the full list.
 
 | Setting | What it does |
 |---|---|
-| `USE_AI_AGENTS` | Turns the AI agents on. `true` or `all` runs every agent, `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. `only` is for testing: every agent runs during the request so its answer is the one saved, and a failed AI step shows an error instead of using the rule-based stand-ins. Each click then waits for the model. |
+| `USE_AI_AGENTS` | Turns the AI agents on. `true` or `all` runs every agent, `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. `only` is for testing: every agent's answer is the one saved, and nothing falls back to the rule-based stand-ins. A new report is saved first and its agents run straight after, on the progress screen. Buyer messages and the repair estimate are written just after a click is saved, so buttons like Accept and Valid don't wait. Mark Repaired and Approve extra inspection still wait for their agent. A failed AI step holds a new report for SDP review, shows an error on the click, or, after a click, is noted in the case trace. |
 | `LLM_BASE_URL`, `LLM_API_KEY` | The AI server. Defaults to local Ollama. |
 | `MODEL_TEXT`, `MODEL_VL` | The text and vision models. Changing a model only needs this `.env` edit. |
 | `LLM_TIMEOUT_TEXT`, `LLM_TIMEOUT_VISION` | Seconds to wait per attempt before retrying once, then falling back to the rules. Raise these if a slow laptop falls back on normal runs. |
