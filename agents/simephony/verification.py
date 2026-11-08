@@ -69,6 +69,32 @@ def _same_photo(original: str | None, repair: str | None) -> bool:
         return a.read() == b.read()
 
 
+# Photos whose fingerprints differ in this many of 64 points or fewer look almost the same. Measured on the test
+# photos: the same photo re-saved smaller 0-6, a shifted / brighter retake up to 11, different photos 13 or more.
+_SIMILAR_MAX_DISTANCE = 10
+
+
+def _fingerprint(path: str) -> list[bool]:
+    """A 64-point "difference hash": the photo shrunk to 9x8 greyscale, each point = brighter than its right
+    neighbour. Similar-looking photos get similar fingerprints, whatever their size or JPEG quality."""
+    from PIL import Image
+    with Image.open(path) as img:
+        px = img.convert("L").resize((9, 8), Image.LANCZOS).tobytes()
+    return [px[r * 9 + c] > px[r * 9 + c + 1] for r in range(8) for c in range(8)]
+
+
+def _photo_distance(original: str | None, repair: str | None) -> int | None:
+    """How many of the 64 fingerprint points differ (0 = look the same), or None when it can't be measured."""
+    if not original or not repair or not os.path.exists(original) or not os.path.exists(repair):
+        return None
+    try:
+        a, b = _fingerprint(original), _fingerprint(repair)
+    except Exception as e:  # Pillow missing or an unreadable image: the AI still checks the photo
+        print(f"[VERIFICATION] photo similarity unavailable: {e}")
+        return None
+    return sum(x != y for x, y in zip(a, b))
+
+
 def _location(state: dict) -> str:
     return state.get("intake_result", {}).get("location_in_unit") or "the reported area"
 
@@ -256,12 +282,18 @@ def verification_node(state: dict) -> dict:
         flag_for_human_review(state, "VerificationAgent", 0.0,
                               abstain_reason="the repair photo is the same as the original defect photo")
         state["verification_result"] = {
-            "category": category, "assessment": "unclear",
+            "category": category, "assessment": "unclear", "checked_by": "same_photo_rule",
             "observations": "The repair photo is the same file as the buyer's original defect photo.",
             "protocol": None, "needs_technician_input": False, "needs_human_review": True,
             "review_reason": state["review_reason"], "confidence_score": 0.0,
         }
         return state
+
+    # Almost the same picture (e.g. retaken from the same spot): the AI still judges it, since a repaired door
+    # can look much like the original, but SDP is told to compare the photos before signing off.
+    distance = _photo_distance(state.get("image_path"), photo)
+    state["photo_similarity"] = {"distance": distance,
+                                 "similar": distance is not None and distance <= _SIMILAR_MAX_DISTANCE}
 
     photo_check = assess_repair_photo(state)
     if photo_check.get("_structured_output_error"):

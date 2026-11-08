@@ -643,3 +643,134 @@ def test_only_mode_holds_the_report_for_review_when_an_agent_fails(fake_llm, mon
                                          (case_id,)).fetchone()["payload"])["message"]
     assert "could not finish" in reason and "IntakeAgent failed" in reason
     assert not _messages(case_id)  # no rule-based message was sent instead
+
+
+# ---------- Repair sign-off: VerificationAgent's photo check goes to SDP, never to "Held for review" ----------
+
+_LEAK_PHOTO = "tests/data/test_cases/images/ceiling-water-leak.jpg"
+
+
+@pytest.fixture
+def photo_check_resolved(monkeypatch):
+    """The vision model's answer for a real repair photo (the fake LLM has no photo-check JSON)."""
+    from agents.simephony import verification
+    monkeypatch.setattr(verification, "assess_repair_photo", lambda state: {
+        "assessment": "looks_resolved", "observations": "The ceiling board is dry and repainted.",
+        "matches_location": True, "confidence_score": 0.9})
+
+
+def _repaired(repair_photo, report_photo=_LEAK_PHOTO):
+    """A water leak report taken through to Mark Repaired with the AI agents on."""
+    import tools
+    from demo_api import workflow
+    case_id = _web(workflow.submit_report, "A-1-01", "B-0001",
+                   "Water dripping from the master bedroom ceiling above the wardrobe.", report_photo, None)["caseId"]
+    _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
+    _web(workflow.record_verdict, case_id, "VALID", "Pipe joint leaking above the wardrobe.", None)
+    _web(workflow.book_repair, case_id, tools.get_booking_options(case_id, "repair")["options"][0]["start"])
+    _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
+    _web(workflow.mark_repaired, case_id, "Resealed the joint and replaced the board.", repair_photo)
+    return case_id
+
+
+def test_repair_photo_check_is_saved_for_the_developer_signoff(fake_llm, ai_on, photo_check_resolved):
+    case_id = _repaired("tests/data/test_cases/images/ceiling_repaired.jpg")
+    c = _case(case_id)
+    assert c["status"] == "PENDING_SIGNOFF" and not c["developer_signed_at"]
+    check = json.loads(c["repair_photo_check"])
+    assert check["assessment"] == "looks_resolved" and check["flagged"] is False and check["source"] == "ai" and check["at"]
+    assert "dry and repainted" in check["observations"]
+
+
+def test_same_repair_photo_is_flagged_at_signoff_not_held(fake_llm, ai_on):
+    case_id = _repaired(_LEAK_PHOTO)  # the technician uploads the buyer's own photo
+    c = _case(case_id)
+    assert c["status"] == "PENDING_SIGNOFF"  # SDP decides at the developer sign-off
+    check = json.loads(c["repair_photo_check"])
+    assert check["flagged"] is True and check["source"] == "rule" and check["confidence"] is None
+    assert _messages(case_id)[-1]["title"] == "Repair done"
+
+
+def test_sdp_rejects_the_repair_and_the_buyer_rebooks(fake_llm, ai_on, photo_check_resolved):
+    import tools
+    from demo_api import workflow
+    case_id = _repaired(_LEAK_PHOTO)
+    with pytest.raises(workflow.WorkflowError):
+        _web(workflow.reject_repair, case_id, "   ")  # a reason is required
+    _web(workflow.reject_repair, case_id, "The photo still shows the stain; please redo the repair.")
+    c = _case(case_id)
+    assert c["status"] == "VALID" and c["repaired_at"] is None
+    last = _messages(case_id)[-1]
+    assert last["title"] == "Your repair needs another visit" and "still shows the stain" in last["body"]
+    assert tools.get_booking_options(case_id, "repair")["options"]  # the buyer can book again
+    # A fresh Mark Repaired clears the old photo check
+    _web(workflow.book_repair, case_id, tools.get_booking_options(case_id, "repair")["options"][0]["start"])
+    _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
+    _web(workflow.mark_repaired, case_id, "Redid the seal.", "tests/data/test_cases/images/ceiling_repaired.jpg")
+    assert json.loads(_case(case_id)["repair_photo_check"])["flagged"] is False  # the old flagged check is replaced
+
+
+def test_reject_is_refused_after_the_developer_signed(fake_llm, ai_on, photo_check_resolved):
+    from demo_api import workflow
+    case_id = _repaired("tests/data/test_cases/images/ceiling_repaired.jpg")
+    _web(workflow.developer_signoff, case_id)
+    with pytest.raises(workflow.WorkflowError):
+        _web(workflow.reject_repair, case_id, "Changed my mind")
+
+
+# ---------- USE_AI_AGENTS=only: a click returns before CommsAgent / RepairEstimateAgent run ----------
+
+def _request(path):
+    from starlette.requests import Request
+    return Request({"type": "http", "method": "POST", "scheme": "http", "server": ("testserver", 80),
+                    "client": ("testclient", 123), "root_path": "", "path": path, "query_string": b"", "headers": []})
+
+
+def test_only_mode_clicks_return_before_the_ai_writes_the_message(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from demo_api import routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    response, tasks = _api_report()
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    tech = _case(case_id)["technician_id"]
+
+    # Accept: the job is accepted at once; the "Technician confirmed" message comes after the click
+    calls, before = len(fake_llm.calls), len(_messages(case_id))
+    tasks = BackgroundTasks()
+    routes.accept(case_id, routes.Worker(technician_id=tech), _request("/accept"), tasks)
+    assert len(fake_llm.calls) == calls and len(_messages(case_id)) == before
+    assert _case(case_id)["booking_status"] == "CONFIRMED"
+    _run_task(tasks, workflow.run_after_click)
+    assert _messages(case_id)[-1]["title"] == "Technician confirmed"
+
+    # Valid: saved at once; the estimate, then the message quoting it, come after the click
+    calls = len(fake_llm.calls)
+    tasks = BackgroundTasks()
+    routes.verdict(case_id, routes.Verdict(outcome="VALID", note="Pipe joint leaking above the wardrobe."),
+                   _request("/verdict"), tasks)
+    assert len(fake_llm.calls) == calls and _case(case_id)["status"] == "VALID"
+    assert _case(case_id)["repair_hours"] is None
+    # RepairEstimateAgent's scope facts (the fake LLM has none of its own)
+    fake_llm.responses.append(json.dumps({"area": "small", "parts_to_replace": True, "multiple_spots": False,
+                                          "needs_drying_or_curing": False}))
+    _run_task(tasks, workflow.run_after_click)
+    assert _case(case_id)["repair_hours"]
+    assert "Please choose a repair time in the app." in _messages(case_id)[-1]["body"]
+    trace = _trace(case_id)
+    assert any(t.get("agent") == "RepairEstimateAgent" and (t.get("data") or {}).get("model") for t in trace)
+
+
+def test_only_mode_failed_message_after_click_is_shown_in_the_trace(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from demo_api import routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    response, tasks = _api_report()
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    tasks = BackgroundTasks()
+    routes.accept(case_id, routes.Worker(technician_id=_case(case_id)["technician_id"]), _request("/accept"), tasks)
+    _run_task(tasks, workflow.run_after_click)
+    assert _case(case_id)["booking_status"] == "CONFIRMED"  # the click itself stays
+    assert any(t.get("agent") == "CommsAgent" and "Could not finish the buyer message" in t["message"] for t in _trace(case_id))

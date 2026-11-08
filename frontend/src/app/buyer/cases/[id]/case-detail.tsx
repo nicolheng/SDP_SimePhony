@@ -135,7 +135,11 @@ export function CaseDetail() {
               </p>
               <div className="mt-3 rounded-xl bg-zinc-50 p-3">
                 <StatusBadge status={c.status} buyer />
-                <p className="mt-1.5 text-sm text-zinc-700">{BUYER_EXPLAIN[c.status] ?? "We're working on your case."}</p>
+                <p className="mt-1.5 text-sm text-zinc-700">
+                  {c.status === "PENDING_SIGNOFF" && c.signoff?.developer && !c.signoff?.buyer
+                    ? "The developer has approved the repair. Please check it and sign off."
+                    : (BUYER_EXPLAIN[c.status] ?? "We're working on your case.")}
+                </p>
                 {c.repairClock && !c.repairClock.doneAt && isOpen(c.status) && (
                   <p className="mt-1.5 text-xs text-zinc-500">
                     The developer aims to repair confirmed defects by {fmtDate(c.repairClock.dueAt)}.

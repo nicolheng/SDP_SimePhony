@@ -78,6 +78,7 @@ const TECH_ACTIVITY = new Set<string>([
   "verdict.recorded",
   "repair.booked",
   "repair.done",
+  "repair.rejected",
   "verification.completed",
   "signoff.completed",
   "signoff.overdue",

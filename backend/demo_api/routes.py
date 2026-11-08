@@ -51,6 +51,8 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
         if background_tasks and ctx.deferred_rain_cases:
             for case_id in ctx.deferred_rain_cases:
                 background_tasks.add_task(workflow.process_rain_agents, case_id)
+        if background_tasks and ctx.after_click:
+            background_tasks.add_task(workflow.run_after_click, list(ctx.after_click))
         if background_tasks and ctx.deferred_reports:
             for case_id in ctx.deferred_reports:
                 background_tasks.add_task(workflow.process_new_report, case_id)
@@ -264,6 +266,16 @@ def handover(case_id: str, body: HandOver, request: Request, background_tasks: B
 @router.post("/cases/{case_id}/developer-signoff")
 def developer_signoff(case_id: str, request: Request, background_tasks: BackgroundTasks):
     return _run(request, workflow.developer_signoff, case_id, background_tasks=background_tasks)
+
+
+class RepairRejection(BaseModel):
+    note: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/cases/{case_id}/reject-repair")
+def reject_repair(case_id: str, body: RepairRejection, request: Request, background_tasks: BackgroundTasks):
+    """SDP refuses the developer sign-off: the repair needs more work and the buyer books a new repair."""
+    return _run(request, workflow.reject_repair, case_id, body.note, background_tasks=background_tasks)
 
 
 class ReviewDecision(BaseModel):

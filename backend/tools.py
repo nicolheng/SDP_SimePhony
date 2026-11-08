@@ -1785,9 +1785,38 @@ def mark_repaired(case_id: str, repair_note: str, photo: Optional[str] = None) -
         _save(conn, case_id, status="REPAIRED", repair_note=repair_note.strip(), repaired_at=_now(conn),
               buyer_signed=0, developer_signed=0, buyer_signed_at=None, buyer_signoff_note=None, developer_signed_at=None,
               developer_signed_by=None, signoff_reminder_at=None, auto_closed_at=None, signoff_overdue_at=None,
-              verification_status="pending")
+              verification_status="pending", repair_photo_check=None)
         _emit(conn, case_id, "repair.done", f'Technician marked repaired: "{repair_note.strip()}"')
     return {"ok": True, "status": "REPAIRED"}
+
+
+@_returns_errors
+def save_repair_photo_check(case_id: str, check: dict) -> dict:
+    """VerificationAgent: keep its repair photo check for the developer sign-off, where SDP decides.
+    check = {assessment, observations, confidence, flagged, reason?, model?}. Returns {ok}."""
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("REPAIRED", "PENDING_SIGNOFF"), "save the repair photo check")
+        _save(conn, case_id, repair_photo_check=json.dumps({**check, "at": _now(conn)}))
+    return {"ok": True}
+
+
+@_returns_errors
+def reject_repair(case_id: str, note: str, decided_by: Optional[str] = None) -> dict:
+    """Developer (SDP) sign-off refused: the repair needs more work. PENDING_SIGNOFF -> VALID, so the buyer
+    books a new repair. note: why (the buyer and technician see it). Returns {ok, status}."""
+    note = " ".join((note or "").split())
+    if not note:
+        raise ToolError("Please add a short reason; the buyer and technician see it.")
+    with _connect() as conn:
+        case = _get_case(conn, case_id)
+        _require_status(case, ("PENDING_SIGNOFF",), "reject the repair", "This repair isn't waiting for sign-off.")
+        if case["developer_signed_at"]:
+            raise ToolError("The developer has already approved this repair.")
+        by = decided_by or SDP_SIGNER
+        _save(conn, case_id, status="VALID", repaired_at=None, repair_note=None, verification_status=None)
+        _emit(conn, case_id, "repair.rejected", f'Repair not accepted by {by}: "{note}"', note=note, decided_by=by)
+    return {"ok": True, "status": "VALID"}
 
 
 @_returns_errors
@@ -1852,8 +1881,8 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
     return {"ok": True, "both_signed": closed, "status": "CLOSED" if closed else "PENDING_SIGNOFF"}
 
 
-# Where an approved held case resumes. Holding releases the technician and bookings, so a held booking step
-# goes back to where it gets booked again.
+# Where an approved held case resumes. Holding cancels a job not done yet, so a held booking step goes back to
+# where it gets booked again.
 _REVIEW_RESUME = {"SUBMITTED": "SUBMITTED", "INFO_NEEDED": "SUBMITTED", "VISIT_SCHEDULED": "SUBMITTED",
                   "REOPENED": "REOPENED", "EXTRA_INSPECTION": "REOPENED", "ESCALATION_PENDING": "REOPENED",
                   "VALID": "VALID", "REPAIR_BOOKED": "VALID", "REPAIRED": "REPAIRED"}

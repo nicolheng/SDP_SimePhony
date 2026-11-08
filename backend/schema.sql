@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS cases (
     support_id           TEXT,                      -- subcontractor joining an approved extra inspection
     repair_hours         REAL,                      -- estimated repair duration when booked
     repair_estimate_reason TEXT,                    -- why RepairEstimateAgent set repair_hours
+    repair_photo_check   TEXT,                      -- VerificationAgent's photo check (JSON) for SDP's sign-off
     signoff_reminder_at  TEXT,                      -- in-app sign-off reminder sent
     auto_closed_at       TEXT,                      -- closed automatically after the sign-off period
     signoff_overdue_at   TEXT,                      -- high urgency past sign-off period: flagged to SDP

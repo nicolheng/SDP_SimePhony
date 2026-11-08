@@ -237,7 +237,7 @@ def message_for_kind(kind: str, case: dict, extra: dict | None = None) -> tuple[
         "verdict_note": extra.get("note") or case.get("verdict_note"),
         # the DB stores 2.0: "about 2 hours"
         "repair_estimate": {"hours": f"{float(case['repair_hours']):g}"} if case.get("repair_hours") else {},
-        "verification_result": {"protocol": extra.get("guide")},
+        "verification_result": {"protocol": extra.get("guide"), "steps": extra.get("guide_steps")},
         "signoff_deadline_local": extra.get("deadline"),
         "booking_result": {"start_local": extra.get("slot"), "job": extra.get("job"), "same_time": extra.get("same_time"),
                            "duration": extra.get("duration"), "reassigned": kind == "reassigned"},
@@ -388,7 +388,14 @@ def _draft(state: dict) -> str:
         deadline = state.get("signoff_deadline_local")
         if deadline:
             message = f"{message}\n\nPlease check the repair and sign off by {deadline} if it is fixed."
-        message = f"{message}\n\n{state['verification_result']['protocol']}"
+        steps = state["verification_result"].get("steps")
+        if steps:
+            # Just the checks, numbered: the stored guide's intro repeats the case title and the technician's note
+            checks = "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
+            message = (f"{message}\n\nWhat to check:\n{checks}\n\nOpen your case in the app and choose "
+                       "Check Repair & Sign Off. If anything is still wrong, choose \"Still not fixed\" there.")
+        else:
+            message = f"{message}\n\n{state['verification_result']['protocol']}"
 
     record_confidence_score(0.95)
     record_agent_reasoning({

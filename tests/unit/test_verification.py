@@ -450,3 +450,33 @@ def test_rules_yaml_never_sends_the_buyer_into_another_unit():
     for category, steps in load_rules()["verification_protocols"].items():
         for step in steps:
             assert "unit above" not in step.lower(), (category, step)
+
+
+_IMAGES = "tests/data/test_cases/images/"
+
+
+def _retake(src, dest):
+    """The same scene photographed again: slightly cropped, brighter and smaller, so the file differs."""
+    from PIL import Image, ImageEnhance
+    with Image.open(src) as img:
+        w, h = img.size
+        img = img.convert("RGB").crop((int(w * .03), int(h * .03), int(w * .98), int(h * .98)))
+        ImageEnhance.Brightness(img).enhance(1.1).resize((w // 2, h // 2)).save(dest, "JPEG", quality=70)
+
+
+def test_retaken_photo_of_the_same_scene_is_flagged_but_still_checked_by_the_ai(state, fake_llm, tmp_path):
+    retake = tmp_path / "retake.jpg"
+    _retake(_IMAGES + "door_misaligned.jpg", retake)
+    state["image_path"], state["repair_photo_path"] = _IMAGES + "door_misaligned.jpg", str(retake)
+    fake_llm.responses = [_vision(), "Look at the door."]
+    out = verification_node(state)
+    assert fake_llm.calls  # unlike an identical file, the AI still judges the photo
+    assert out["photo_similarity"]["similar"] is True and out["photo_similarity"]["distance"] <= 10
+
+
+def test_a_different_photo_is_not_flagged_as_similar(state, fake_llm):
+    state["image_path"] = _IMAGES + "ceiling-water-leak.jpg"
+    state["repair_photo_path"] = _IMAGES + "ceiling_repaired.jpg"
+    fake_llm.responses = [_vision(), "Look at the ceiling."]
+    out = verification_node(state)
+    assert out["photo_similarity"]["similar"] is False and out["photo_similarity"]["distance"] > 10

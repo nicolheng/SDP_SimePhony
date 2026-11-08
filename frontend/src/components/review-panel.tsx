@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 function outcomes(previous: string): { approve: string; reject: string } {
   if (["REOPENED", "EXTRA_INSPECTION", "ESCALATION_PENDING"].includes(previous))
     return { approve: "Book a revisit (or an extra inspection if it keeps recurring)", reject: "Keep the case closed: the reopen is not accepted" };
-  if (previous === "REPAIRED") return { approve: "Accept the repair: the buyer gets the standard sign-off checklist", reject: "Repair needs more work: the buyer books a new repair" };
+  if (previous === "REPAIRED") return { approve: "Accept the repair and sign off as the developer: the buyer is asked to check it and sign off", reject: "Repair needs more work: the buyer books a new repair" };
   if (["VALID", "REPAIR_BOOKED"].includes(previous)) return { approve: "The buyer books the repair", reject: "Repair needs more work: the buyer books a new repair" };
   return { approve: "Accept the report as it is and book the inspection visit", reject: "Close as not a defect (the buyer is told why)" };
 }

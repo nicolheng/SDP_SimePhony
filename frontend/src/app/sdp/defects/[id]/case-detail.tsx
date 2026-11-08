@@ -1,10 +1,10 @@
 "use client";
 import { AlertTriangle, ArrowLeft, Bot, ChevronDown, ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
 import { DefectRecordCard } from "@/components/defect-record";
+import { DeveloperSignoffPanel } from "@/components/developer-signoff";
 import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import { PhotoThumb } from "@/components/photo";
@@ -13,11 +13,10 @@ import { RepairClockBadge } from "@/components/repair-clock";
 import { ReviewPanel } from "@/components/review-panel";
 import { Panel } from "@/components/sdp-ui";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
-import { developerSignOff } from "@/lib/api";
 import { CATEGORY_LABEL, getTechnician, getUnit, SDP_STAFF, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { agentLabel } from "@/lib/agents";
-import { useDemo, useOffline } from "@/lib/store";
+import { useDemo } from "@/lib/store";
 import type { CaseEvent } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -199,8 +198,6 @@ export function SdpCaseDetail() {
   const c = useCase(id);
   const events = useCaseEvents(id);
   const whyEvents = useMemo(() => events.filter(hasWhyData), [events]);
-  const [busy, setBusy] = useState(false);
-  const offline = useOffline();
   const now = useDemo((s) => s.now);
   if (!c) return <p className="text-base text-zinc-500">Case {id} not found.</p>;
   const unit = getUnit(c.unitId);
@@ -313,39 +310,7 @@ export function SdpCaseDetail() {
 
         <div className="space-y-6">
           {c.status === "PENDING_REVIEW" && <ReviewPanel c={c} />}
-          {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && (
-            <Panel title="Developer Verification">
-              <p className="text-base text-zinc-700">
-                Check the repair by {workerLabel(c.technicianId)}, then approve it.
-              </p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Buyer: {c.signoff?.buyer ? `signed ${fmtDateTime(c.signoff.buyer.at)}` : "signs after your approval (then has 14 days)"}
-              </p>
-              {c.signoffOverdueAt && (
-                <p className="mt-3 rounded-lg bg-red-50 p-2.5 text-base text-red-800">
-                  Buyer sign-off overdue since {fmtDateTime(c.signoffOverdueAt)}. High urgency, so not auto-closed: please contact the buyer.
-                </p>
-              )}
-              <button
-                type="button"
-                disabled={busy || offline}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await developerSignOff(c.id);
-                    toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved: buyer asked to sign off");
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                className="mt-4 h-11 w-full rounded-xl bg-emerald-600 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                Approve repair (developer sign-off)
-              </button>
-            </Panel>
-          )}
+          {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && <DeveloperSignoffPanel c={c} />}
           {c.rating?.comment && (
             <Panel title="Buyer Feedback">
               <Stars value={c.rating.stars} className="text-lg" />

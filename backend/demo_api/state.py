@@ -25,6 +25,19 @@ def _json(v, fallback):
         return fallback
 
 
+def _photo_check(v) -> dict | None:
+    """The saved photo check in the shape the web app reads: {assessment, observations, confidence, flagged, source, model, at}."""
+    c = _json(v, None)
+    if not isinstance(c, dict):
+        return None
+    conf = c.get("confidence")
+    return {"assessment": c.get("assessment") or "unclear", "observations": c.get("observations") or "",
+            "confidence": float(conf) if isinstance(conf, (int, float)) else None, "flagged": bool(c.get("flagged")),
+            # Checks saved before "source" existed: the same-photo rule is recognised by its fixed sentence.
+            "source": c.get("source") or ("rule" if "same file" in (c.get("observations") or "") else "ai"),
+            "model": c.get("model"), "similarToOriginal": bool(c.get("similar_to_original")), "at": norm(c.get("at"))}
+
+
 def _num(v) -> int:
     return int(re.sub(r"\D", "", str(v)) or 0)
 
@@ -152,6 +165,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "verdict": {"outcome": verdict, "note": r["verdict_note"] or "", "at": norm(r["verdict_at"])} if verdict and r["verdict_at"] else None,
             "repairNote": r["repair_note"],
             "repairedAt": norm(r["repaired_at"]),
+            # VerificationAgent's repair photo check, for SDP's developer sign-off (null when the AI did not run)
+            "photoCheck": _photo_check(r.get("repair_photo_check")),
             "verification": {"result": v["outcome"], "note": v["evidence_notes"] or "", "at": norm(v["completed_at"])} if v and v["outcome"] and v["completed_at"] else None,
             "signoff": {
                 "buyer": {"at": norm(r["buyer_signed_at"]), "note": r["buyer_signoff_note"] or ""} if r["buyer_signed_at"] else None,

@@ -86,6 +86,9 @@ def test_approving_a_held_repair_check_asks_the_buyer_to_sign_off(client):
     state = client.post("/api/cases/C-0007/review-decision", json={"approve": True}).json()["state"]
     c = _case(state, "C-0007")
     assert c["status"] == "PENDING_SIGNOFF" and c["verificationGuide"]["steps"]
+    # SDP checked the repair photos, so the approval is the developer's sign-off: the buyer can sign off now
+    assert c["signoff"]["developer"]
+    assert any(m["caseId"] == "C-0007" and "sign off" in m["body"].lower() for m in state["messages"])
 
 
 def test_review_decision_needs_a_held_case(client):

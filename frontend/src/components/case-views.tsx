@@ -101,6 +101,7 @@ const EVENT_LABEL: Partial<Record<CaseEvent["type"], string>> = {
   "verdict.recorded": "Inspection result",
   "repair.booked": "Repair booked",
   "repair.done": "Repaired",
+  "repair.rejected": "Repair not accepted",
   "verification.requested": "Sign-off requested",
   "verification.completed": "Buyer check",
   "signoff.completed": "Signed off",

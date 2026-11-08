@@ -16,6 +16,7 @@ google-auth-oauthlib
 
 # Data & Embeddings
 numpy
+pillow                     # repair photo similarity check (VerificationAgent)
 sentence-transformers
 
 # Testing

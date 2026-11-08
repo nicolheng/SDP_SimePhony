@@ -38,6 +38,11 @@ class Ctx:
         self.deferred_rain_cases: list[str] = []
         self.deferred_calendar_cases: list[str] = []
         self.deferred_reports: list[str] = []
+        # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
+        # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id).
+        self.after_click: list[tuple] = []
+        from agents.simephony.llm_client import ai_only
+        self.async_ai = defer_agents and ai_only() and ai_agents.enabled("comms")
         self.pending_agent_fallbacks: list[dict] = []
         self.pending_agent_telemetry: dict[str, dict] = {}
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
@@ -129,7 +134,11 @@ def step(ctx: Ctx, case_id: str | None, agent: str, message: str) -> None:
 
 
 def notify_buyer(ctx: Ctx, case_id: str, kind: str, **extra) -> None:
-    """CommsAgent stand-in: the template for this situation, posted in the app and emailed."""
+    """CommsAgent stand-in: the template for this situation, posted in the app and emailed. On a web click in
+    USE_AI_AGENTS=only it is queued instead and written right after the click is saved (run_after_click)."""
+    if ctx.async_ai:
+        ctx.after_click.append(("message", case_id, kind, extra))
+        return
     title, body = ai_agents.comms(ctx, kind, load_case(ctx, case_id), extra)
     _tool(ctx, tools.notify_buyer, case_id, title, body)
 
@@ -264,6 +273,31 @@ def process_new_report(case_id: str) -> None:
         # The visit is already booked: a failed link must not hold the case and release it.
         log.exception("SimilarDefectAgent could not link related cases for report %s", case_id)
         tools.log_agent_step(case_id, "SimilarDefectAgent", f"Could not link related cases: {e}")
+
+
+def run_after_click(jobs: list[tuple]) -> None:
+    """The AI work a click queued (Ctx.after_click), in order, each committed on its own so the buyer's inbox fills
+    in as it goes. A failure is logged and shown in the case trace; it never undoes the click."""
+    for job in jobs:
+        case_id = job[1]
+        try:
+            with db.get_conn() as conn:
+                ctx = Ctx(conn)
+                if job[0] == "estimate":
+                    ai_agents.repair_estimate(ctx, load_case(ctx, case_id))
+                else:
+                    notify_buyer(ctx, case_id, job[2], **job[3])
+        except Exception as e:
+            log.exception("AI step after the click failed for %s: %s", case_id, job[0])
+            try:
+                with db.get_conn() as conn:
+                    agent = "RepairEstimateAgent" if job[0] == "estimate" else "CommsAgent"
+                    what = "repair estimate" if job[0] == "estimate" else f"buyer message ({job[2]})"
+                    step(Ctx(conn), case_id, agent, f"Could not finish the {what}: {type(e).__name__}: {str(e)[:200]}")
+            except Exception:
+                log.exception("Could not record the failed AI step for %s", case_id)
+    if jobs:
+        _send_queued_emails(jobs[0][1])
 
 
 def _send_queued_emails(case_id: str) -> None:
@@ -403,7 +437,9 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
         _tool(ctx, tools.start_verification, case_id, guide)
         step(ctx, case_id, "VerificationAgent",
              f"Standard {config.CATEGORY_LABEL.get(c['category'], '').lower()} checklist after SDP review; {len(guide['steps'])} checks for the buyer")
-        notify_buyer(ctx, case_id, "verify")
+        # SDP has just checked the repair photos, so approving the held check is the developer's sign-off:
+        # the buyer can check and sign off straight away, without a second SDP click.
+        developer_signoff(ctx, case_id)
     elif r["status"] == "VALID":
         _tool(ctx, tools.notify_buyer, case_id, "Please book your repair",
               f"Case {case_id} ({c['summary']}). Our team has checked your case. Please choose a repair slot in the app.")
@@ -415,6 +451,20 @@ def developer_signoff(ctx: Ctx, case_id: str) -> None:
         notify_buyer(ctx, case_id, "closed")
     else:
         notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(signoff_deadline(load_case(ctx, case_id))))
+
+
+def reject_repair(ctx: Ctx, case_id: str, note: str) -> None:
+    """SDP won't sign off the repair (e.g. the photo check showed the fault is still there): the buyer books a
+    new repair and the technician is told why."""
+    _tool(ctx, tools.reject_repair, case_id, note)
+    c = load_case(ctx, case_id)
+    reason = " ".join(note.split())
+    _tool(ctx, tools.notify_buyer, case_id, "Your repair needs another visit",
+          f"Case {case_id} ({c['summary']}). Our team checked the repair and it needs more work: \"{reason}\" "
+          "Please book a new repair slot in the app.")
+    notify_tech(ctx, case_id, "Repair not accepted",
+                f"SDP did not accept the repair at {c['unit_id']}.\n\n{_defect(c)}\n"
+                f'Reason: "{reason}"\n\nThe buyer will book a new repair slot; you will be emailed if you are assigned.')
 
 
 def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> None:
@@ -462,7 +512,10 @@ def _book_revisit(ctx: Ctx, case_id: str, t: dict, occurrence: int, description:
 def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.record_verdict, case_id, outcome, note, photo)
     if outcome == "VALID":
-        ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
+        if ctx.async_ai:  # after the click, before the "please book a repair" message that quotes the hours
+            ctx.after_click.append(("estimate", case_id))
+        else:
+            ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
     notify_buyer(ctx, case_id, "valid" if outcome == "VALID" else "invalid", note=note.strip())
 
 

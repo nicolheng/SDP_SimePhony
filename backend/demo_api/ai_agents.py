@@ -337,10 +337,25 @@ def repair_estimate(ctx, case: dict) -> dict | None:
 
 # ---------- VerificationAgent ----------
 
+def _save_photo_check(case_id: str, v: dict, similarity: dict | None = None) -> None:
+    """Keep the photo check for the developer sign-off, where SDP accepts or rejects the repair."""
+    similar = bool((similarity or {}).get("similar"))
+    from agents.simephony.llm_client import get_models
+    rule = v.get("checked_by") == "same_photo_rule"  # a file comparison in code: the model never saw the photo
+    check = {"assessment": v.get("assessment") or "unclear", "observations": v.get("observations") or "",
+             "confidence": None if rule else v.get("confidence_score"),
+             "flagged": bool(v.get("needs_human_review") or v.get("needs_technician_input") or similar),
+             "similar_to_original": similar,
+             "source": "rule" if rule else "ai", "model": None if rule else get_models()[0]}
+    result = tools.save_repair_photo_check(case_id, check)
+    if result.get("ok") is False:
+        log.error("Could not save the repair photo check for %s: %s", case_id, result["error"])
+
+
 def verification_guide(ctx, case: dict) -> tuple[dict | None, str | None, dict | None]:
-    """(guide, note for the SDP trace). The repair photo is checked against the original; if it doesn't look
-    resolved, the standard guide is used and the note asks SDP to check the photo before signing off (SDP
-    signs before the buyer, so a person always looks at it)."""
+    """(guide, note for the SDP trace, None). The repair photo is checked against the original and the check is
+    saved for the developer sign-off: SDP signs before the buyer, so a person always decides. A flagged photo is
+    never held for review: the buyer gets the standard checklist and SDP sees the flag at sign-off."""
     def ai():
         from agents.simephony.verification import verification_node
         temporary_photos = []
@@ -357,16 +372,15 @@ def verification_guide(ctx, case: dict) -> tuple[dict | None, str | None, dict |
         if v.get("_structured_output_error"):
             from agents.simephony.structured_output import StructuredOutputError
             raise StructuredOutputError()
-        if v.get("needs_human_review"):
-            return None, v.get("review_reason"), {
-                "needs_human_review": True,
-                "review_reason": v.get("review_reason"),
-                "confidence_score": v.get("confidence_score", 0.0),
-                "review_step": "VerificationAgent",
-            }
-        if v.get("needs_technician_input"):
-            return standins.verification_guide(case), f"Photo check: {v['technician_message']} SDP: please check the repair photo before signing off.", None
-        return v["guide"], f"Photo check: {v['assessment']} ({v.get('observations') or 'no notes'})", None
+        _save_photo_check(case["case_id"], v, state.get("photo_similarity"))
+        obs = v.get("observations") or "no notes"
+        if v.get("needs_human_review") or v.get("needs_technician_input"):
+            return (standins.verification_guide(case),
+                    f"Photo check: {v.get('assessment') or 'unclear'} ({obs}). Flagged for SDP to check at sign-off.", None)
+        if (state.get("photo_similarity") or {}).get("similar"):
+            return (v["guide"], f"Photo check: {v['assessment']} ({obs}). The repair photo looks almost the same as "
+                                "the original: flagged for SDP to compare at sign-off.", None)
+        return v["guide"], f"Photo check: {v['assessment']} ({obs})", None
     result = _run(ctx, "verification", ai, lambda: (standins.verification_guide(case), None, None),
                   {"case_id": case["case_id"]})
     if len(result) == 2:
@@ -411,7 +425,10 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
         from agents.simephony.verification import _guide_text
         if kind == "ready_signoff" and "guide" not in extra:
             from agents.simephony import backend_tools
-            extra["guide"] = _guide_text(backend_tools.get_signoff_info(case["case_id"]).get("guide"))
+            guide = backend_tools.get_signoff_info(case["case_id"]).get("guide")
+            extra["guide"] = _guide_text(guide)
+            if isinstance(guide, dict) and guide.get("steps"):
+                extra["guide_steps"] = list(guide["steps"])  # the message lists just the checks
         return message_for_kind(kind, case, extra)
     return _run(ctx, "comms", ai, lambda: standins.comms(ctx, kind, case, extra),
                 {"case_id": case["case_id"], "kind": kind, "extra": extra})
