@@ -293,6 +293,12 @@ class Decision(BaseModel):
     approve: bool
 
 
+@router.post("/approvals/{approval_id}/retry-brief")
+def retry_brief(approval_id: str, request: Request, background_tasks: BackgroundTasks):
+    """Try the inspection brief and booking again after they failed following an approval."""
+    return _run(request, workflow.retry_extra_inspection, approval_id, background_tasks=background_tasks)
+
+
 @router.post("/approvals/{approval_id}/decision")
 def decision(approval_id: str, body: Decision, request: Request, background_tasks: BackgroundTasks):
     return _run(request, workflow.decide_approval, approval_id, body.approve, background_tasks=background_tasks)

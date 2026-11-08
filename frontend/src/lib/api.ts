@@ -89,6 +89,11 @@ export async function decideApproval(approvalId: string, approve: boolean) {
   await apiAction(`/api/approvals/${approvalId}/decision`, { approve });
 }
 
+/** Write the inspection brief and book the joint inspection again, after they failed following an approval. */
+export async function retryInspectionBrief(approvalId: string) {
+  await apiAction(`/api/approvals/${approvalId}/retry-brief`);
+}
+
 // ---------- availability (read from the backend) ----------
 
 export async function fetchVisitSlots(): Promise<string[]> {

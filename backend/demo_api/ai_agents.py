@@ -258,7 +258,8 @@ def similar(ctx, case: dict) -> dict:
         from agents.simephony.similar_defect import similar_defect_node
         r = similar_defect_node({"case_id": case["case_id"], "unit_id": case["unit_id"],
                                  "user_description": case.get("description") or case.get("summary") or "",
-                                 "intake_result": {"category": case["category"]}, "decide_only": True})["similar_cases_result"]
+                                 "intake_result": {"category": case["category"], "location_in_unit": case.get("location_in_unit")},
+                                 "decide_only": True})["similar_cases_result"]
         return {**stand, "cluster_reason": r.get("cluster_reason")}
     return _run(ctx, "similar", ai, lambda: stand, {"case_id": case["case_id"]})
 

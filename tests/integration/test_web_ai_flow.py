@@ -774,3 +774,64 @@ def test_only_mode_failed_message_after_click_is_shown_in_the_trace(fake_llm, mo
     _run_task(tasks, workflow.run_after_click)
     assert _case(case_id)["booking_status"] == "CONFIRMED"  # the click itself stays
     assert any(t.get("agent") == "CommsAgent" and "Could not finish the buyer message" in t["message"] for t in _trace(case_id))
+
+
+def _escalated_report_in_only_mode():
+    """A 4th water leak in A-12-08 (stack A-08 cluster in seed.db): booked, with an extra inspection requested."""
+    from fastapi import BackgroundTasks
+    from demo_api import routes, workflow
+    tasks = BackgroundTasks()
+    response = routes.create_case(routes.NewReport(unit_id="A-12-08", buyer_id="B-0118", slot="",
+                                                   description="Siling bilik tidur utama bocor lagi, ini kali ketiga!"),
+                                  _request("/api/cases"), tasks)
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    import db
+    with db.get_conn() as conn:
+        approval_id = conn.execute("SELECT approval_id FROM approvals WHERE case_id = ? AND status = 'pending'",
+                                   (case_id,)).fetchone()["approval_id"]
+    return case_id, approval_id
+
+
+def _brief(case_id):
+    import db
+    with db.get_conn() as conn:
+        return conn.execute("SELECT brief FROM inspection_briefs WHERE case_id = ?", (case_id,)).fetchone()
+
+
+def test_only_mode_approving_an_extra_inspection_returns_before_the_brief(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from demo_api import routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    case_id, approval_id = _escalated_report_in_only_mode()
+    calls = len(fake_llm.calls)
+    tasks = BackgroundTasks()
+    routes.decision(approval_id, routes.Decision(approve=True), _request("/decision"), tasks)
+    assert len(fake_llm.calls) == calls and _brief(case_id) is None  # the click returned before the model ran
+    _run_task(tasks, workflow.run_after_click)
+    assert _brief(case_id) is not None
+    c = _case(case_id)
+    assert c["status"] == "EXTRA_INSPECTION" and c["technician_id"]
+
+
+def test_only_mode_failed_brief_can_be_tried_again(fake_llm, monkeypatch):
+    from fastapi import BackgroundTasks
+    from demo_api import routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    case_id, approval_id = _escalated_report_in_only_mode()
+    working = fake_llm.client.chat.completions.create.side_effect
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("ollama down")
+    tasks = BackgroundTasks()
+    routes.decision(approval_id, routes.Decision(approve=True), _request("/decision"), tasks)
+    _run_task(tasks, workflow.run_after_click)
+    assert _brief(case_id) is None  # nothing half-saved
+    assert any(t.get("agent") == "InitialInspectionAgent" and t["message"].startswith("Could not finish")
+               for t in _trace(case_id))
+
+    fake_llm.client.chat.completions.create.side_effect = working
+    tasks = BackgroundTasks()
+    routes.retry_brief(approval_id, _request("/retry-brief"), tasks)
+    _run_task(tasks, workflow.run_after_click)
+    assert _brief(case_id) is not None and _case(case_id)["status"] == "EXTRA_INSPECTION"
+    with pytest.raises(Exception):  # nothing left to retry
+        routes.retry_brief(approval_id, _request("/retry-brief"), BackgroundTasks())

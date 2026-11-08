@@ -39,7 +39,8 @@ class Ctx:
         self.deferred_calendar_cases: list[str] = []
         self.deferred_reports: list[str] = []
         # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
-        # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id).
+        # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id)
+        # | ("extra_inspection", case_id, approval_id).
         self.after_click: list[tuple] = []
         from agents.simephony.llm_client import ai_only
         self.async_ai = defer_agents and ai_only() and ai_agents.enabled("comms")
@@ -285,14 +286,17 @@ def run_after_click(jobs: list[tuple]) -> None:
                 ctx = Ctx(conn)
                 if job[0] == "estimate":
                     ai_agents.repair_estimate(ctx, load_case(ctx, case_id))
+                elif job[0] == "extra_inspection":
+                    start_extra_inspection(ctx, case_id, job[2])
                 else:
                     notify_buyer(ctx, case_id, job[2], **job[3])
         except Exception as e:
             log.exception("AI step after the click failed for %s: %s", case_id, job[0])
             try:
                 with db.get_conn() as conn:
-                    agent = "RepairEstimateAgent" if job[0] == "estimate" else "CommsAgent"
-                    what = "repair estimate" if job[0] == "estimate" else f"buyer message ({job[2]})"
+                    agent, what = {"estimate": ("RepairEstimateAgent", "repair estimate"),
+                                   "extra_inspection": ("InitialInspectionAgent", "inspection brief and booking")
+                                   }.get(job[0], ("CommsAgent", f"buyer message ({job[2]})"))
                     step(Ctx(conn), case_id, agent, f"Could not finish the {what}: {type(e).__name__}: {str(e)[:200]}")
             except Exception:
                 log.exception("Could not record the failed AI step for %s", case_id)
@@ -576,6 +580,29 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
         if load_case(ctx, case_id)["status"] == "VALID":  # a new report's request leaves its visit as booked
             notify_buyer(ctx, case_id, "valid", note="Our team will repair this as a normal case")
         return
+    if ctx.async_ai:  # the brief (about 12 s of model time) and the booking run right after the click
+        ctx.after_click.append(("extra_inspection", case_id, approval_id))
+        return
+    start_extra_inspection(ctx, case_id, approval_id)
+
+
+def retry_extra_inspection(ctx: Ctx, approval_id: str) -> None:
+    """SDP's "Try again" when the brief or booking failed after an approval (e.g. Ollama was down)."""
+    a = ctx.conn.execute("SELECT case_id, status, decided_at FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+    if a is None or a["status"] != "approved":
+        raise WorkflowError("This extra inspection hasn't been approved.")
+    b = ctx.conn.execute("SELECT created_at FROM inspection_briefs WHERE case_id = ?", (a["case_id"],)).fetchone()
+    if b and a["decided_at"] and b["created_at"] >= a["decided_at"]:
+        raise WorkflowError("The inspection brief is already ready.")
+    if ctx.async_ai:
+        ctx.after_click.append(("extra_inspection", a["case_id"], approval_id))
+    else:
+        start_extra_inspection(ctx, a["case_id"], approval_id)
+
+
+def start_extra_inspection(ctx: Ctx, case_id: str, approval_id: str) -> None:
+    """After SDP approves: InitialInspectionAgent writes the brief, TriageAgent books the joint inspection, and the
+    technicians and buyer are told."""
     c = load_case(ctx, case_id)
     brief = ai_agents.initial_inspection(ctx, c, c.get("verdict_note"), latest_verification(ctx, case_id))
     _tool(ctx, tools.attach_inspection_brief, case_id, brief)

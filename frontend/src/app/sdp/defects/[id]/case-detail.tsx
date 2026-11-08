@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, Bot, ChevronDown, ShieldCheck } from "lucide-
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
+import { BriefProgress } from "@/components/brief-progress";
 import { DefectRecordCard } from "@/components/defect-record";
 import { DeveloperSignoffPanel } from "@/components/developer-signoff";
 import { recordAvailable } from "@/lib/defect-record";
@@ -309,6 +310,7 @@ export function SdpCaseDetail() {
         </div>
 
         <div className="space-y-6">
+          <BriefProgress c={c} events={events} />
           {c.status === "PENDING_REVIEW" && <ReviewPanel c={c} />}
           {c.status === "PENDING_SIGNOFF" && !c.signoff?.developer && <DeveloperSignoffPanel c={c} />}
           {c.rating?.comment && (

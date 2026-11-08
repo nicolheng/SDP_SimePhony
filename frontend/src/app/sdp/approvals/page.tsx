@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Check, ChevronDown, ShieldCheck, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardList, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -125,7 +125,7 @@ export default function Approvals() {
                   open={openId === a.id}
                   onToggle={() => toggle(a.id)}
                   title={`Extra Inspection for ${c.unitId} · ${c.summary}`}
-                  meta={[a.id, si?.id, si ? `${Math.round(si.confidence * 100)}% confidence` : null, `raised ${fmtDateTime(a.createdAt)}`].filter(Boolean).join(" · ")}
+                  meta={[a.id, si?.id, si ? `${Math.round(si.confidence * 100)}% match` : null, `raised ${fmtDateTime(a.createdAt)}`].filter(Boolean).join(" · ")}
                 >
                   <ApprovalCard a={a} c={c} si={si} cases={cases} />
                 </QueueRow>
@@ -231,7 +231,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
     setBusy(true);
     try {
       await decideApproval(a.id, approve);
-      toast.success(approve ? "Approved — inspection brief is ready" : "Rejected — normal repair booking");
+      toast.success(approve ? "Approved: the AI is writing the inspection brief" : "Rejected — normal repair booking");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setBusy(false);
@@ -258,17 +258,28 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
 
       <div className="mt-5 grid gap-6 md:grid-cols-[1fr_auto]">
         <div className="space-y-4">
+          {/* Rule-based: the escalation rule counts cases in the database (tools.check_escalation). */}
           <div className="rounded-xl bg-violet-50 p-4">
-            <p className="flex items-center gap-1.5 text-sm font-semibold text-violet-800">
-              <Bot className="size-3.5" /> Why the agent is asking
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-semibold text-violet-800">
+                <ClipboardList className="size-3.5" /> Why this was flagged
+                <span className="text-xs font-normal text-violet-700">· counted from case records</span>
+              </p>
+              {si && (
+                <span
+                  className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-violet-800"
+                  title="Match score: based on how many units share the problem, units with repeats, and reopens. A formula, not AI."
+                >
+                  {Math.round(si.confidence * 100)}% match
+                </span>
+              )}
+            </div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-base text-violet-950">
               {a.reasons.map((r) => (
                 <li key={r}>{r}</li>
               ))}
             </ul>
-            {si && <p className="mt-3 text-base text-violet-950"><span className="font-medium">Recommended:</span> {si.recommendedAction}</p>}
-            {si && <p className="mt-1 text-sm text-violet-700">Confidence {(si.confidence * 100).toFixed(0)}%</p>}
+            {si && <p className="mt-3 text-base text-violet-950"><span className="font-medium">Suggested action:</span> {si.recommendedAction}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
