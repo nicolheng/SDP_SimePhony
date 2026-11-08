@@ -56,6 +56,9 @@ def similar_defect_node(state: dict) -> dict:
     # Total occurrences = past non-INVALID cases + the current submission.
     total_occurrences = past_case_count + 1
 
+    # The checked English location: from the raw Malay alone, qwen read "bilik tidur utama" as a bathroom.
+    location = ((state.get("intake_result") or {}).get("location_in_unit") or "").strip()
+
     # Let the AI explain the cluster in plain text.
     messages = [
         {
@@ -74,7 +77,9 @@ def similar_defect_node(state: dict) -> dict:
             "role": "user",
             "content": (
                 f"Unit {unit_id} has had {past_case_count} past cases of '{category}'. "
-                f"The user says: '{state['user_description']}'. Explain why this may indicate a cluster."
+                + (f"Location (already checked; use these words for the place, never guess another room): "
+                   f"{location}. " if location else "")
+                + f"The user says: '{state['user_description']}'. Explain why this may indicate a cluster."
             )
         }
     ]
