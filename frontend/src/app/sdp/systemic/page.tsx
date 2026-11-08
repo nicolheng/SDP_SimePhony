@@ -58,7 +58,7 @@ export default function SystemicIssues() {
               {[
                 ["Related Cases", si.relatedCases.length],
                 ["Reopened", si.reopenedCount],
-                ["Confidence", `${Math.round(si.confidence * 100)}%`],
+                ["Match score", `${Math.round(si.confidence * 100)}%`],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl bg-zinc-50 p-3">
                   <dd className="text-xl font-semibold tabular-nums">{v}</dd>
@@ -67,7 +67,7 @@ export default function SystemicIssues() {
               ))}
             </dl>
             <p className="mt-4 text-base">
-              <span className="font-medium">Recommended action:</span> {si.recommendedAction}
+              <span className="font-medium">Suggested action:</span> {si.recommendedAction}
             </p>
             <p className="mt-1 text-sm text-zinc-500">
               Detected {fmtDate(si.detectedAt)} · approval: {si.approvalStatus}
@@ -159,7 +159,7 @@ function Detection() {
                       <div className="h-2 flex-1 rounded-full bg-zinc-100">
                         <div className="h-2 rounded-full bg-brand" style={{ width: `${Math.round(d.confidence * 100)}%` }} />
                       </div>
-                      <span className="text-sm tabular-nums text-zinc-600">{Math.round(d.confidence * 100)}% confidence</span>
+                      <span className="text-sm tabular-nums text-zinc-600" title="Based on how many units share the problem, units with repeats, and reopens. A formula, not AI.">{Math.round(d.confidence * 100)}% match</span>
                     </div>
                     <div className="mt-3">
                       <IssueStatus d={d} records={records} />
@@ -171,7 +171,7 @@ function Detection() {
           )}
           {watchlist.length > 0 && (
             <div className="mt-5">
-              <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Watchlist · below {Math.round(threshold * 100)}% confidence</p>
+              <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Watchlist · below {Math.round(threshold * 100)}% match score</p>
               <ul className="mt-2 space-y-1">
                 {watchlist.map((d) => (
                   <li key={d.key}>
