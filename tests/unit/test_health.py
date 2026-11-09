@@ -120,3 +120,28 @@ def test_health_reports_database_failure_without_raising(monkeypatch):
         "message": "database unavailable",
     }
     assert result["checks"]["ollama"]["status"] == "ok"
+
+
+def test_health_does_not_ping_a_cloud_model(monkeypatch):
+    import tools
+    import main
+
+    tools.get_clock()
+    monkeypatch.setenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr(tools, "embedder_health", lambda: {"status": "ok", "message": "Loaded"})
+    monkeypatch.setattr(main.urllib.request, "urlopen", lambda *a, **k: pytest.fail("pinged the cloud model"))
+
+    result = main.health()
+
+    assert result["checks"]["ollama"]["status"] == "ok"
+    assert "generativelanguage.googleapis.com" in result["checks"]["ollama"]["message"]
+    assert result["status"] == "healthy"
+
+
+def test_health_flags_a_cloud_model_without_a_key(monkeypatch):
+    import main
+
+    monkeypatch.setenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    monkeypatch.setenv("LLM_API_KEY", "")
+    assert main.health()["checks"]["ollama"]["status"] == "error"

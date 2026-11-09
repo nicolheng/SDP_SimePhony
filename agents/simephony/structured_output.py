@@ -5,7 +5,8 @@ import time
 from typing import Any
 
 from agents.telemetry import record_llm_telemetry
-from .llm_client import LLM_MAX_TOKENS, LLM_TIMEOUT_TEXT
+from . import privacy
+from .llm_client import LLM_MAX_TOKENS, LLM_TIMEOUT_TEXT, extra_params
 
 class StructuredOutputError(RuntimeError):
     """The model failed to return valid structured output after its single retry."""
@@ -100,14 +101,16 @@ def chat_json(client, model: str, messages: list[dict], schema: dict, temperatur
             ]
         try:
             start = time.perf_counter()
+            sent, redactor = privacy.protect(retry_messages)  # cloud model: no personal data leaves the machine
             try:
                 response = client.chat.completions.create(
                     model=model,
-                    messages=retry_messages,
+                    messages=sent,
                     temperature=temperature,
                     response_format={"type": "json_object"},
                     max_tokens=LLM_MAX_TOKENS,
                     timeout=timeout,
+                    **extra_params(),
                 )
             finally:
                 timing_ms += max(1, int((time.perf_counter() - start) * 1000))
@@ -127,6 +130,8 @@ def chat_json(client, model: str, messages: list[dict], schema: dict, temperatur
             content = _response_value(message, "content")
             if not isinstance(content, str):
                 raise JSONSchemaValidationError("$ response content must be a JSON string")
+            if redactor:
+                content = redactor.restore(content)
             value = json.loads(content)
             _validate(value, schema)
             tokens = {

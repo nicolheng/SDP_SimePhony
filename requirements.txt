@@ -1,7 +1,7 @@
 # Agent Framework & LLM Client
 langgraph
 langchain-core
-openai # Works with Ollama, Groq, and OpenRouter
+openai # Works with Ollama, Gemini, Groq, and OpenRouter
 
 # Backend
 fastmcp
@@ -17,7 +17,8 @@ google-auth-oauthlib
 # Data & Embeddings
 numpy
 pillow>=13.0.0             # repair photo similarity check; 13.0.0 fixes the Oct 2026 security issues
-sentence-transformers
+sentence-transformers      # similar-case search (all-MiniLM-L6-v2, runs locally, not through Ollama)
+torch>=2.6                 # transformers needs 2.6+; an older torch makes the embedder fail quietly at startup
 
 # Testing
 pytest

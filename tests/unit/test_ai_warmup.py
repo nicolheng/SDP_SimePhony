@@ -82,6 +82,7 @@ def test_startup_logs_warmup_and_survives_unavailable_ollama(monkeypatch, tmp_pa
 
     async def start_and_stop():
         async with main.lifespan(main.app):
+            await asyncio.sleep(0.5)  # the warm-up runs in the background after the server is up
             return True
 
     assert asyncio.run(start_and_stop()) is True
@@ -91,3 +92,70 @@ def test_startup_logs_warmup_and_survives_unavailable_ollama(monkeypatch, tmp_pa
         assert "AI model warmup completed in" in caplog.text
     else:
         assert "AI models warmed up successfully in" in caplog.text
+
+
+def test_model_warmup_is_skipped_for_a_cloud_model(monkeypatch):
+    from demo_api import ai_agents
+    from agents.simephony import llm_client
+
+    client = Mock()
+    monkeypatch.setenv("USE_AI_AGENTS", "all")
+    monkeypatch.setenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    monkeypatch.setattr(llm_client, "get_client", lambda: client)
+
+    ai_agents.warmup_ollama_models()
+
+    client.chat.completions.create.assert_not_called()
+
+
+def test_startup_does_not_wait_for_the_models(monkeypatch, tmp_path):
+    import time
+    import db
+    import main
+    import tools
+    from demo_api import ai_agents
+
+    @contextmanager
+    def fake_connection():
+        yield SimpleNamespace(execute=lambda _sql: SimpleNamespace(fetchone=lambda: (1,)))
+
+    monkeypatch.setattr(db, "ensure_db", lambda: None)
+    monkeypatch.setattr(db, "get_conn", fake_connection)
+    monkeypatch.setattr(main.config, "write_rules_snapshot", lambda: False)
+    monkeypatch.setattr(main, "migrate", lambda _conn: None)
+    monkeypatch.setattr(main, "UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr(tools, "warmup_ai_models", lambda: time.sleep(2) or True)  # a slow embedder
+    monkeypatch.setattr(ai_agents, "warmup_ollama_models", lambda: None)
+
+    async def time_to_ready():
+        start = time.perf_counter()
+        async with main.lifespan(main.app):
+            return time.perf_counter() - start
+
+    assert asyncio.run(time_to_ready()) < 1
+
+
+def test_embedder_loads_once_when_two_requests_need_it_at_the_same_time(monkeypatch):
+    import threading
+    import time
+    import tools
+
+    loads = []
+
+    class FakeModel:
+        def __init__(self, name):
+            loads.append(name)
+            time.sleep(0.3)
+
+    import types, sys
+    monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=FakeModel))
+    tools._load_embedder.cache_clear()
+    try:
+        threads = [threading.Thread(target=tools._load_embedder) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(loads) == 1
+    finally:
+        tools._load_embedder.cache_clear()

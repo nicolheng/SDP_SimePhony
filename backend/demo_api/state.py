@@ -232,8 +232,6 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             else data.get("reasoning")
         )
         if r["type"] == "agent.step":
-            if confidence_score is None:
-                confidence_score = 0.85
             if reasoning is None:
                 reasoning = {
                     "matched_rule": f"Rule-based decision: {p.get('agent') or 'Standard processing'}",

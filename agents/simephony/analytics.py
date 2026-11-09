@@ -12,7 +12,8 @@ import db
 from tools import get_recurring_stats
 from demo_api.timeutil import add_days, demo_now, parse
 
-from .llm_client import client, MODEL_TEXT
+from . import privacy
+from .llm_client import client, extra_params, MODEL_TEXT
 
 log = logging.getLogger(__name__)
 
@@ -40,11 +41,13 @@ def generate_analytics_insight() -> str:
     ]
 
     try:
-        response = client.chat.completions.create(
+        sent, redactor = privacy.protect(messages)
+        response = privacy.restore_response(client.chat.completions.create(
             model=MODEL_TEXT,
-            messages=messages,
+            messages=sent,
             temperature=0.1,
-        )
+            **extra_params(),
+        ), redactor)
         summary = response.choices[0].message.content.strip()
         return summary
     except Exception as e:
@@ -215,14 +218,16 @@ def generate_weekly_digest(days: int = 7) -> str:
         f"Exact defect management statistics for the past {days} days:\n"
         f"{json.dumps(stats, indent=2, sort_keys=True)}"
     )
-    response = client.chat.completions.create(
+    sent, redactor = privacy.protect([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_input},
+    ])
+    response = privacy.restore_response(client.chat.completions.create(
         model=MODEL_TEXT,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_input},
-        ],
+        messages=sent,
         temperature=0.1,
-    )
+        **extra_params(),
+    ), redactor)
     digest = response.choices[0].message.content
     if not isinstance(digest, str) or not digest.strip():
         raise RuntimeError("The text model returned an empty weekly digest")

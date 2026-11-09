@@ -49,8 +49,11 @@ def warmup_ollama_models() -> None:
         log.info("Ollama warmup skipped because USE_AI_AGENTS is disabled")
         return
 
-    from agents.simephony.llm_client import LLM_TIMEOUT_VISION, get_client, get_models
+    from agents.simephony.llm_client import LLM_TIMEOUT_VISION, get_client, get_models, is_local
 
+    if not is_local():  # a cloud model is always loaded; warming up would only use up the free quota
+        log.info("Model warmup skipped: cloud model")
+        return
     client = get_client()
     vision_model, text_model = get_models()
     for model in dict.fromkeys((text_model, vision_model)):

@@ -26,6 +26,7 @@ import re
 import smtplib
 import sqlite3
 import sys
+import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
@@ -143,13 +144,12 @@ def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, mes
             else:
                 merged[k] = v_telemetry
 
+        # A score only when one was given: a rule-based step has no model, so no confidence to show
         confidence = merged.get("confidence_score")
-        if confidence is None:
-            confidence = 0.85
         try:
-            confidence = float(confidence)
+            confidence = float(confidence) if confidence is not None else None
         except (ValueError, TypeError):
-            confidence = 0.85
+            confidence = None
         merged["confidence_score"] = confidence
 
         reasoning = merged.get("reasoning")
@@ -558,9 +558,22 @@ EMBED_MODEL = "all-MiniLM-L6-v2"
 _embedder_loaded = False
 
 
-@functools.lru_cache(maxsize=1)
+_embedder_lock = threading.Lock()
+
+
 def _load_embedder():
-    """The sentence-transformers model, loaded once per process (first import takes ~15 s). None if unavailable."""
+    """The sentence-transformers model, loaded once per process (first import takes ~15 s). None if unavailable.
+    The startup warm-up loads it in the background; a request that needs it sooner waits on the lock instead
+    of loading a second copy."""
+    with _embedder_lock:
+        return _load_embedder_once()
+
+
+_load_embedder.cache_clear = lambda: _load_embedder_once.cache_clear()
+
+
+@functools.lru_cache(maxsize=1)
+def _load_embedder_once():
     global _embedder_loaded
     try:
         from sentence_transformers import SentenceTransformer
@@ -2078,12 +2091,14 @@ def sweep_signoffs() -> list[dict]:
 
 
 def sweep_visit_reminders() -> list[dict]:
-    """Queue one buyer/technician reminder for each visit or repair starting within 24 hours."""
+    """Queue one buyer/technician reminder for each visit or repair starting within 24 hours.
+    Only once the technician has accepted the job (booking CONFIRMED): before that the time may still change."""
     reminders = []
     with _connect() as conn, use_connection(conn):
         now = parse(_now(conn))
         cases = conn.execute(
-            "SELECT * FROM cases WHERE status IN ('VISIT_SCHEDULED', 'EXTRA_INSPECTION', 'REPAIR_BOOKED')"
+            "SELECT * FROM cases WHERE status IN ('VISIT_SCHEDULED', 'EXTRA_INSPECTION', 'REPAIR_BOOKED') "
+            "AND booking_status = 'CONFIRMED'"
         ).fetchall()
         sent = set()
         for row in conn.execute(
@@ -2107,19 +2122,26 @@ def sweep_visit_reminders() -> list[dict]:
             if not 0 <= hours_until <= 24 or key in sent:
                 continue
 
-            body = (
-                f"Reminder: your {event['job'].lower()} for Case {case['case_id']} is scheduled "
-                f"for {fmt_datetime(event['start'])}.\n\nAdd to Calendar: {calendar_url(case['case_id'])}"
+            job, when = event["job"].lower(), fmt_datetime(event["start"])
+            calendar = f"Add to Calendar: {calendar_url(case['case_id'])}"
+            buyer_body = (
+                f"Reminder: your {job} for Case {case['case_id']} is on {when}.\n\n"
+                f"Please make sure someone is at unit {case['unit_id']} to let the technician in.\n\n{calendar}"
+            )
+            tech_body = (
+                f"Reminder: you are booked for the {job} at unit {case['unit_id']} on {when} (Case {case['case_id']}).\n\n"
+                + (f"Defect: {case['summary']}\n\n" if case.get("summary") else "")
+                + calendar
             )
             recipients = []
             if event["buyer"] and event["buyer"].get("email"):
-                recipients.append((event["buyer"]["email"], "Upcoming defect visit reminder"))
+                recipients.append((event["buyer"]["email"], "Upcoming defect visit reminder", buyer_body))
             recipients.extend(
-                (worker["email"], "Upcoming defect visit reminder")
+                (worker["email"], "Upcoming job reminder", tech_body)
                 for worker in event["technicians"]
                 if worker.get("email")
             )
-            for address, subject in recipients:
+            for address, subject, body in recipients:
                 send_email(address, f"[{case['case_id']}] {subject}", body, case["case_id"])
             _emit(
                 conn,
