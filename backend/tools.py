@@ -195,6 +195,7 @@ def _emit(conn: sqlite3.Connection, case_id: Optional[str], event_type: str, mes
 
 
 def _next_id(conn: sqlite3.Connection, table: str, column: str, prefix: str, width: int) -> str:
+    db.hold_write_lock(conn)  # parallel jobs must not read the same highest number
     rows = conn.execute(f"SELECT {column} AS v FROM {table} WHERE {column} LIKE ?", (f"{prefix}-%",)).fetchall()
     n = max((int(m.group(1)) for r in rows if (m := re.match(rf"{prefix}-(\d+)$", r["v"]))), default=0)
     return f"{prefix}-{n + 1:0{width}d}"

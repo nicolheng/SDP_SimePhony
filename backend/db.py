@@ -52,6 +52,14 @@ def init_schema(path: Path | None = None) -> None:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
+def hold_write_lock(conn: sqlite3.Connection) -> None:
+    """Take the write lock now, if this connection doesn't hold it yet. Call before "highest number + 1": two
+    jobs running at once (e.g. a batch of reports) otherwise read the same highest number and pick the same ID.
+    Other writers wait (busy timeout) until this transaction commits."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+
+
 def next_record_id(conn: sqlite3.Connection, table: str) -> str:
     """Return the next prefixed ID (e.g. CE-0042) for a table with prefixed text IDs."""
     identifiers = {
@@ -66,6 +74,7 @@ def next_record_id(conn: sqlite3.Connection, table: str) -> str:
     if table not in identifiers:
         raise ValueError(f"Unsupported record ID table: {table}")
     id_column, prefix = identifiers[table]
+    hold_write_lock(conn)
     last_id = conn.execute(
         f"""
         SELECT {id_column} FROM {table}
