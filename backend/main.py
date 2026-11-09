@@ -6,6 +6,7 @@ import os
 import sqlite3
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -110,6 +111,16 @@ async def lifespan(app: FastAPI):
     with db.get_conn() as conn:
         migrate(conn)
     UPLOADS_DIR.mkdir(exist_ok=True)
+    # The models load in the background (about 10 s for the embedder), so the server answers straight away.
+    # A request that needs a model before then waits for it, as on a cold start.
+    warmup = asyncio.create_task(asyncio.to_thread(warmup_models))
+    sweeper = asyncio.create_task(_sweep_loop())
+    yield
+    sweeper.cancel()
+    warmup.cancel()
+
+
+def warmup_models() -> None:
     log.info("Warming up AI models (embedder/Ollama)...")
     warmup_started = time.perf_counter()
     embedder_ready = tools.warmup_ai_models()
@@ -126,9 +137,6 @@ async def lifespan(app: FastAPI):
     else:
         log.info("AI model warmup completed in %.2f seconds (embedder ready: %s; Ollama ready: %s)",
                  elapsed, embedder_ready, ollama_ready)
-    sweeper = asyncio.create_task(_sweep_loop())
-    yield
-    sweeper.cancel()
 
 
 app = FastAPI(title="SimePhony API", lifespan=lifespan)
@@ -169,21 +177,16 @@ def health():
     except Exception as exc:
         checks["database"] = {"status": "error", "message": str(exc)}
 
-    try:
-        # /api/tags sits beside the OpenAI-compatible /v1 path, not under it
-        server = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/").removesuffix("/v1")
-        request = urllib.request.Request(f"{server}/api/tags")
-        with urllib.request.urlopen(request, timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        models = payload.get("models", []) if isinstance(payload, dict) else []
-        if not isinstance(models, list) or not models:
-            checks["ollama"] = {"status": "error", "message": "Running, but no models available"}
-        else:
-            checks["ollama"] = {"status": "ok", "message": f"Running, {len(models)} models available"}
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-        checks["ollama"] = {"status": "error", "message": f"Ollama not reachable: {exc}"}
-    except Exception as exc:
-        checks["ollama"] = {"status": "error", "message": f"Ollama check failed: {exc}"}
+    from agents.simephony.llm_client import is_local
+    if not is_local():
+        # A cloud provider has no Ollama /api/tags, and pinging it on every health check would use up the
+        # free quota, so only check that a key is set.
+        host = urllib.parse.urlparse(os.getenv("LLM_BASE_URL", "")).hostname
+        key = os.getenv("LLM_API_KEY", "").strip()
+        checks["ollama"] = ({"status": "ok", "message": f"Cloud model at {host}; key set (not pinged)"} if key and key != "ollama"
+                            else {"status": "error", "message": f"Cloud model at {host}, but LLM_API_KEY is not set"})
+    else:
+        _check_ollama(checks)
 
     try:
         checks["embedder"] = tools.embedder_health()
@@ -203,6 +206,24 @@ def health():
     ):
         status = "healthy"
     return {"status": status, "checks": checks}
+
+
+def _check_ollama(checks: dict) -> None:
+    try:
+        # /api/tags sits beside the OpenAI-compatible /v1 path, not under it
+        server = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/").removesuffix("/v1")
+        request = urllib.request.Request(f"{server}/api/tags")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = payload.get("models", []) if isinstance(payload, dict) else []
+        if not isinstance(models, list) or not models:
+            checks["ollama"] = {"status": "error", "message": "Running, but no models available"}
+        else:
+            checks["ollama"] = {"status": "ok", "message": f"Running, {len(models)} models available"}
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        checks["ollama"] = {"status": "error", "message": f"Ollama not reachable: {exc}"}
+    except Exception as exc:
+        checks["ollama"] = {"status": "error", "message": f"Ollama check failed: {exc}"}
 
 
 if __name__ == "__main__":

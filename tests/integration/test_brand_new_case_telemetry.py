@@ -5,7 +5,8 @@ from starlette.requests import Request
 
 
 def test_new_case_has_non_null_reasoning_and_confidence_score(seed_db, monkeypatch):
-    """Verify that brand new cases save non-null reasoning and confidence_score in case_events and /api/state."""
+    """Brand new cases save reasoning on every step, and a confidence_score on AI steps only: a rule-based
+    step has no model, so it shows no score rather than a made-up one."""
     import db
     import tools
     from demo_api import routes, workflow
@@ -50,9 +51,11 @@ def test_new_case_has_non_null_reasoning_and_confidence_score(seed_db, monkeypat
                 confidence = data.get("confidence_score")
                 reasoning = data.get("reasoning")
 
-                assert confidence is not None, f"Case {cid} event {r['event_id']} ({agent}) has null confidence_score"
-                assert isinstance(confidence, (int, float)), f"Case {cid} event {r['event_id']} ({agent}) confidence_score is not float/int"
-                assert 0.0 <= confidence <= 1.0, f"Case {cid} event {r['event_id']} ({agent}) confidence_score out of range: {confidence}"
+                if not data.get("model"):
+                    assert confidence is None, f"Case {cid} event {r['event_id']} ({agent}) rule step has a made-up score"
+                else:
+                    assert isinstance(confidence, (int, float)), f"Case {cid} event {r['event_id']} ({agent}) confidence_score is not float/int"
+                    assert 0.0 <= confidence <= 1.0, f"Case {cid} event {r['event_id']} ({agent}) confidence_score out of range: {confidence}"
 
                 assert reasoning is not None, f"Case {cid} event {r['event_id']} ({agent}) has null reasoning"
                 assert isinstance(reasoning, dict), f"Case {cid} event {r['event_id']} ({agent}) reasoning is not a dict"
@@ -86,7 +89,10 @@ def test_new_case_has_non_null_reasoning_and_confidence_score(seed_db, monkeypat
         for e in events:
             telemetry = e.get("telemetry")
             assert telemetry is not None, f"Case {cid} event {e['id']} ({e.get('agent')}) has no telemetry in /api/state"
-            assert telemetry.get("confidence_score") is not None, f"Case {cid} event {e['id']} ({e.get('agent')}) has null confidence_score in /api/state"
+            if telemetry.get("model"):
+                assert telemetry.get("confidence_score") is not None, f"Case {cid} event {e['id']} ({e.get('agent')}) has null confidence_score in /api/state"
+            else:
+                assert telemetry.get("confidence_score") is None, f"Case {cid} event {e['id']} ({e.get('agent')}) rule step has a score in /api/state"
             assert telemetry.get("reasoning") is not None, f"Case {cid} event {e['id']} ({e.get('agent')}) has null reasoning in /api/state"
             reasoning = telemetry["reasoning"]
             assert (

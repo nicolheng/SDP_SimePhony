@@ -117,6 +117,14 @@ def _no_real_calendar_events(monkeypatch):
     monkeypatch.setenv("GOOGLE_CALENDAR_CREATE_EVENT", "false")
 
 
+@pytest.fixture(autouse=True)
+def _local_model_server(request, monkeypatch):
+    """A developer's .env pointing at a cloud model (Gemini) must not change results: tests see local Ollama,
+    and cloud tests set LLM_BASE_URL themselves. Live-model tests keep the real setting."""
+    if not request.node.get_closest_marker("live_llm"):
+        monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+
+
 # ---------------------------------------------------------------------------
 # Global LLM Mock Fixture
 # ---------------------------------------------------------------------------

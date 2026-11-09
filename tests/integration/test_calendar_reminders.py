@@ -20,7 +20,7 @@ def test_ics_defaults_to_one_hour_and_escapes_text():
     assert r"DESCRIPTION:First\, line\; second\nline" in content
 
 
-def _schedule(case_id="C-0009", *, hours=12, kind="visit"):
+def _schedule(case_id="C-0009", *, hours=12, kind="visit", booking="CONFIRMED"):
     import db
     import tools
     from demo_api.timeutil import norm, parse
@@ -33,8 +33,8 @@ def _schedule(case_id="C-0009", *, hours=12, kind="visit"):
         end = norm((parse(start) + timedelta(hours=1)).isoformat())
         status = "REPAIR_BOOKED" if kind == "repair" else "VISIT_SCHEDULED"
         conn.execute(
-            "UPDATE cases SET status = ?, technician_id = 'T-01', booking_status = 'PENDING' WHERE case_id = ?",
-            (status, case_id),
+            "UPDATE cases SET status = ?, technician_id = 'T-01', booking_status = ? WHERE case_id = ?",
+            (status, booking, case_id),
         )
         conn.execute(
             """INSERT INTO slots (slot_id, technician_id, start_at, end_at, case_id, kind)
@@ -95,7 +95,7 @@ def test_visit_reminder_sweep_queues_once_for_buyer_and_technician(monkeypatch):
     with db.get_conn() as conn:
         outbox = conn.execute(
             """SELECT to_addr, body, status FROM outbox
-               WHERE case_id = 'C-0009' AND subject LIKE '%Upcoming defect visit reminder%'
+               WHERE case_id = 'C-0009' AND subject LIKE '%reminder%'
                ORDER BY email_id"""
         ).fetchall()
         events = conn.execute(
@@ -115,8 +115,7 @@ def test_visit_reminder_sweep_queues_once_for_buyer_and_technician(monkeypatch):
         assert tools.sweep_visit_reminders() == []
     with db.get_conn() as conn:
         assert conn.execute(
-            """SELECT COUNT(*) FROM outbox WHERE case_id = 'C-0009'
-               AND subject LIKE '%Upcoming defect visit reminder%'"""
+            """SELECT COUNT(*) FROM outbox WHERE case_id = 'C-0009' AND subject LIKE '%reminder%'"""
         ).fetchone()[0] == 2
 
 
@@ -134,3 +133,27 @@ def test_repair_reminder_sweep_uses_repair_booking():
     reminders = tools.sweep_visit_reminders()
     assert len(reminders) == 1
     assert reminders[0]["kind"] == "repair"
+
+
+def test_no_reminder_until_the_technician_accepts():
+    import tools
+
+    _schedule(booking="PENDING")
+    assert tools.sweep_visit_reminders() == []
+
+
+def test_buyer_and_technician_get_their_own_reminder():
+    import db
+    import tools
+
+    _schedule()
+    tools.sweep_visit_reminders()
+    with db.get_conn() as conn:
+        unit = conn.execute("SELECT unit_id FROM cases WHERE case_id = 'C-0009'").fetchone()[0]
+        rows = {r["subject"]: r["body"] for r in conn.execute(
+            "SELECT subject, body FROM outbox WHERE case_id = 'C-0009' AND subject LIKE '%reminder%'")}
+    buyer = rows["[C-0009] Upcoming defect visit reminder"]
+    tech = rows["[C-0009] Upcoming job reminder"]
+    assert "your inspection visit" in buyer and "let the technician in" in buyer
+    assert f"you are booked for the inspection visit at unit {unit}" in tech
+    assert "let the technician in" not in tech

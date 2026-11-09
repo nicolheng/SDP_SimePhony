@@ -39,8 +39,10 @@ def test_settings_come_from_the_environment(monkeypatch, reload_client):
     assert module.client.timeout == 12
 
 
-def test_client_retries_once():
-    assert llm_client.client.max_retries == 1
+def test_client_retries_once_by_default(monkeypatch, reload_client):
+    monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)  # ignore the developer's .env on reload
+    assert reload_client().client.max_retries == 1
 
 
 def test_vision_limit_is_longer_than_text():
@@ -106,3 +108,36 @@ def test_image_is_labelled_from_its_bytes_not_its_file_name(tmp_path, data, mime
     photo.write_bytes(data)
 
     assert image_data_url(str(photo)) == f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
+# ---------- cloud model settings (Gemini) ----------
+
+@pytest.mark.parametrize("url, local", [
+    ("http://localhost:11434/v1", True),
+    ("http://127.0.0.1:11434/v1", True),
+    ("http://192.168.1.20:11434/v1", True),
+    ("http://gpu-box:11434/v1", True),
+    ("https://generativelanguage.googleapis.com/v1beta/openai/", False),
+])
+def test_is_local_tells_ollama_from_a_cloud_model(monkeypatch, url, local):
+    monkeypatch.setenv("LLM_BASE_URL", url)
+    assert llm_client.is_local() is local
+
+
+def test_thinking_level_is_left_out_unless_set(fake_llm, monkeypatch):
+    monkeypatch.setattr(llm_client, "LLM_REASONING_EFFORT", "")
+    fake_llm.responses.append("{}")
+    chat_json(fake_llm.client, "model", [], SCHEMA)
+    assert "reasoning_effort" not in fake_llm.client.chat.completions.create.call_args.kwargs
+
+
+def test_thinking_level_is_sent_when_set(fake_llm, monkeypatch):
+    monkeypatch.setattr(llm_client, "LLM_REASONING_EFFORT", "low")
+    fake_llm.responses.append("{}")
+    chat_json(fake_llm.client, "model", [], SCHEMA)
+    assert fake_llm.client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "low"
+
+
+def test_retries_come_from_the_environment(monkeypatch, reload_client):
+    monkeypatch.setenv("LLM_MAX_RETRIES", "3")
+    assert reload_client().client.max_retries == 3
