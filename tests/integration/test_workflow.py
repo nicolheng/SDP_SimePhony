@@ -11,7 +11,8 @@ from agents.simephony.workflow import agent_app, route_event
 
 IMAGE = "tests/data/test_cases/images/ceiling-water-leak.jpg"
 INTAKE_JSON = json.dumps({"category": "water_leak", "location_in_unit": "bedroom ceiling",
-                          "missing_info": [], "urgency": "normal", "confidence_score": 0.95})
+                          "missing_info": [], "urgency": "normal", "confidence_score": 0.95,
+                          "reasoning": "Water dripping from a bedroom ceiling is a water leak."})
 VISION_OK = json.dumps({"assessment": "looks_resolved", "observations": "Ceiling dry.", "matches_location": True,
                         "confidence_score": 0.95})
 VISION_UNCLEAR = json.dumps({"assessment": "unclear", "observations": "Blurry.", "matches_location": False,
@@ -81,8 +82,8 @@ def test_unknown_event_ends_without_running_agents(fake_llm, no_side_effects, ev
 def test_low_confidence_triage_stops_before_booking(fake_llm, no_side_effects):
     fake_llm.responses = [
         INTAKE_JSON,
-        '{"cluster_reason": "No earlier cases.", "confidence_score": 0.9}',
-        '{"urgency": "normal", "rule": "none", "confidence_score": 0.5}',
+        '{"cluster_reason": "No earlier cases.", "confidence_score": 0.9, "reasoning": "This unit has no earlier leaks."}',
+        '{"urgency": "normal", "rule": "none", "confidence_score": 0.5, "reasoning": "Not sure how bad it is."}',
     ]
 
     final = _run({
@@ -125,7 +126,7 @@ def test_repair_done_unclear_skips_comms(fake_llm, tmp_path, no_side_effects):
     no_side_effects.assert_not_called()
 
 
-TRIAGE_KEEP = '{"urgency": "normal", "rule": "none", "confidence_score": 0.95}'
+TRIAGE_KEEP = '{"urgency": "normal", "rule": "none", "confidence_score": 0.95, "reasoning": "No urgency rule applies."}'
 
 
 def test_case_reopened_below_threshold_books_a_revisit(fake_llm, no_side_effects, booking_db):

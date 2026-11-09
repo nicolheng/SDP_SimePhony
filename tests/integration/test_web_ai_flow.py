@@ -273,7 +273,8 @@ def test_agent_step_records_telemetry_and_guardrail_hits(monkeypatch):
         event for event in response_state["events"]
         if event["caseId"] == case_id and event.get("telemetry", {}).get("model")
     )
-    assert response_event["telemetry"] == telemetry
+    # The saved event also keeps a nested copy under "telemetry" (tools._emit); the browser gets the fields once
+    assert response_event["telemetry"] == {k: v for k, v in telemetry.items() if k != "telemetry"}
 
 
 def test_invalid_json_twice_falls_back_without_saving_raw_output(fake_llm, monkeypatch):

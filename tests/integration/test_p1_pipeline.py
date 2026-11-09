@@ -93,7 +93,8 @@ def _make_smart_llm(intake_payload: dict, brief_payload: dict) -> MagicMock:
       3. system_msg contains 'defect intake'              → intake node
       4. fallback                                         → cluster_reason JSON
     """
-    intake_payload = {**intake_payload, "confidence_score": intake_payload.get("confidence_score", 0.95)}
+    # confidence_score and reasoning are required by the agents' answer formats (else the answer is rejected)
+    intake_payload = {"confidence_score": 0.95, "reasoning": "Classified from the report and photo.", **intake_payload}
 
     def _create(**kwargs):
         system_msg = next(
@@ -104,7 +105,7 @@ def _make_smart_llm(intake_payload: dict, brief_payload: dict) -> MagicMock:
         # similar_defect — system prompt explicitly contains 'cluster_reason'
         if "cluster_reason" in system_msg:
             content = json.dumps({"cluster_reason": "Recurring defect detected across multiple reports.",
-                                  "confidence_score": 0.9})
+                                  "confidence_score": 0.9, "reasoning": "Several earlier reports match."})
 
         # initial_inspection — system prompt contains 'Senior Property Inspector'
         elif "Senior Property Inspector" in system_msg:
@@ -449,8 +450,9 @@ class TestScenario_InsufficientInformation:
         state = _run_pipeline(_initial_state(), monkeypatch,
                               past_cases=[],
                               intake_payload=self.INTAKE_PAYLOAD)
+        # The model's items are kept in order; the report names no room, so IntakeAgent also asks for it
         assert state["missing_info"] == [
-            "Please upload a clear photo", "Location not specified"
+            "Please upload a clear photo", "Location not specified", "location_in_unit"
         ]
 
     def test_preliminary_outcome_preserved(self, monkeypatch):

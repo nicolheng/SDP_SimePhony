@@ -56,10 +56,12 @@ INTAKE_JSON = json.dumps({
     "summary": "Water dripping from the master bathroom ceiling.", "urgency": "normal",
     "mentions_previous_issue": False, "mentioned_recurrence_count": None, "missing_info": [],
     "follow_up_question": "", "preliminary_outcome": "VALID_DEFECT", "mismatch_detected": False,
-    "confidence_score": 0.95,
+    "confidence_score": 0.95, "reasoning": "Water dripping from a ceiling is a water leak.",
 })
-SIMILAR_JSON = json.dumps({"cluster_reason": "No earlier cases in this unit.", "confidence_score": 0.9})
-URGENCY = '{"urgency": "normal", "rule": "none", "confidence_score": 0.95}'  # triage keeps intake urgency
+# Every agent's answer format requires "reasoning": without it the answer is rejected and the agent retries.
+SIMILAR_JSON = json.dumps({"cluster_reason": "No earlier cases in this unit.", "confidence_score": 0.9,
+                           "reasoning": "This unit has no earlier leaks."})
+URGENCY = '{"urgency": "normal", "rule": "none", "confidence_score": 0.95, "reasoning": "No urgency rule applies."}'  # triage keeps intake urgency
 VISION_OK = json.dumps({"assessment": "looks_resolved",
                         "observations": "Ceiling board replaced, no staining visible.",
                         "matches_location": True, "confidence_score": 0.95})
