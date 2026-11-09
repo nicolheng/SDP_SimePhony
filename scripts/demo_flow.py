@@ -321,7 +321,7 @@ def _repair_and_signoff(n: int, case: str, state: dict, repair_note: str, inbox:
 
     state = run_event(sync(state, case), "verification.completed", verification_outcome="FIXED")
     ok(tools.record_verification(case, "FIXED", "Dry after the shower test"), "record_verification")
-    step(n + 5, "Buyer (web app)", "checks the repair: FIXED, signs off")
+    step(n + 5, "Buyer (web app)", "checks the repair: FIXED (closes when the unit is signed off)")
     step(n + 6, "CommsAgent (P2)", "buyer update")
     inbox.show()
     show_case(case)

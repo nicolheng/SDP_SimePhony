@@ -75,9 +75,10 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
     ready = _messages(case_id)[-1]
     assert ready["title"] == "Please check the repair and sign off" and "sign off by" in ready["body"]
 
+    # Fixed only verifies the defect; it closes when the buyer signs off the unit (record_signoff until #74)
     _web(workflow.submit_verification, case_id, "FIXED", "", None)
-    assert _case(case_id)["status"] == "CLOSED"
-    assert _messages(case_id)[-1]["body"].endswith("Your case is now closed.")
+    assert _case(case_id)["status"] == "PENDING_SIGNOFF" and _case(case_id)["verification_status"] == "verified"
+    assert tools.record_signoff(case_id, "buyer")["status"] == "CLOSED"
 
     _web(workflow.reopen_case, case_id, "Damp patch is back.", "tests/data/test_cases/images/water_leak_again.jpg")
     titles = [m["title"] for m in _messages(case_id)[-2:]]

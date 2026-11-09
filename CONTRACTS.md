@@ -17,8 +17,8 @@ SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / INVALID
 | `VALID` / `INVALID` | Technician's verdict. `INVALID` is terminal |
 | `REPAIR_BOOKED` | Buyer booked the repair |
 | `REPAIRED` | Repair done; VerificationAgent sends the buyer's check guide |
-| `PENDING_SIGNOFF` | Developer signs first, then the buyer (14 days, else auto-close) |
-| `CLOSED` | Both signed. Can be reopened within 30 days with a new photo |
+| `PENDING_SIGNOFF` | Repaired; waiting for sign-off. SDP approves first, then the buyer checks it (Fixed sets `verification_status` to `verified`, and the case **stays here**), then the buyer signs off the whole unit. See [Buyer sign-off](#buyer-sign-off-per-unit). 14 days, else auto-close |
+| `CLOSED` | SDP approved and the buyer signed off. Can be reopened within 30 days with a new photo |
 | `REOPENED` | Buyer reopened, or the buyer's check failed |
 | `ESCALATION_PENDING` | Waiting for SDP to approve an extra inspection |
 | `EXTRA_INSPECTION` | Approved; brief attached, joint inspection booked |
@@ -70,6 +70,44 @@ pages show. The web app reads them through `GET /api/state`. Main types: `case.c
 
 All in [`rules.yaml`](rules.yaml): category → skill, urgency rules, grace period
 (30 days), escalation threshold (3rd occurrence, or 3+ similar cases in a stack).
+
+### Buyer sign-off (per unit)
+
+Checking is per defect; signing off is once per unit (#71). There is no separate "verified" status: a checked
+defect stays `PENDING_SIGNOFF` with `verification_status = verified` until the unit is signed off.
+
+1. **SDP approves every repaired defect in the unit** (`record_signoff(party="developer")`).
+2. **The buyer checks each defect** (`record_verification`), allowed only once SDP has approved every open
+   defect in the unit; otherwise it is refused and names the defects still waiting.
+   - `FIXED` → `verification_status = verified`; the case stays `PENDING_SIGNOFF` (no buyer sign-off, not closed).
+   - `NOT_FIXED` (new photo required) → `REOPENED`, `verification_status = not_verified`; RecurrenceAgent runs.
+   - `CANNOT_VERIFY` → no change; the defect keeps waiting.
+3. **The buyer signs off the unit once**, when every open defect is approved and `verified`; every defect in the
+   unit closes together. *(Unit sign-off: #74. Until then a checked defect closes only by the auto-close timer.)*
+4. **Reopening** a closed defect sends it through the normal flow again; the unit is not ready until it is
+   approved and checked again.
+
+"Open" means any status except `CLOSED` and `INVALID`. A defect still being inspected or repaired also blocks.
+
+`verification_status` (per case): `pending` (repaired, not checked yet) / `verified` / `not_verified`.
+
+`GET /api/state` → `unitSignoff`, one entry per unit with at least one defect (`tools.unit_signoff_state`):
+
+```jsonc
+"unitSignoff": {
+  "B-14-09": {
+    "unitId": "B-14-09",
+    "canVerify": true,                 // every open defect approved by SDP: Fixed / Not Fixed buttons on
+    "ready": false,                    // every open defect approved and verified: Sign off button on
+    "waitingFor": ["C-0004"],          // waitingForDeveloper + waitingForBuyer
+    "waitingForDeveloper": [],         // not approved yet (or still being inspected / repaired)
+    "waitingForBuyer": ["C-0004"]      // approved, not checked yet: the "Pending" tab
+  }
+}
+```
+
+A unit with no open defects has `canVerify` and `ready` both `false`, so no Sign off button is shown. Each case in
+`/api/state` also has `verificationStatus`.
 
 ## 5. Database (SQLite)
 
