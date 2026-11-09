@@ -198,6 +198,16 @@ def verification(case_id: str, body: Verification, request: Request, background_
                 background_tasks=background_tasks)
 
 
+class UnitSignoff(BaseModel):
+    note: Text = ""
+
+
+@router.post("/units/{unit_id}/signoff")
+def unit_signoff(unit_id: str, body: UnitSignoff, request: Request):
+    """Buyer signs off the whole unit once every defect is approved by SDP and checked Fixed (#74)."""
+    return _run(request, workflow.sign_off_unit, unit_id, body.note)
+
+
 class Rating(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str = Field(default="", max_length=500)

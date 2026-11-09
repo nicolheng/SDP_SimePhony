@@ -461,11 +461,25 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
 
 
 def developer_signoff(ctx: Ctx, case_id: str) -> None:
-    r = _tool(ctx, tools.record_signoff, case_id, "developer")
-    if r["status"] == "CLOSED":
-        notify_buyer(ctx, case_id, "closed")
-    else:
-        notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(signoff_deadline(load_case(ctx, case_id))))
+    """SDP approves one repair. The buyer is told once SDP has approved every open defect in the unit, since only
+    then can they check the repairs and sign off the unit (#71); until then the earlier "Repair done" message
+    already says we'll let them know."""
+    _tool(ctx, tools.record_signoff, case_id, "developer")
+    unit = tools.unit_signoff_state(ctx.conn, load_case(ctx, case_id)["unit_id"])
+    if unit["canVerify"]:
+        notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(unit["deadline"]), count=len(unit["caseIds"]),
+                     unit=unit["unitId"])
+
+
+def sign_off_unit(ctx: Ctx, unit_id: str, note: str) -> None:
+    """Buyer signs off the whole unit once (#74): every defect in it closes together."""
+    r = _tool(ctx, tools.sign_off_unit, unit_id, note)
+    g = config.GRACE_PERIOD_DAYS
+    cases = [load_case(ctx, cid) for cid in r["closed"]]
+    listed = "\n".join(f"- {c['case_id']}: {c['summary']}" for c in cases)
+    _tool(ctx, tools.notify_buyer, cases[0]["case_id"], "Unit signed off",
+          f"You signed off unit {unit_id}, so {'these repairs are' if len(cases) > 1 else 'this repair is'} now closed:\n"
+          f"{listed}\n\nIf a problem comes back, you can reopen it within {g} days with a new photo.")
 
 
 def reject_repair(ctx: Ctx, case_id: str, note: str) -> None:

@@ -547,6 +547,9 @@ def unit_signoff_state(conn: sqlite3.Connection, unit_id: str) -> dict:
     canVerify: every open defect is approved by the developer, so the buyer may start checking.
     ready: every open defect is approved and checked Fixed, so the unit can be signed off.
     waitingForDeveloper / waitingForBuyer: the open defects still waiting on each side; waitingFor is both.
+    caseIds: the open defects, which a unit sign-off closes together.
+    deadline: once the buyer can check, the end of the sign-off period (config.SIGNOFF_PERIOD_DAYS), counted from
+    SDP's last approval in the unit (#75); otherwise null.
     A unit with no open defects is neither (no Sign off button for a new account or a finished unit)."""
     rows = conn.execute(
         "SELECT case_id, status, developer_signed_at, verification_status FROM cases WHERE unit_id = ? ORDER BY case_id",
@@ -556,14 +559,47 @@ def unit_signoff_state(conn: sqlite3.Connection, unit_id: str) -> dict:
     approved = [r for r in open_cases if r["status"] == "PENDING_SIGNOFF" and r["developer_signed_at"]]
     developer = [r["case_id"] for r in open_cases if r not in approved]
     buyer = [r["case_id"] for r in approved if r["verification_status"] != "verified"]
+    can_verify = bool(open_cases) and not developer
+    last_approval = max((r["developer_signed_at"] for r in approved), key=parse) if can_verify else None
     return {
         "unitId": unit_id,
-        "canVerify": bool(open_cases) and not developer,
-        "ready": bool(open_cases) and not developer and not buyer,
+        "canVerify": can_verify,
+        "ready": can_verify and not buyer,
         "waitingFor": developer + buyer,
         "waitingForDeveloper": developer,
         "waitingForBuyer": buyer,
+        "caseIds": [r["case_id"] for r in open_cases],
+        "deadline": add_days(last_approval, config.SIGNOFF_PERIOD_DAYS) if last_approval else None,
     }
+
+
+def _unit_not_ready(unit: dict) -> str:
+    """Why a unit can't be signed off yet, in the buyer's words."""
+    if not unit["caseIds"]:
+        return "There are no repairs to sign off in this unit."
+    if unit["waitingForDeveloper"]:
+        return ("Our team still has to approve some repairs before you can sign off: "
+                f"{', '.join(unit['waitingForDeveloper'])}.")
+    return f"Please check every repair first. Still to check: {', '.join(unit['waitingForBuyer'])}."
+
+
+@_returns_errors
+def sign_off_unit(unit_id: str, note: str = "") -> dict:
+    """Buyer signs off the whole unit once (#74): every open defect must be approved by SDP and checked Fixed
+    (unit_signoff_state ready; re-checked here, the button may be stale). Signs off and closes them all together.
+    Returns {ok, unit_id, closed: [case ids]}."""
+    with _connect() as conn:
+        if conn.execute("SELECT 1 FROM units WHERE unit_id = ?", (unit_id,)).fetchone() is None:
+            raise ToolError(f"Unit {unit_id!r} not found")
+        unit = unit_signoff_state(conn, unit_id)
+        if not unit["ready"]:
+            raise ToolError(_unit_not_ready(unit))
+        now = _now(conn)
+        for case_id in unit["caseIds"]:
+            _save(conn, case_id, buyer_signed=1, buyer_signed_at=now, buyer_signoff_note=note)
+            _emit(conn, case_id, "signoff.completed", f"Buyer signed off unit {unit_id}", party="buyer", unit_id=unit_id)
+            _close_if_both_signed(conn, case_id)
+    return {"ok": True, "unit_id": unit_id, "closed": unit["caseIds"]}
 
 
 def _reopen(conn: sqlite3.Connection, case: dict, description: str) -> int:
@@ -1922,9 +1958,8 @@ def record_verification(case_id: str, outcome: str, note: str = "", photo: Optio
 
 @_returns_errors
 def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[str] = None, note: str = "") -> dict:
-    """Developer (SDP) or buyer sign-off while PENDING_SIGNOFF. The developer signs first; the case closes
-    when both have signed. Buyers normally sign through record_verification(FIXED).
-    Returns {ok, both_signed, status}."""
+    """Developer (SDP) sign-off while PENDING_SIGNOFF. Buyers sign off the whole unit with sign_off_unit
+    (party="buyer" is refused, so one defect can't close on its own). Returns {ok, both_signed, status}."""
     if party not in ("developer", "buyer"):
         raise ToolError(f"Invalid party {party!r} (use developer / buyer)")
     with _connect() as conn:
@@ -1936,10 +1971,7 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
             _save(conn, case_id, developer_signed=1, developer_signed_at=now, developer_signed_by=by)
             _emit(conn, case_id, "signoff.completed", f"Developer signed off ({by})", party="developer")
         else:
-            if not case["developer_signed_at"]:
-                raise ToolError("The developer has to approve the repair before you can sign off.")
-            _save(conn, case_id, buyer_signed=1, buyer_signed_at=now, buyer_signoff_note=note)
-            _emit(conn, case_id, "signoff.completed", "Buyer signed off the repair", party="buyer")
+            raise ToolError("Buyers sign off the whole unit at once (sign_off_unit), not one defect.")
         closed = _close_if_both_signed(conn, case_id)
     return {"ok": True, "both_signed": closed, "status": "CLOSED" if closed else "PENDING_SIGNOFF"}
 
@@ -2069,54 +2101,79 @@ def decide_approval(approval_id: str, approve: bool, decided_by: Optional[str] =
 # =====================================================================
 
 def signoff_deadline(case: dict) -> str:
-    """The buyer signs after the developer, so their sign-off period starts at the developer's sign-off."""
+    """One defect's own sign-off deadline: SIGNOFF_PERIOD_DAYS from the developer's sign-off. The buyer signs off
+    per unit, so screens and the timer use unit_signoff_state()["deadline"], counted from the unit's last approval."""
     start = case.get("developer_signed_at") or case.get("repaired_at") or case.get("verdict_at") or case["created_at"]
     return add_days(start, config.SIGNOFF_PERIOD_DAYS)
 
 
+def unit_signoff_deadline(conn: sqlite3.Connection, case: dict) -> str:
+    """The deadline the buyer sees for a defect: its unit's, once the buyer can check; else its own."""
+    return unit_signoff_state(conn, case["unit_id"])["deadline"] or signoff_deadline(case)
+
+
 def sweep_signoffs() -> list[dict]:
-    """Buyer sign-off period (config.SIGNOFF_PERIOD_DAYS, starts once the developer has signed): an in-app
-    reminder config.SIGNOFF_REMINDER_DAYS_BEFORE days before the deadline, then auto-close; high-urgency cases
-    are flagged to SDP instead (rules.yaml safety.high_urgency.allow_auto_close). Run it whenever the clock may
-    have moved; the web app runs it on every request. Returns [{case_id, action: reminder|auto_closed|overdue}]."""
+    """Buyer sign-off period, per unit (#75). It starts when the buyer can check, i.e. when SDP has approved every
+    open defect in the unit, and lasts config.SIGNOFF_PERIOD_DAYS from the last approval. A unit with any defect
+    not approved yet is left alone, so no defect closes while another in the unit isn't ready.
+    Once per unit: an in-app reminder config.SIGNOFF_REMINDER_DAYS_BEFORE days before the deadline, then every
+    open defect auto-closes together; if any is high urgency the unit is flagged to SDP instead (rules.yaml
+    safety.high_urgency.allow_auto_close). Runs on every web request.
+    Returns [{case_id, unit_id, action: reminder|auto_closed|overdue}], one entry per defect."""
     done = []
+    p, g = config.SIGNOFF_PERIOD_DAYS, config.GRACE_PERIOD_DAYS
     with _connect() as conn:
         now = _now(conn)
-        ids = [r["case_id"] for r in conn.execute(
-            "SELECT case_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL AND developer_signed_at IS NOT NULL")]
-        for case_id in ids:
-            case = _get_case(conn, case_id)
-            deadline = signoff_deadline(case)
+        units = [r["unit_id"] for r in conn.execute(
+            "SELECT DISTINCT unit_id FROM cases WHERE status = 'PENDING_SIGNOFF' AND buyer_signed_at IS NULL "
+            "AND developer_signed_at IS NOT NULL ORDER BY unit_id")]
+        for unit_id in units:
+            unit = unit_signoff_state(conn, unit_id)
+            if not unit["canVerify"]:
+                continue
+            deadline, started = unit["deadline"], add_days(unit["deadline"], -p)
+            cases = [_get_case(conn, cid) for cid in unit["caseIds"]]
             left = days_between(now, deadline)
-            p, g = config.SIGNOFF_PERIOD_DAYS, config.GRACE_PERIOD_DAYS
-            ref = f"{case_id} ({case['summary']})"
+            refs = "; ".join(f"{c['case_id']} ({c['summary']})" for c in cases)
+            high = any(c["urgency"] == "high" for c in cases) and not config.HIGH_URGENCY_AUTO_CLOSE
 
-            def message(title: str, body: str) -> None:
+            def since_start(field: str) -> bool:  # already done for every defect in this sign-off period
+                return all(c.get(field) and parse(c[field]) >= parse(started) for c in cases)
+
+            def message(title: str, body: str) -> None:  # one message for the unit, on its first defect
                 conn.execute(
                     "INSERT INTO buyer_messages (message_id, case_id, title, body, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (db.next_record_id(conn, "buyer_messages"), case_id, title, body, now),
+                    (db.next_record_id(conn, "buyer_messages"), cases[0]["case_id"], title, body, now),
                 )
 
+            def mark(action: str, event: str, text: str, **fields) -> None:
+                for c in cases:
+                    _save(conn, c["case_id"], **fields)
+                    _emit(conn, c["case_id"], event, text, unit_id=unit_id)
+                    done.append({"case_id": c["case_id"], "unit_id": unit_id, "action": action})
+
             if left <= 0:
-                if case["urgency"] == "high" and not config.HIGH_URGENCY_AUTO_CLOSE:
-                    if case.get("signoff_overdue_at"):
+                if high:
+                    if since_start("signoff_overdue_at"):
                         continue
-                    _save(conn, case_id, signoff_overdue_at=now)
-                    _emit(conn, case_id, "signoff.overdue", f"Buyer sign-off overdue ({p} days). High urgency, so not auto-closed: flagged to SDP")
-                    message("Sign-off overdue", f"{ref}. The {p}-day sign-off period has passed. Our team will contact you to confirm the repair.")
-                    done.append({"case_id": case_id, "action": "overdue"})
+                    mark("overdue", "signoff.overdue",
+                         f"Unit {unit_id} sign-off overdue ({p} days). High urgency, so not auto-closed: flagged to SDP",
+                         signoff_overdue_at=now)
+                    message("Sign-off overdue", f"Unit {unit_id}: {refs}. The {p}-day sign-off period has passed. "
+                            "Our team will contact you to confirm the repairs.")
                 else:
-                    _save(conn, case_id, status="CLOSED", closed_at=deadline, auto_closed_at=deadline)
-                    _emit(conn, case_id, "case.closed", f"Closed automatically: no buyer sign-off within {p} days")
-                    message("Case closed automatically", f"{ref}. We didn't receive your sign-off within {p} days, so the case was closed. "
-                            f"If the problem comes back, you can reopen it within {g} days with a new photo.")
-                    done.append({"case_id": case_id, "action": "auto_closed"})
-            elif left <= config.SIGNOFF_REMINDER_DAYS_BEFORE and not case.get("signoff_reminder_at"):
-                _save(conn, case_id, signoff_reminder_at=now)
-                _emit(conn, case_id, "signoff.reminder", f"Sign-off reminder sent to buyer ({-int(-left)} day(s) left)")
-                tail = "If we don't hear from you, our team will follow up." if case["urgency"] == "high" else "After that the case will close automatically."
-                message("Reminder: please sign off your repair", f"{ref}. Please check the repair and sign off by {fmt_date(deadline)}. {tail}")
-                done.append({"case_id": case_id, "action": "reminder"})
+                    mark("auto_closed", "case.closed", f"Closed automatically with unit {unit_id}: no buyer sign-off within {p} days",
+                         status="CLOSED", closed_at=deadline, auto_closed_at=deadline)
+                    message("Repairs closed automatically", f"Unit {unit_id}: {refs}. We didn't receive your sign-off within "
+                            f"{p} days, so these repairs were closed. If a problem comes back, you can reopen it within "
+                            f"{g} days with a new photo.")
+            elif left <= config.SIGNOFF_REMINDER_DAYS_BEFORE and not since_start("signoff_reminder_at"):
+                mark("reminder", "signoff.reminder", f"Unit {unit_id} sign-off reminder sent to buyer ({-int(-left)} day(s) left)",
+                     signoff_reminder_at=now)
+                tail = ("If we don't hear from you, our team will follow up." if high
+                        else "After that the repairs will close automatically.")
+                message("Reminder: please sign off your repairs", f"Unit {unit_id}: {refs}. Please check each repair and "
+                        f"sign off the unit by {fmt_date(deadline)}. {tail}")
     return done
 
 
