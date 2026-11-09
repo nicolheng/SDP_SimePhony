@@ -107,8 +107,9 @@ export function CaseDetail() {
   const [rating, setRating] = useState(false);
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
-  // IntakeAgent hasn't finished: still missing a detail, or rerunning with the buyer's answer.
-  const assessing = c.status === "INFO_NEEDED" || c.status === "SUBMITTED";
+  // IntakeAgent hasn't finished: still missing a detail, rerunning with the buyer's answer, or the report was held
+  // for SDP before the AI wrote anything (no title yet, so its category and priority are only defaults).
+  const assessing = c.status === "INFO_NEEDED" || c.status === "SUBMITTED" || !c.summary;
   const reopenable = canReopen(c, now);
   const graceEnd = c.closedAt ? addDays(c.closedAt, RULES.gracePeriodDays) : null;
   const daysLeft = c.closedAt ? Math.max(0, Math.ceil(RULES.gracePeriodDays - daysBetween(c.closedAt, now))) : 0;
