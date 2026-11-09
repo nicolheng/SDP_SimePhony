@@ -20,7 +20,8 @@ repeat repairs and disputes, and root causes found and fixed earlier.
    time is estimated and the buyer books a repair slot.
 4. **Repair and photo check:** after the repair, the technician's photo is checked against the original
    report and a short, safe checklist is prepared for the buyer.
-5. **Sign-off:** SDP staff sign off first, then the buyer checks the repair and signs off. The case closes.
+5. **Sign-off:** SDP staff approve every repaired defect in the unit first. The buyer then checks each defect
+   (Fixed / Not Fixed) and signs off once for the whole unit, which closes all its defects.
 6. **Recurrence:** if the buyer reopens within 30 days, the case is revisited, or escalated to SDP for a
    detailed inspection on the 3rd occurrence or when 3+ units in the stack have the same defect.
 

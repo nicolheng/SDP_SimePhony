@@ -406,12 +406,11 @@ def submit_verification(ctx: Ctx, case_id: str, result: str, note: str, photo: s
     r = _tool(ctx, tools.record_verification, case_id, result, note, photo)
     step(ctx, case_id, "VerificationAgent", f"Recorded result {result}{' with photo evidence' if photo else ''}")
     if result == "FIXED":
+        # Verified only; the case closes when the buyer signs off the whole unit
         c = load_case(ctx, case_id)
-        notify_tech(ctx, case_id, "Buyer signed off your repair",
-                    f"The buyer at {c['unit_id']} has checked your repair and signed it off as fixed.\n\n{_defect(c)}\n\n"
+        notify_tech(ctx, case_id, "Buyer confirmed your repair",
+                    f"The buyer at {c['unit_id']} has checked your repair and confirmed it is fixed.\n\n{_defect(c)}\n\n"
                     "No further action is needed from you. Thank you for the repair.")
-        if r["status"] == "CLOSED":
-            notify_buyer(ctx, case_id, "closed")
     elif result == "NOT_FIXED":
         _after_reopen(ctx, case_id, note or "Buyer verification failed: still not fixed")
 

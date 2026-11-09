@@ -32,6 +32,12 @@ def test_buyer_rates_after_signing_off_and_sdp_sees_it(client):
     assert r.status_code == 400 and "after you have signed off" in r.json()["detail"]
 
     assert client.post("/api/cases/C-0004/verification", json={"result": "FIXED"}).status_code == 200
+    r = client.post("/api/cases/C-0004/rating", json={"rating": 4})
+    assert r.status_code == 400  # checked Fixed, but not signed off yet: rating comes after the unit sign-off
+    import db  # the buyer signs off the unit (#74); until that exists, record the sign-off directly
+    with db.get_conn() as conn:
+        conn.execute("UPDATE cases SET buyer_signed = 1, buyer_signed_at = developer_signed_at, status = 'CLOSED' "
+                     "WHERE case_id = 'C-0004'")
     state = client.post("/api/cases/C-0004/rating", json={"rating": 2, "comment": "  Took too long  "}).json()["state"]
     assert _case(state, "C-0004")["rating"]["stars"] == 2
     assert _case(state, "C-0004")["rating"]["comment"] == "Took too long"

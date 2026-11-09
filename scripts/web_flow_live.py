@@ -131,7 +131,7 @@ def tc1_door_happy_path() -> str:
     web(workflow.developer_signoff, case_id)
     w.show(6, "SDP", "Developer Sign-off")
     web(workflow.submit_verification, case_id, "FIXED", "", None)
-    w.show(7, "Buyer", "Fixed — Sign Off")
+    w.show(7, "Buyer", "Fixed (verified; closes when the unit is signed off)")
     return case_id
 
 

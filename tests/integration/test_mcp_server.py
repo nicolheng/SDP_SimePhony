@@ -70,6 +70,15 @@ def ok(result):
     return result
 
 
+def finish_other_defects(cid):
+    """Close the unit's other open defects (A-12-08 has C-0014 in seed.db), so the buyer may check this one:
+    the buyer checks repairs only once SDP has approved every open defect in the unit (#71)."""
+    with db.get_conn() as conn:
+        unit = conn.execute("SELECT unit_id FROM cases WHERE case_id = ?", (cid,)).fetchone()[0]
+        conn.execute("UPDATE cases SET status = 'CLOSED', closed_at = created_at WHERE unit_id = ? AND case_id != ? "
+                     "AND status NOT IN ('CLOSED', 'INVALID')", (unit, cid))
+
+
 def refused(result, contains):
     assert result.get("ok") is False and contains in result["error"], result
 
@@ -165,8 +174,11 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
         case, _ = ui_case(cid)
         assert case["status"] == "PENDING_SIGNOFF" and case["verificationGuide"]["intro"] == "Your ceiling leak was repaired."
 
-        # Developer signs, buyer says not fixed (photo required) -> reopened
+        # Developer signs, buyer says not fixed (photo required) -> reopened. The buyer checks only once SDP has
+        # approved every open defect in the unit, so C-0014 blocks until it is finished.
         ok(tools.record_signoff(cid, "developer"))
+        refused(tools.record_verification(cid, "NOT_FIXED", "Still damp", PHOTO), "C-0014")
+        finish_other_defects(cid)
         refused(tools.record_verification(cid, "NOT_FIXED", "Still damp"), "photo")
         assert ok(tools.record_verification(cid, "NOT_FIXED", "Still damp", PHOTO))["status"] == "REOPENED"
 
@@ -201,10 +213,13 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
         booked = await repaired_and_verifying(call, cid)
         assert booked["technician_id"] == "SC-01"
 
-        # The developer signs off first; the buyer can't sign before them
-        refused(tools.record_verification(cid, "FIXED", "Dry after shower test"), "developer")
+        # The developer approves first; the buyer can't check before them. Fixed only verifies the defect:
+        # it closes when the buyer signs off the unit (record_signoff stands in until the unit sign-off, #74)
+        refused(tools.record_verification(cid, "FIXED", "Dry after shower test"), "approved every defect")
         assert ok(tools.record_signoff(cid, "developer"))["status"] == "PENDING_SIGNOFF"
-        assert ok(tools.record_verification(cid, "FIXED", "Dry after shower test"))["status"] == "CLOSED"
+        checked = ok(tools.record_verification(cid, "FIXED", "Dry after shower test"))
+        assert checked["status"] == "PENDING_SIGNOFF" and checked["unit"]["ready"]
+        assert ok(tools.record_signoff(cid, "buyer"))["status"] == "CLOSED"
 
         # Reopen within 30 days (demo clock); refused once the clock passes the grace period
         assert ok(tools.reopen_case(cid, "Leaking again", PHOTO))["reopen_count"] == 2
@@ -224,6 +239,8 @@ def test_rejected_escalation_returns_to_valid():
     async def scenario(client, call):
         cid, _, _ = await reported_and_triaged(call)
         await repaired_and_verifying(call, cid)
+        ok(tools.record_signoff(cid, "developer"))
+        finish_other_defects(cid)
         ok(tools.record_verification(cid, "NOT_FIXED", "Still damp", PHOTO))
         req = ok(await call("request_extra_inspection", case_id=cid, reasons=["test"]))
         ok(tools.decide_approval(req["approval_id"], False))
@@ -237,6 +254,7 @@ def test_revisit_after_reopen_below_threshold():
         # B-2-01 has no water-leak history: reopen -> no escalation -> revisit booking
         cid, _, _ = await reported_and_triaged(call, unit_id="B-2-01")
         await repaired_and_verifying(call, cid)
+        ok(tools.record_signoff(cid, "developer"))
         ok(tools.record_verification(cid, "NOT_FIXED", "Still damp", PHOTO))
         assert not ok(await call("check_escalation", case_id=cid))["should_escalate"]
         slot = ok(await call("get_booking_options", case_id=cid))["alternatives"][0]

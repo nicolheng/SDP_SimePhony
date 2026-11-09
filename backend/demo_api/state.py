@@ -168,6 +168,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "repairedAt": norm(r["repaired_at"]),
             # VerificationAgent's repair photo check, for SDP's developer sign-off (null when the AI did not run)
             "photoCheck": _photo_check(r.get("repair_photo_check")),
+            # "verified" once the buyer checked it Fixed; it closes when the unit is signed off (#71)
+            "verificationStatus": r.get("verification_status"),
             "verification": {"result": v["outcome"], "note": v["evidence_notes"] or "", "at": norm(v["completed_at"])} if v and v["outcome"] and v["completed_at"] else None,
             "signoff": {
                 "buyer": {"at": norm(r["buyer_signed_at"]), "note": r["buyer_signoff_note"] or ""} if r["buyer_signed_at"] else None,
@@ -307,6 +309,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
         "source": "database",
         "now": ctx.now,
         "cases": cases,
+        # Per unit with a defect: may the buyer check repairs yet, and can the unit be signed off (tools.unit_signoff_state)
+        "unitSignoff": {u: tools.unit_signoff_state(conn, u) for u in sorted(set(unit_of.values()))},
         "events": events,
         "messages": [
             {"id": _num(r["message_id"]), "caseId": r["case_id"], "at": norm(r["created_at"]), "title": r["title"], "body": r["body"]}

@@ -538,6 +538,34 @@ def _close_if_both_signed(conn: sqlite3.Connection, case_id: str) -> bool:
     return True
 
 
+_FINISHED = ("CLOSED", "INVALID")  # closed, or not a defect: nothing left for the buyer to check
+
+
+def unit_signoff_state(conn: sqlite3.Connection, unit_id: str) -> dict:
+    """Where a unit is in the buyer sign-off (#71). SDP approves every repaired defect in the unit first; then the
+    buyer checks each one (Fixed / Not Fixed); then signs off once for the whole unit.
+    canVerify: every open defect is approved by the developer, so the buyer may start checking.
+    ready: every open defect is approved and checked Fixed, so the unit can be signed off.
+    waitingForDeveloper / waitingForBuyer: the open defects still waiting on each side; waitingFor is both.
+    A unit with no open defects is neither (no Sign off button for a new account or a finished unit)."""
+    rows = conn.execute(
+        "SELECT case_id, status, developer_signed_at, verification_status FROM cases WHERE unit_id = ? ORDER BY case_id",
+        (unit_id,),
+    ).fetchall()
+    open_cases = [r for r in rows if r["status"] not in _FINISHED]
+    approved = [r for r in open_cases if r["status"] == "PENDING_SIGNOFF" and r["developer_signed_at"]]
+    developer = [r["case_id"] for r in open_cases if r not in approved]
+    buyer = [r["case_id"] for r in approved if r["verification_status"] != "verified"]
+    return {
+        "unitId": unit_id,
+        "canVerify": bool(open_cases) and not developer,
+        "ready": bool(open_cases) and not developer and not buyer,
+        "waitingFor": developer + buyer,
+        "waitingForDeveloper": developer,
+        "waitingForBuyer": buyer,
+    }
+
+
 def _reopen(conn: sqlite3.Connection, case: dict, description: str) -> int:
     count = (case["reopen_count"] or 0) + 1
     _save(conn, case["case_id"], reopen_count=count, status="REOPENED", closed_at=None)
@@ -1854,18 +1882,21 @@ def reject_repair(case_id: str, note: str, decided_by: Optional[str] = None) -> 
 
 @_returns_errors
 def record_verification(case_id: str, outcome: str, note: str = "", photo: Optional[str] = None) -> dict:
-    """Buyer's check of the repair. FIXED -> buyer sign-off, only after the developer has signed (closes the
-    case). NOT_FIXED (photo required) -> REOPENED; RecurrenceAgent runs next. CANNOT_VERIFY -> stays
-    PENDING_SIGNOFF. Returns {ok, outcome, status, reopen_count?}."""
+    """Buyer's check of one repaired defect, once the developer has approved every open defect in the unit.
+    FIXED -> the defect is verified (verification_status "verified") and stays PENDING_SIGNOFF: it closes when
+    the buyer signs off the whole unit. NOT_FIXED (photo required) -> REOPENED; RecurrenceAgent runs next.
+    CANNOT_VERIFY -> stays PENDING_SIGNOFF. Returns {ok, outcome, status, reopen_count?, unit} (unit: unit_signoff_state)."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
-        _require_status(case, ("PENDING_SIGNOFF",), "record verification", "This case isn't waiting for your sign-off.")
+        _require_status(case, ("PENDING_SIGNOFF",), "record verification", "This defect isn't waiting for your check.")
         if outcome not in ("FIXED", "NOT_FIXED", "CANNOT_VERIFY"):
             raise ToolError("Unknown result.")
         if outcome == "NOT_FIXED" and not photo:
             raise ToolError("Please add a new photo showing the problem.")
-        if outcome == "FIXED" and not case["developer_signed_at"]:
-            raise ToolError("The developer has to approve the repair before you can sign off.")
+        unit = unit_signoff_state(conn, case["unit_id"])
+        if not unit["canVerify"]:
+            raise ToolError("You can check the repairs once our team has approved every defect in your unit. "
+                            f"Still waiting: {', '.join(unit['waitingForDeveloper'])}.")
         now = _now(conn)
         saved = _save_photo(conn, case_id, photo, "reopen" if outcome == "NOT_FIXED" else "verification")
         v = conn.execute(
@@ -1880,13 +1911,12 @@ def record_verification(case_id: str, outcome: str, note: str = "", photo: Optio
               f"Buyer verification: {outcome.replace('_', ' ').lower()}" + (f' — "{note}"' if note else ""), outcome=outcome)
         result = {"ok": True, "outcome": outcome, "status": "PENDING_SIGNOFF"}
         if outcome == "FIXED":
-            _save(conn, case_id, buyer_signed=1, buyer_signed_at=now, buyer_signoff_note=note, verification_status="verified")
-            _emit(conn, case_id, "signoff.completed", "Buyer signed off the repair", party="buyer")
-            if _close_if_both_signed(conn, case_id):
-                result["status"] = "CLOSED"
+            # Verified only: the case closes when the buyer signs off the whole unit
+            _save(conn, case_id, verification_status="verified")
         elif outcome == "NOT_FIXED":
             _save(conn, case_id, verification_status="not_verified")
             result.update(status="REOPENED", reopen_count=_reopen(conn, case, note or "Buyer verification failed: still not fixed"))
+        result["unit"] = unit_signoff_state(conn, case["unit_id"])
     return result
 
 

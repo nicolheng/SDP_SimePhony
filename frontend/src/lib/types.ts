@@ -163,6 +163,8 @@ export interface Case {
   /** VerificationAgent's check of the repair photo, for SDP's developer sign-off (null when the AI did not run). */
   photoCheck?: PhotoCheck | null;
   verificationGuide?: VerificationGuide;
+  /** "verified" once the buyer checked it Fixed. It stays PENDING_SIGNOFF until the whole unit is signed off. */
+  verificationStatus?: "pending" | "verified" | "not_verified" | null;
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
   /** Why an AI agent held the case for a person to check (PENDING_REVIEW only). */
@@ -266,6 +268,21 @@ export interface Booking {
   kind: "visit" | "repair";
 }
 
+/** Buyer sign-off for one unit (#71): SDP approves every defect, the buyer checks each, then signs off once. */
+export interface UnitSignoff {
+  unitId: string;
+  /** Every open defect is approved by SDP, so the buyer can tap Fixed / Not Fixed. */
+  canVerify: boolean;
+  /** Every open defect is approved and checked Fixed: the Sign off button can turn on. */
+  ready: boolean;
+  /** Case ids still blocking sign-off (waitingForDeveloper + waitingForBuyer). */
+  waitingFor: string[];
+  /** Waiting for SDP to approve the repair (or still being repaired). */
+  waitingForDeveloper: string[];
+  /** Approved, waiting for the buyer to check: the "Pending" tab. */
+  waitingForBuyer: string[];
+}
+
 export interface DemoState {
   version: number;
   /** Where the starting data came from. */
@@ -274,6 +291,8 @@ export interface DemoState {
   workers?: (Technician & { company?: string | null })[];
   now: string; // demo clock
   cases: Case[];
+  /** Keyed by unit id; only units with at least one defect. */
+  unitSignoff?: Record<string, UnitSignoff>;
   events: CaseEvent[];
   messages: BuyerMessage[];
   outbox: Email[];
