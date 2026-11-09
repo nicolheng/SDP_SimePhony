@@ -281,6 +281,10 @@ export interface UnitSignoff {
   waitingForDeveloper: string[];
   /** Approved, waiting for the buyer to check: the "Pending" tab. */
   waitingForBuyer: string[];
+  /** Every open defect in the unit; the unit sign-off closes them together. */
+  caseIds: string[];
+  /** Sign off by this time (14 days from SDP's last approval), once canVerify; else null. */
+  deadline: string | null;
 }
 
 export interface DemoState {

@@ -50,8 +50,8 @@ Write tools return `{ok: false, error}` instead of raising when a rule blocks th
 | RecurrenceAgent (MCP) | `request_extra_inspection` (reuses the open systemic issue for the stack) |
 | InitialInspectionAgent (MCP) | `attach_inspection_brief` |
 | CommsAgent / any (MCP) | `notify_buyer`, `notify_technician`, `send_email`, `log_agent_step` |
-| Human actions (web app only) | `create_case`, `answer_follow_up`, `add_photo`, `respond_to_assignment` (accept / hand over), `book_repair`, `record_verdict`, `mark_repaired`, `record_signoff`, `record_verification`, `reopen_case`, `decide_approval` |
-| Time rules (system) | `sweep_signoffs` (sign-off reminder / auto-close, run on every request) |
+| Human actions (web app only) | `create_case`, `answer_follow_up`, `add_photo`, `respond_to_assignment` (accept / hand over), `book_repair`, `record_verdict`, `mark_repaired`, `record_signoff` (developer only), `record_verification`, `sign_off_unit`, `reopen_case`, `decide_approval` |
+| Time rules (system) | `sweep_signoffs` (per unit: sign-off reminder / auto-close, run on every request) |
 
 ## 3. Events
 
@@ -82,8 +82,15 @@ defect stays `PENDING_SIGNOFF` with `verification_status = verified` until the u
    - `FIXED` → `verification_status = verified`; the case stays `PENDING_SIGNOFF` (no buyer sign-off, not closed).
    - `NOT_FIXED` (new photo required) → `REOPENED`, `verification_status = not_verified`; RecurrenceAgent runs.
    - `CANNOT_VERIFY` → no change; the defect keeps waiting.
-3. **The buyer signs off the unit once**, when every open defect is approved and `verified`; every defect in the
-   unit closes together. *(Unit sign-off: #74. Until then a checked defect closes only by the auto-close timer.)*
+3. **The buyer signs off the unit once** (`sign_off_unit`, `POST /api/units/{unit_id}/signoff`, body `{note?}`),
+   when every open defect is approved and `verified`; every defect in the unit closes together. It is refused with
+   a plain reason otherwise. A buyer can't sign off one defect on its own (`record_signoff` is developer only).
+   - SDP's approval tells the buyer to check only once **every** open defect in the unit is approved (one message
+     for the unit). The sign-off closes with one "Unit signed off" message.
+   - **Timer (per unit):** the sign-off period (`signoff_period_days`, 14) starts when the buyer can check, counted
+     from SDP's **last** approval in the unit. One reminder for the unit 3 days before, then every open defect
+     auto-closes together. If any is high urgency, the unit is flagged to SDP instead. A unit with any defect not
+     yet approved is left alone, so nothing closes early.
 4. **Reopening** a closed defect sends it through the normal flow again; the unit is not ready until it is
    approved and checked again.
 
@@ -101,13 +108,15 @@ defect stays `PENDING_SIGNOFF` with `verification_status = verified` until the u
     "ready": false,                    // every open defect approved and verified: Sign off button on
     "waitingFor": ["C-0004"],          // waitingForDeveloper + waitingForBuyer
     "waitingForDeveloper": [],         // not approved yet (or still being inspected / repaired)
-    "waitingForBuyer": ["C-0004"]      // approved, not checked yet: the "Pending" tab
+    "waitingForBuyer": ["C-0004"],     // approved, not checked yet: the "Pending" tab
+    "caseIds": ["C-0004"],             // every open defect: the unit sign-off closes these
+    "deadline": "2026-11-23T09:00:00Z" // sign off by this time, once canVerify; else null
   }
 }
 ```
 
 A unit with no open defects has `canVerify` and `ready` both `false`, so no Sign off button is shown. Each case in
-`/api/state` also has `verificationStatus`.
+`/api/state` also has `verificationStatus`, and its `signoffDeadline` is the unit's deadline once the buyer can check.
 
 ## 5. Database (SQLite)
 

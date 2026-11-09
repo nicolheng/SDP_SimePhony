@@ -56,5 +56,5 @@ def test_sign_off_deadlines_run_in_the_sweep_not_the_poll(client):
         conn.execute("UPDATE app_meta SET value = CAST(value AS REAL) + 60 WHERE key = 'clock_offset_days'")
 
     assert _case(client.get("/api/state").json()["state"], "H-0024")["status"] == "PENDING_SIGNOFF"
-    assert {"case_id": "H-0024", "action": "auto_closed"} in main.sweep_signoffs_now()
+    assert {"case_id": "H-0024", "unit_id": "C-4-03", "action": "auto_closed"} in main.sweep_signoffs_now()
     assert _case(client.get("/api/state").json()["state"], "H-0024")["status"] == "CLOSED"

@@ -8,7 +8,7 @@ import tools
 from . import agents, config
 from .analytics import OPEN, build_analytics, dlp_expiry, repair_clock
 from .timeutil import local_day, norm, parse
-from .workflow import UPLOADS_DIR, Ctx, signoff_deadline
+from .workflow import UPLOADS_DIR, Ctx
 
 PHOTO_KINDS = {"original", "reopen", "verdict", "repair", "verification"}
 # Seeded cases point to sample_<category>_<kind>.jpg in data/sample_photos: a real photo where one exists, otherwise the
@@ -178,8 +178,10 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "rating": {"stars": r.get("buyer_rating"), "comment": r.get("buyer_rating_comment") or "", "at": norm(r.get("buyer_rated_at"))}
             if r.get("buyer_rating") is not None else None,
             "signoffReminderAt": norm(r.get("signoff_reminder_at")),
-            "signoffDeadline": signoff_deadline({**r, "created_at": norm(r["created_at"]), "repaired_at": norm(r["repaired_at"]),
-                                                 "verdict_at": norm(r["verdict_at"]), "developer_signed_at": norm(r["developer_signed_at"])})
+            # The unit's deadline once the buyer can check (#75), else this defect's own
+            "signoffDeadline": norm(tools.unit_signoff_deadline(conn, {
+                **r, "created_at": norm(r["created_at"]), "repaired_at": norm(r["repaired_at"]),
+                "verdict_at": norm(r["verdict_at"]), "developer_signed_at": norm(r["developer_signed_at"])}))
             if status == "PENDING_SIGNOFF" else None,
             "autoClosedAt": norm(r.get("auto_closed_at")),
             "signoffOverdueAt": norm(r.get("signoff_overdue_at")),

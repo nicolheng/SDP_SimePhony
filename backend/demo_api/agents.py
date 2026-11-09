@@ -250,7 +250,10 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
         "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect: \"{extra.get('note', '')}\". This case is now closed. If the problem gets worse or changes, please submit a new report."),
         "repair_booked": ("Repair booked", f"{ref}. Repair on {extra.get('slot')} by {tech_name}, estimated {extra.get('duration')}."),
         "verify": ("Repair done", f"{ref}. The repair is done. The developer reviews it first; we'll let you know when you can check it and sign off."),
-        "ready_signoff": ("Please check the repair and sign off", f"{ref}. The developer has approved the repair. Follow the short checklist in the app and sign off by {extra.get('deadline')} if it is fixed."),
+        "ready_signoff": ("Please check your repairs and sign off",
+                          f"{ref}. Our team has approved {'all ' + str(extra['count']) + ' repairs' if extra.get('count', 1) > 1 else 'the repair'} "
+                          f"in unit {extra.get('unit', case['unit_id'])}. Check each one in the app with its short checklist, "
+                          f"then sign off the unit by {extra.get('deadline')}."),
         "closed": ("Case closed", f"{ref}. You and the developer have both signed off. You can reopen this case within {g} days if the problem returns."),
         "reopened": ("Case reopened", f"{ref}. We've reopened your case with the new photo you provided. We'll update you on the next step shortly."),
         "escalated": ("Your case is being reviewed", f"{ref}. Because this problem has come back, we've asked our team to arrange a more detailed inspection. We'll confirm the visit soon."),

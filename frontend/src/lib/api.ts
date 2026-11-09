@@ -40,6 +40,11 @@ export async function submitVerification(caseId: string, result: "FIXED" | "NOT_
   await apiAction(`/api/cases/${caseId}/verification`, { result, note, photo: photoUrl });
 }
 
+/** Buyer signs off the whole unit once state.unitSignoff[unitId].ready is true; every defect in it closes. */
+export async function signOffUnit(unitId: string, note = "") {
+  await apiAction(`/api/units/${unitId}/signoff`, { note });
+}
+
 /** Satisfaction rating (1-5 stars) once the buyer has signed off. */
 export async function rateRepair(caseId: string, stars: number, comment: string) {
   await apiAction(`/api/cases/${caseId}/rating`, { rating: stars, comment });

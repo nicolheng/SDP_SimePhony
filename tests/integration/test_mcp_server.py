@@ -34,7 +34,7 @@ AGENT_TOOLS = {
 }
 HUMAN_ACTIONS = {"create_case", "add_photo", "answer_follow_up", "respond_to_assignment", "book_repair", "record_verdict",
                  "mark_repaired", "record_verification", "record_signoff", "reopen_case", "decide_approval",
-                 "record_rating", "resolve_review"}
+                 "record_rating", "resolve_review", "sign_off_unit"}
 
 LEAK_INTAKE = {"category": "water_leak", "sub_category": "ceiling_leak", "location_in_unit": "master bedroom ceiling",
                "summary": "Ceiling leak above wardrobe", "urgency": "high", "missing_info": [], "follow_up_question": "",
@@ -214,12 +214,15 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
         assert booked["technician_id"] == "SC-01"
 
         # The developer approves first; the buyer can't check before them. Fixed only verifies the defect:
-        # it closes when the buyer signs off the unit (record_signoff stands in until the unit sign-off, #74)
+        # it closes when the buyer signs off the unit; a buyer can't sign off one defect on its own
         refused(tools.record_verification(cid, "FIXED", "Dry after shower test"), "approved every defect")
         assert ok(tools.record_signoff(cid, "developer"))["status"] == "PENDING_SIGNOFF"
+        refused(tools.sign_off_unit("A-12-08"), "check every repair")
         checked = ok(tools.record_verification(cid, "FIXED", "Dry after shower test"))
         assert checked["status"] == "PENDING_SIGNOFF" and checked["unit"]["ready"]
-        assert ok(tools.record_signoff(cid, "buyer"))["status"] == "CLOSED"
+        refused(tools.record_signoff(cid, "buyer"), "whole unit")
+        assert ok(tools.sign_off_unit("A-12-08"))["closed"] == [cid]
+        assert (await call("get_case", case_id=cid))["status"] == "CLOSED"
 
         # Reopen within 30 days (demo clock); refused once the clock passes the grace period
         assert ok(tools.reopen_case(cid, "Leaking again", PHOTO))["reopen_count"] == 2
