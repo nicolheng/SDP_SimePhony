@@ -37,7 +37,7 @@ function stepTimes(c: Case, events: CaseEvent[]): string[] {
   return [
     `Reported ${at(c.createdAt)}`,
     inspected ? `Inspected ${at(inspected)}` : c.visitSlot ? `Scheduled for ${at(c.visitSlot)}` : "",
-    repairBooked ? `Booked ${at(repairBooked)}${c.repairSlot ? ` · for ${at(c.repairSlot)}` : ""}` : c.status === "VALID" ? "Waiting for you to choose a slot" : "",
+    repairBooked ? `Booked ${at(repairBooked)}${c.repairSlot ? ` · for ${at(c.repairSlot)}` : ""}` : c.status === "VALID" ? "Being arranged" : "",
     c.repairedAt ? `Repaired ${at(c.repairedAt)}` : c.repairSlot ? `Scheduled for ${at(c.repairSlot)}` : "",
     signed ? `Signed off ${at(signed)}` : "",
   ];

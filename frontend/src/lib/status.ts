@@ -7,7 +7,7 @@ export const STATUS_META: Record<CaseStatus, { label: string; buyer: string; ton
   INFO_NEEDED: { label: "Info needed", buyer: "Action needed", tone: "amber" },
   PENDING_REVIEW: { label: "Needs review", buyer: "Being checked", tone: "purple" },
   VISIT_SCHEDULED: { label: "Inspection visit", buyer: "Inspection visit booked", tone: "blue" },
-  VALID: { label: "Valid", buyer: "Book your repair", tone: "amber" },
+  VALID: { label: "Valid", buyer: "Repair being arranged", tone: "blue" },
   INVALID: { label: "Invalid", buyer: "Not a defect", tone: "gray" },
   REPAIR_BOOKED: { label: "Repair booked", buyer: "Repair booked", tone: "blue" },
   REPAIRED: { label: "Repaired", buyer: "Repaired", tone: "blue" },
@@ -73,7 +73,7 @@ export const BUYER_EXPLAIN: Record<CaseStatus, string> = {
   INFO_NEEDED: "We need a little more information before we can assign a technician.",
   PENDING_REVIEW: "Our team is checking the details of your case. We'll update you here as soon as the next step is booked.",
   VISIT_SCHEDULED: "A technician will visit to inspect the defect at the booked time.",
-  VALID: "The technician confirmed the defect. Please book a repair slot.",
+  VALID: "The technician confirmed the defect. We are arranging the repair and will show the technician and time once they confirm.",
   INVALID: "The technician assessed this as not a defect. This case is closed; submit a new report if the problem changes.",
   REPAIR_BOOKED: "Your repair is booked. The technician will fix the defect at the booked time.",
   REPAIRED: "The technician has marked the repair as done. Your sign-off checklist is being prepared.",
@@ -93,9 +93,9 @@ export const BUYER_TABS = [
 ] as const satisfies readonly { id: string; label: string; statuses: readonly CaseStatus[] | null }[];
 
 /** Statuses where the buyer has something to do. */
-export const BUYER_ACTION: CaseStatus[] = ["INFO_NEEDED", "VALID", "PENDING_SIGNOFF"];
+export const BUYER_ACTION: CaseStatus[] = ["INFO_NEEDED", "PENDING_SIGNOFF"];
 
-/** True when the buyer has a step to take (answer, book, or sign off). */
+/** True when the buyer has a step to take (answer a question, or sign off). */
 /** Sign-off is only the buyer's turn once the developer has signed. */
 export const buyerNeedsAction = (c: { status: CaseStatus; signoff?: { buyer?: unknown; developer?: unknown } }) =>
   BUYER_ACTION.includes(c.status) && !(c.status === "PENDING_SIGNOFF" && (c.signoff?.buyer || !c.signoff?.developer));

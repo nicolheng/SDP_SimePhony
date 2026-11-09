@@ -11,7 +11,8 @@ import type { Case } from "./types";
 export interface ReportInput {
   description: string;
   photoUrl: string | null;
-  slot: string;
+  /** Optional: with no time the backend books the earliest free qualified technician. The buyer app sends none. */
+  slot?: string | null;
   unitId: string;
   buyerId: string;
 }
@@ -22,7 +23,7 @@ export async function submitReport(input: ReportInput, onCreated?: (caseId: stri
     buyer_id: input.buyerId,
     description: input.description,
     photo: input.photoUrl,
-    slot: input.slot,
+    slot: input.slot ?? null,
   });
   if (r.caseId) onCreated?.(r.caseId);
   return { caseId: r.caseId, nonDefect: r.nonDefect };

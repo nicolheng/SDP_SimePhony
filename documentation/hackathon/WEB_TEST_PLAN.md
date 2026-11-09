@@ -115,44 +115,55 @@ drawn stain, so upload real photos to test the vision model.
 
 ### TC1 Door defect, full happy path (estimate, sign-off order)
 
-**1. Buyer → Submit Defects.** Upload `door_misaligned.jpg`, then pick a visit slot and Submit.
+**1. Buyer → Submit Defect.** Take or upload `door_misaligned.jpg`, describe it, then **Submit Defect**. The buyer does
+not pick a time: the earliest free qualified technician is booked.
 - Text: `Pintu bilik tidur tak boleh tutup, tersangkut separuh jalan.`
 - **Trace:**
   - IntakeAgent: category door_window, location bedroom.
   - TriageAgent: `Triage: normal urgency …`.
   - TriageAgent: `Needs carpentry; Daniel Tan covers this block and is free <slot>.`
-- **Case:** Visit scheduled, technician T-05.
-- **Inbox:** "We've received your report" — one AI sentence, then `Requested visit time: <slot>.`
+- **Case:** Visit scheduled, technician T-05, booking pending.
+- **Buyer screens:** Report Submitted and the case page show "A technician will be arranged soon" (no name or time yet).
+- **Inbox:** "We've received your report", with the inspection visit and its time.
 - **No "also reviewing" line**, because this is the first door case in A-12-08.
 
 **2. Technician → Profile → Daniel Tan → My Jobs → open the job → Accept.**
-- **Inbox:** "Technician confirmed": `Your inspection visit is confirmed for <slot>.`
+- **Buyer case page:** the waiting message is replaced by the technician card (photo, name, date and time).
+- **Inbox:** "Technician confirmed", with the visit time.
 
-**3. Record the verdict.** Note: `Door hinge loose and the frame has swollen; needs a new hinge and the frame planed.` Then press **Valid**.
-- **Trace:** RepairEstimateAgent `About 2 hours …` or `About 4 hours …`. A door is normally 2 h; parts to replace adds a block, a small area takes one off. The live run read this note as "a small area; parts to replace" → 2 h.
-- **Inbox:** "Defect confirmed: please book a repair", ending `The repair will take about <2 or 4> hours. Please choose a repair time in the app.`
-- **Not expected in that message:** the words "scheduled" or "shortly", or the technician's note.
+**3. Record the verdict.** Findings: `Door hinge loose and the frame has swollen; needs a new hinge and the frame planed.`
+Pick an **Expected repair duration** (2 hours, half day or full day), then press **Valid**.
+- **Trace:** the verdict line ends `expected repair about <2, 4 or 8> hours`. The RepairEstimateAgent does **not** run,
+  because the technician chose the duration.
+- **Buyer case page:** "Expected repair duration: … (set by your technician)", status "Repair being arranged", and
+  "Your repair will be arranged soon". There is no button to book a time.
+- **Inbox:** "Defect confirmed: repair being arranged". **Not expected:** any request to choose a time.
 
-**4. Buyer → My defects → case → Book Repair Slot.**
-- **Slots:** jobs of the estimated length (2 h = one 2-hour block, 4 h = two).
-- **Inbox:** "Repair booked": `Repair time: <slot> (about …).`
+**4. The repair is booked automatically** at the first time a qualified worker is free for the whole job.
+- **Slots:** a job of the chosen length (2 h = one 2-hour block, 4 h = two, 8 h = a full day).
+- **Inbox:** "Repair booked", with the time, the worker and the duration.
+- **Buyer case page:** "Your repair will be arranged soon" until the repairer accepts, then the technician card.
 
 **5. The repairer accepts, then Mark Repaired.** Switch technician in Profile if the repair went to someone else. Add a note and upload a photo.
 - **Trace:** VerificationAgent `Photo check: …`. If the photo doesn't clearly show the repaired door, it says SDP should check the photo before signing off.
 - **Case:** Pending sign-off.
-- **Inbox:** "Repair done": `The developer reviews the repair first. We will let you know when you can check it and sign off.` **No check-list yet.**
+- **Inbox:** "Repair done": `The developer reviews it first; we'll let you know when you can check it and sign off.` **No check-list yet.**
 
-**6. SDP → Defects → case → Developer Sign-off.**
-- **Inbox:** "Please check the repair and sign off" — `Please check the repair and sign off by <date> if it is fixed.` followed by the check-list. Door steps include opening and closing the door 10 times.
+**6. SDP → Approvals → Sign-Offs (or Defects → case) → Approve repair.**
+- **Inbox:** "Please check your repairs and sign off": check each repair with its checklist, then sign off the unit by
+  `<date>`. Door steps include opening and closing the door 10 times.
 - **Not expected:** steps about panels, wiring, ladders or tools.
 
-**7. Buyer → case → Check Repair & Sign Off → Fixed — Sign Off.**
-- **Case:** Closed.
-- **Inbox:** "Your case is closed", ending `Your case is now closed.`
+**7. Buyer → case → Check Repair & Sign Off → Fixed.**
+- **Case:** stays Pending sign-off, with the defect marked as checked (`verification_status = verified`).
+- **Then the buyer signs off the unit once** (`POST /api/units/A-12-08/signoff`), which closes every defect in the unit
+  together. The buyer app has no **Sign off unit** button yet, so test this step through the API, or use **Skip 2 weeks**
+  so the unit's sign-off period ends and its defects auto-close.
+- **Case:** Closed. **Inbox:** "Case closed" (or "Unit signed off").
 
 ### TC2 Repeat water leak, extra inspection asked straight away
 
-**1. Buyer → Submit Defects.** Upload `water_leak_again.jpg`.
+**1. Buyer → Submit Defect.** Upload `water_leak_again.jpg`.
 - Text: `Siling bilik tidur utama bocor lagi, ini kali ketiga!`
 - **Trace:**
   - IntakeAgent: water_leak, master bedroom ceiling. Manglish is understood.
@@ -176,7 +187,7 @@ drawn stain, so upload real photos to test the vision model.
 
 ### TC3 Technician hands the job over
 
-**1. Buyer → Submit Defects.** Upload `bathroom_pooling.jpg`.
+**1. Buyer → Submit Defect.** Upload `bathroom_pooling.jpg`.
 - Text: `Sinki dapur bocor dari paip bawah, air bertakung dalam kabinet.`
 - The visit goes to Hafiz (T-01) or Ravi (T-02).
 - If intake files it as a water leak, A-12-08's leak history also sends an SDP request. That's expected.
@@ -187,7 +198,7 @@ drawn stain, so upload real photos to test the vision model.
 
 ### TC4 Reopen within 30 days, revisit booked
 
-After TC1 has closed:
+After TC1 has closed (step 7):
 
 **Buyer → case → Reopen Case.** Upload a photo and enter `Pintu tersangkut lagi.`
 - **Trace:** RecurrenceAgent `Occurrences in unit: 2 …`. That's below 3, so no escalation.
@@ -196,7 +207,7 @@ After TC1 has closed:
   - "Case reopened": `We will update you on the next step shortly.`
   - "Technician revisit booked": `Revisit time: <slot>.`
 
-**Repeat** (close it again, then reopen once more) for the 3rd occurrence.
+**Repeat** (close it again as in TC1 steps 2–7, then reopen once more) for the 3rd occurrence.
 - **Inbox:** "Your case is being reviewed".
 - **SDP → Approvals:** a new request.
 

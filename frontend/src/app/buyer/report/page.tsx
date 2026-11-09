@@ -3,6 +3,7 @@ import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Plus, Spa
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { ArrangingSoon } from "@/components/arranging-soon";
 import { AssetPicker } from "@/components/asset-picker";
 import { TechAvatar } from "@/components/brand";
 import { useCase, useCaseEvents } from "@/components/case-views";
@@ -12,9 +13,8 @@ import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/comp
 import { PhotoInput, PhotoThumb } from "@/components/photo";
 import { CaseMembers } from "@/components/case-members";
 import { StatusBadge } from "@/components/status-badge";
-import { SlotPicker } from "@/components/slot-picker";
 import { UrgencyBadge } from "@/components/status-badge";
-import { fetchVisitSlots, submitReport } from "@/lib/api";
+import { submitReport } from "@/lib/api";
 import { DEMO_BUYER, getTechnician, getUnit, PROJECT_NAME } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { setBuyerUnit, useBuyerUnit } from "@/lib/session";
@@ -23,11 +23,11 @@ import type { Category, Urgency } from "@/lib/types";
 
 const EXAMPLES = ["Ceiling in master bedroom seems to be leaking", "Bocor"];
 
-/** What the priority badge means for the buyer (high urgency books the earliest slot and is watched by SDP staff). */
+/** What the priority badge means for the buyer (high urgency books the earliest technician and is watched by SDP staff). */
 const PRIORITY_NOTE: Record<Urgency, string> = {
   high: "High priority: earliest available inspection, monitored by our team",
-  normal: "Normal priority: inspection at your selected time",
-  low: "Low priority (cosmetic): inspection at your selected time",
+  normal: "Normal priority: inspection at the next available time",
+  low: "Low priority (cosmetic): inspection at the next available time",
 };
 
 /** Interim care advice until the inspection visit. */
@@ -55,21 +55,10 @@ interface DefectItem {
 
 export default function ReportDefect() {
   const now = useDemo((s) => s.now);
-  const [slots, setSlots] = useState<string[] | null>(null);
-  const [slotError, setSlotError] = useState<string | null>(null);
-  useEffect(() => {
-    fetchVisitSlots()
-      .then((s) => {
-        setSlots(s);
-        setSlotError(null);
-      })
-      .catch((e: Error) => setSlotError(e.message));
-  }, [now]);
   // Defects already added to this report, plus the one being written now.
   const [items, setItems] = useState<DefectItem[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
   const [text, setText] = useState("");
-  const [slot, setSlot] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [caseIds, setCaseIds] = useState<string[]>([]);
   const [nonDefect, setNonDefect] = useState<string | null>(null);
@@ -84,7 +73,7 @@ export default function ReportDefect() {
   const draftStarted = !!photo || !!text.trim();
   // Everything that will be submitted: the added defects, plus the current one when it is complete.
   const toSubmit = draftReady ? [...items, { id: -1, photo: photo!, text: text.trim() }] : items;
-  const canSubmit = toSubmit.length > 0 && (!draftStarted || draftReady) && !!slot && !busy && !dlpOver;
+  const canSubmit = toSubmit.length > 0 && (!draftStarted || draftReady) && !busy && !dlpOver;
 
   function addAnother() {
     if (!draftReady) return;
@@ -94,14 +83,14 @@ export default function ReportDefect() {
   }
 
   async function submit() {
-    if (!canSubmit || !slot) return;
+    if (!canSubmit) return;
     setBusy(true);
     setNonDefect(null);
     const created: string[] = [];
     // One case per photo: the system files each defect separately, so each gets its own technician and record.
     for (const it of toSubmit) {
       try {
-        const r = await submitReport({ description: it.text, photoUrl: it.photo, slot, unitId, buyerId: DEMO_BUYER.id }, (id) => {
+        const r = await submitReport({ description: it.text, photoUrl: it.photo, unitId, buyerId: DEMO_BUYER.id }, (id) => {
           created.push(id);
           setCaseIds([...created]);
         });
@@ -212,16 +201,6 @@ export default function ReportDefect() {
           {draftStarted && !draftReady && <p className="mt-1.5 text-center text-[11px] text-zinc-500">Add a photo and a description to finish this defect.</p>}
         </Section>
 
-        <Section title="2. Book Your Inspection Visit *">
-          {slotError ? (
-            <p className="text-sm text-red-600">{slotError}</p>
-          ) : slots ? (
-            <SlotPicker available={slots} value={slot} onChange={setSlot} />
-          ) : (
-            <p className="text-sm text-zinc-500">Loading available times…</p>
-          )}
-        </Section>
-
         {nonDefect && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{nonDefect}</p>}
 
         <PrimaryButton disabled={!canSubmit} onClick={submit}>
@@ -273,7 +252,7 @@ function SubmittedCase({ id }: { id: string }) {
         <p className="truncate text-xs text-zinc-500">{c.summary || c.description}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <StatusBadge status={c.status} buyer className="px-1.5 text-[11px]" />
-          {c.visitSlot && (
+          {c.visitSlot && c.bookingStatus !== "pending" && (
             <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
               <CalendarClock className="size-3.5" /> {fmtDateTime(c.visitSlot)}
             </span>
@@ -303,7 +282,7 @@ function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnTyp
       : review
         ? { label: "Our team is checking your report", state: "attention" }
         : { label: "Finding a technician", state: did("TriageAgent") ? "done" : did("IntakeAgent") ? "active" : "todo" },
-    ...(c.status === "INFO_NEEDED" ? [] : [{ label: "Inspection visit booked", state: booked ? ("done" as const) : ("todo" as const) }]),
+    ...(c.status === "INFO_NEEDED" ? [] : [{ label: "Arranging your inspection", state: booked ? ("done" as const) : ("todo" as const) }]),
   ];
 }
 
@@ -431,7 +410,13 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </Section>
         )}
 
-        {settled && c.status === "VISIT_SCHEDULED" && tech && c.visitSlot && (
+        {settled && c.status === "VISIT_SCHEDULED" && c.bookingStatus === "pending" && (
+          <Section title="Scheduled Inspection">
+            <ArrangingSoon />
+          </Section>
+        )}
+
+        {settled && c.status === "VISIT_SCHEDULED" && c.bookingStatus !== "pending" && tech && c.visitSlot && (
           <Section title="Scheduled Inspection">
             <div className="flex items-center gap-3">
               <TechAvatar tech={tech} className="size-11 shrink-0 ring-1 ring-zinc-200" iconClassName="size-6" />

@@ -7,10 +7,10 @@ import { TECH_EXPLAIN } from "@/lib/status";
 import type { CaseStatus } from "@/lib/types";
 
 const FLOW = [
-  { title: "New Job Assigned", text: "You receive a job matched to your skills and blocks. Open it and Accept, or hand it over if you cannot attend; the next available colleague is assigned." },
+  { title: "New Job Assigned", text: "The system assigns you a job matched to your skills and blocks, at a suggested time. Accept it, or hand it over if you cannot attend; the next available colleague is assigned." },
   { title: "Prepare", text: "Review the buyer's photos and description, the AI inspection brief and any previous reports for the unit." },
   { title: "Inspection Visit", text: "Inspect on site, add a photo and describe what you found. Mark the defect Valid or Invalid." },
-  { title: "Repair Booked", text: "If Valid, the buyer books a repair slot. The repair job appears in your To Do list." },
+  { title: "Repair Booked", text: "If Valid, the repair is booked automatically at the first time a qualified worker is free. Accept it or hand it over from your To Do list." },
   { title: "Repair", text: "Carry out the repair, add an evidence photo, describe what was repaired and mark it repaired." },
   { title: "Sign-Off", text: "The developer approves the repair, then the buyer checks it and signs off. The case then closes." },
   { title: "Reopened or Extra Inspection", text: "If the problem returns, the case comes back as a revisit. Serious or repeated defects may need a joint extra inspection with a subcontractor." },

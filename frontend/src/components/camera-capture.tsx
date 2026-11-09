@@ -7,15 +7,12 @@ export const canUseCamera = () => typeof navigator !== "undefined" && !!navigato
 
 /** One short tip under the camera, a different one each time it opens (helps first-time and older users). */
 const PHOTO_TIPS = [
-  "Turn on the room lights for a clearer photo.",
-  "Hold the phone steady with both hands.",
-  "Move closer so the problem fills the screen.",
-  "Wipe the camera lens with a soft cloth first.",
-  "Tap the screen on the problem to focus.",
-  "Step back a little if it looks blurry.",
-  "Avoid flash on shiny tiles or glass.",
-  "Show a door or wall nearby so we know where.",
-  "Take the photo in daylight if you can.",
+  "Please hold your phone steady.",
+  "Please move closer to the defect.",
+  "Kindly wipe the camera lens first.",
+  "Please tap the defect to focus.",
+  "Please step back if it is blurry.",
+  "Please avoid flash on glass.",
 ];
 let nextTip = Math.floor(Math.random() * PHOTO_TIPS.length);
 
@@ -128,8 +125,8 @@ export function CameraCapture({ onCapture, onClose, onUnavailable }: { onCapture
       </div>
       {!error && (
         <div className="grid place-items-center gap-4 px-6 pb-6 pt-3">
-          <p className="flex max-w-full items-center justify-center gap-1.5 whitespace-nowrap text-sm font-medium text-white">
-            <Lightbulb className="size-4 shrink-0 text-amber-300" /> <span className="truncate">{tip}</span>
+          <p className="flex w-full min-w-0 max-w-full items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap text-center text-sm font-medium text-white">
+            <Lightbulb className="size-4 shrink-0 text-amber-300" /> <span className="min-w-0 truncate">{tip}</span>
           </p>
           <button
             type="button"

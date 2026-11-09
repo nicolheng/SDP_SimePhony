@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { CaseChat } from "@/components/case-chat";
 import { CaseProgress, useCase, useCaseId } from "@/components/case-views";
+import { ArrangingSoon } from "@/components/arranging-soon";
 import { TechAvatar } from "@/components/brand";
 import { DefectRecordCard } from "@/components/defect-record";
 import { FollowUpForm } from "@/components/follow-up-form";
@@ -40,8 +41,21 @@ function YourTechnician({ c }: { c: Case }) {
   const job = JOB_NAME[c.status];
   const slot = c.status === "REPAIR_BOOKED" ? c.repairSlot : c.visitSlot;
   const tech = getTechnician(c.technicianId);
-  if (!job || !tech) return null;
+  // The repair is booked automatically after a valid inspection; until a technician accepts, the buyer just waits.
+  if (c.status === "VALID")
+    return (
+      <Section title="Scheduled Repair">
+        <ArrangingSoon what="Your repair" />
+      </Section>
+    );
+  if (!job) return null;
   const confirmed = c.bookingStatus !== "pending";
+  if (!tech || !confirmed)
+    return (
+      <Section title={job}>
+        <ArrangingSoon />
+      </Section>
+    );
   const h = c.handover;
   const moved = h?.previousSlot && slot && h.previousSlot !== slot;
   return (
@@ -168,11 +182,6 @@ export function CaseDetail() {
                 <p className="text-sm text-zinc-700">{c.followUpQuestion}</p>
                 <FollowUpForm caseId={c.id} />
               </Section>
-            )}
-            {c.status === "VALID" && (
-              <Link href={`/buyer/cases/${c.id}/book`} className={primaryButtonClass}>
-                Book Repair Slot
-              </Link>
             )}
             {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && c.signoff?.developer && (
               <div className="space-y-2">
