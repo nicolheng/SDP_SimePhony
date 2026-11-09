@@ -1370,7 +1370,8 @@ def request_extra_inspection(case_id: str, reasons: list[str], recommended_actio
         f"Approval is needed for case {case_id} at {case['unit_id']} "
         f"({config.CATEGORY_LABEL.get(case['category'], case['category'])}: {case['summary'] or 'no summary'}) "
         f"for a detailed inspection.\n\n"
-        "Why:\n" + "\n".join(f"- {r}" for r in reasons)
+        "Why:\n" + "\n".join(f"- {r}" for r in reasons),
+        case_id,  # records email.sent on the case and lets the email link to it
     )
     return {"ok": True, "approval_id": approval_id, "issue_id": issue_id, "reused_issue": issue is not None, "email_status": email["status"]}
 
