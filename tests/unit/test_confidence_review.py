@@ -68,6 +68,7 @@ def test_low_confidence_intake_saves_classification_before_review(fake_llm):
         "preliminary_outcome": "VALID_DEFECT",
         "mismatch_detected": False,
         "confidence_score": 0.5,
+        "reasoning": "The report is short, so the category is a guess.",  # required by the intake schema
     })]
 
     result = intake_node({

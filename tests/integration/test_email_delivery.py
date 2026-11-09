@@ -123,8 +123,11 @@ def test_delivered_email_has_sender_name_clean_subject_and_html(monkeypatch):
     assert msg["From"] == "SimePhony Defect Care <team@example.com>"
     assert msg["To"] == "demo@example.com"
     assert msg["Subject"] == f"Technician confirmed: Case {case['case_id']}"
-    assert msg.get_content_type() == "multipart/alternative"
-    html = msg.get_body(("html",)).get_content()
+    # Text + HTML versions wrapped in a "mixed" message, so a calendar (.ics) file can be attached
+    assert msg.get_content_type() == "multipart/mixed"
+    parts = {p.get_content_type(): p for p in msg.walk()}
+    assert "multipart/alternative" in parts and "text/plain" in parts
+    html = parts["text/html"].get_payload(decode=True).decode("utf-8")
     assert f"Hi {case['name'].split()[0]}," in html and f"/buyer/cases/{case['case_id']}" in html
     assert f"originally addressed to {case['email']}" in html
 

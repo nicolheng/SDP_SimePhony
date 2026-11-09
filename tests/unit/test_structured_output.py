@@ -14,6 +14,7 @@ def _valid_intake():
         "urgency": "normal",
         "preliminary_outcome": "VALID_DEFECT",
         "confidence_score": 0.95,
+        "reasoning": "Water dripping from a ceiling is a water leak.",  # required by the intake schema
     }
 
 
@@ -22,7 +23,8 @@ def test_invalid_json_retries_once_and_uses_validated_response(fake_llm):
 
     result = intake_node({"user_description": "Water dripping from the ceiling."})
 
-    assert result["intake_result"]["summary"] == "Water is dripping from the ceiling."
+    # The validated retry is used (the case title drops the full stop)
+    assert result["intake_result"]["summary"] == "Water is dripping from the ceiling"
     assert len(fake_llm.calls) == 2
     assert all(
         call.kwargs["response_format"] == {"type": "json_object"}
@@ -32,7 +34,7 @@ def test_invalid_json_retries_once_and_uses_validated_response(fake_llm):
     retry_prompt = fake_llm.calls[1][-1]["content"]
     assert "failed validation" in retry_prompt
     assert "Expecting value" in retry_prompt
-    assert '"required": ["category", "missing_info", "confidence_score"]' in retry_prompt
+    assert '"required": ["category", "missing_info", "confidence_score", "reasoning"]' in retry_prompt
 
 
 @pytest.mark.parametrize("score", [-0.01, 1.01, float("nan")])
