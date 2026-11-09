@@ -109,7 +109,6 @@ def approve_pending_review(case: dict, test_case: str) -> dict:
 
 def tc1_door_happy_path() -> str:
     from demo_api import workflow
-    import tools
     banner("TC1 door defect: report -> visit -> VALID + estimate -> repair -> SDP signs -> buyer checks -> CLOSED")
     case_id = web(workflow.submit_report, "A-12-08", "B-0118", "Pintu bilik tidur tak boleh tutup, tersangkut separuh jalan.",
                   photo("door_misaligned.jpg"), None)["caseId"]
@@ -121,9 +120,7 @@ def tc1_door_happy_path() -> str:
     web(workflow.record_verdict, case_id, "VALID",
         "Door hinge loose and the frame has swollen; needs a new hinge and the frame planed.", None)
     w.show(3, "Technician", "VALID with a note")
-    start = tools.get_booking_options(case_id, "repair")["options"][0]["start"]
-    web(workflow.book_repair, case_id, start)
-    c = w.show(4, "Buyer", "books the first repair slot")
+    c = w.show(4, "TriageAgent", "books the repair at the first free time (the buyer doesn't pick)")
     web(workflow.accept_job, case_id, c["technician_id"])
     web(workflow.mark_repaired, case_id, "Replaced the hinge and planed the frame; door closes smoothly.",
         photo("door_misaligned.jpg"))

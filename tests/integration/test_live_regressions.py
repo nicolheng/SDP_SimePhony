@@ -45,7 +45,7 @@ def test_comms_valid_asks_buyer_to_book_with_fixed_step():
     body = _send(current_status="VALID", repair_estimate={"hours": 8},
                  verdict_note="Leaking pipe joint above the wardrobe; about 1 m2 of ceiling board soaked.")
     model_part, step = body.rsplit("\n\n", 1)
-    assert step == "The repair will take about 8 hours. Please choose a repair time in the app."
+    assert step == "The repair will take about 8 hours. We're booking the repair with the first available technician and will send you the time."
     _body_ok(model_part, VALID_SLIPS)
     assert "1 m2" not in body and "square" not in body.lower()
 

@@ -14,10 +14,10 @@ repeat repairs and disputes, and root causes found and fixed earlier.
 ## How a defect moves through Simephony
 
 1. **Report:** the buyer describes the defect (English or Malay) and adds a photo.
-2. **Inspection visit:** the defect is categorised, its urgency set and a qualified technician booked.
-   The technician accepts the job or hands it over to a colleague.
+2. **Inspection visit:** the defect is categorised, its urgency set and the earliest free qualified technician
+   booked; the buyer doesn't pick a time. The technician accepts the job or hands it over to a colleague.
 3. **Verdict:** the technician confirms the defect (valid) or not (invalid). For a valid defect the repair
-   time is estimated and the buyer books a repair slot.
+   time is estimated and the repair is booked at the first free time, again with no buyer action.
 4. **Repair and photo check:** after the repair, the technician's photo is checked against the original
    report and a short, safe checklist is prepared for the buyer.
 5. **Sign-off:** SDP staff approve every repaired defect in the unit first. The buyer then checks each defect

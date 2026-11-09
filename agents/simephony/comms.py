@@ -11,7 +11,7 @@ from . import backend_tools
 from .guardrails import scan_for_liability, scan_for_unsafe_steps, strip_placeholders_and_signoff
 
 INVALID_CLOSING = "If the problem gets worse or changes, please submit a new report."
-VALID_NEXT_STEP = "Please choose a repair time in the app."
+VALID_NEXT_STEP = "We're booking the repair with the first available technician and will send you the time."
 CLOSED_NOTE = "Your case is now closed."  # live qwen thanked the buyer without saying so
 # Sign-off order technician -> SDP -> buyer: at repair.done the buyer only hears the developer reviews first.
 NEW_CASE_REVIEW_NOTE = ("As this problem has been reported before in your unit, our team is also reviewing whether a "
@@ -133,7 +133,7 @@ SUBJECTS = {
     "REOPEN_RECEIVED": "Case reopened",
     "REVISIT": "Technician revisit booked",
     "REASSIGNED": "Your technician has changed",
-    "VALID": "Defect confirmed: please book a repair",
+    "VALID": "Defect confirmed: repair being arranged",
     "INVALID": "Inspection result",
     "EXTRA_INSPECTION": "Detailed inspection scheduled",
     "REPAIR_DONE": "Repair done",
@@ -367,7 +367,7 @@ def _draft(state: dict) -> str:
     if template_key == "REPAIR_DONE":
         message = f"{message}\n\n{REPAIR_DONE_NOTE}"
     if template_key == "VISIT_SCHEDULED" and state.get("comms_key") and booking.get("start_local"):
-        message = f"{message}\n\nRequested visit time: {booking['start_local']}."
+        message = f"{message}\n\nVisit time: {booking['start_local']}."
     if template_key == "INFO_NEEDED" and state.get("follow_up_question"):
         message = f"{message}\n\n{state['follow_up_question']}"
     if template_key == "REPAIR_BOOKED" and booking.get("start_local"):

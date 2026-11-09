@@ -10,12 +10,12 @@ SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / INVALID
 
 | Status | Meaning |
 |---|---|
-| `SUBMITTED` | Buyer sent photo, description and preferred visit time |
+| `SUBMITTED` | Buyer sent photo and description (a preferred visit time is optional; without one the earliest free technician is booked) |
 | `INFO_NEEDED` | IntakeAgent asked the buyer for more detail (one round: the answer is taken as given and the case is booked, never held for review) |
 | `PENDING_REVIEW` | An AI agent was unsure (confidence below 0.7, or the AI and the rules disagree on the category) and paused the case for SDP. Technician and bookings are released. SDP approves (the case resumes from the held step with the rule-based agents) or rejects (new report → `INVALID`, reopen → `CLOSED`, repair → `VALID`) via `POST /api/cases/{id}/review-decision` |
 | `VISIT_SCHEDULED` | Inspection visit booked with a technician |
 | `VALID` / `INVALID` | Technician's verdict. `INVALID` is terminal |
-| `REPAIR_BOOKED` | Buyer booked the repair |
+| `REPAIR_BOOKED` | Repair booked automatically at the first time a qualified worker is free (also after SDP sends a repair back). Nobody free in 2 weeks: stays `VALID` with `booking_status` `NEEDS_STAFF` for SDP to book |
 | `REPAIRED` | Repair done; VerificationAgent sends the buyer's check guide |
 | `PENDING_SIGNOFF` | Repaired; waiting for sign-off. SDP approves first, then the buyer checks it (Fixed sets `verification_status` to `verified`, and the case **stays here**), then the buyer signs off the whole unit. See [Buyer sign-off](#buyer-sign-off-per-unit). 14 days, else auto-close |
 | `CLOSED` | SDP approved and the buyer signed off. Can be reopened within 30 days with a new photo |

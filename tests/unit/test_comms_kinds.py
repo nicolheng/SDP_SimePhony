@@ -16,11 +16,11 @@ def _msg(fake_llm, kind, reply="Thank you.", case=None, **extra):
 
 
 @pytest.mark.parametrize("kind, case, extra, title, tail", [
-    ("received", {}, {"slot": SLOT}, "We've received your report", f"Requested visit time: {SLOT}."),
+    ("received", {}, {"slot": SLOT}, "We've received your report", f"Visit time: {SLOT}."),
     ("info_needed", {"status": "INFO_NEEDED", "follow_up_question": "Which room is this in?"}, {},
      "We need a little more information", "Which room is this in?"),
-    ("valid", {"status": "VALID", "repair_hours": 4}, {"note": "Joint leaking."}, "Defect confirmed: please book a repair",
-     "The repair will take about 4 hours. Please choose a repair time in the app."),
+    ("valid", {"status": "VALID", "repair_hours": 4}, {"note": "Joint leaking."}, "Defect confirmed: repair being arranged",
+     "The repair will take about 4 hours. We're booking the repair with the first available technician and will send you the time."),
     ("repair_booked", {"status": "REPAIR_BOOKED"}, {"slot": SLOT, "duration": "4 hours"}, "Repair booked",
      f"Repair time: {SLOT} (about 4 hours)."),
     ("confirmed", {}, {"job": "inspection visit", "slot": SLOT}, "Technician confirmed",
@@ -64,7 +64,7 @@ def test_guardrail_still_applies(fake_llm):
     fake_llm.responses = ["We admit fault and will refund you.", "We are sorry for our mistake."]
     title, body = message_for_kind("received", CASE, {"slot": SLOT})
     assert "refund" not in body.lower() and "mistake" not in body.lower()
-    assert body.endswith(f"Requested visit time: {SLOT}.")
+    assert body.endswith(f"Visit time: {SLOT}.")
 
 
 def test_no_names_or_ids_reach_the_model(fake_llm):
@@ -82,7 +82,7 @@ def test_unknown_kind_raises(fake_llm):
 def test_hours_from_the_db_read_naturally(fake_llm):
     # the DB stores repair_hours as 2.0; the web app's duration already says "about"
     _, valid = _msg(fake_llm, "valid", case={"status": "VALID", "repair_hours": 2.0})
-    assert valid.endswith("The repair will take about 2 hours. Please choose a repair time in the app.")
+    assert valid.endswith("The repair will take about 2 hours. We're booking the repair with the first available technician and will send you the time.")
     _, booked = _msg(fake_llm, "repair_booked", case={"status": "REPAIR_BOOKED"}, slot=SLOT, duration="about 2 hours")
     assert booked.endswith(f"Repair time: {SLOT} (about 2 hours).")
 

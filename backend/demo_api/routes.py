@@ -156,7 +156,7 @@ class NewReport(BaseModel):
     buyer_id: RecordId
     description: str = Field(min_length=1, max_length=500)
     photo: Photo | None = None
-    slot: Timestamp
+    slot: Timestamp | None = None  # optional (#79): with no time, the earliest free technician is booked
 
 
 @router.post("/cases")
