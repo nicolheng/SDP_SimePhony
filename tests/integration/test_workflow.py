@@ -388,7 +388,7 @@ def test_valid_verdict_estimates_repair_time_then_tells_buyer(fake_llm, no_side_
     assert final["repair_estimate"]["hours"] == 8  # water leak 4 h + parts to replace -> 3 blocks -> a day
     # the estimate reaches the buyer as fixed text, with the booking step
     assert final["comms_result"]["message"].endswith(
-        "The repair will take about 8 hours. Please choose a repair time in the app.")
+        "The repair will take about 8 hours. We're booking the repair with the first available technician and will send you the time.")
     no_side_effects.assert_called_once()
 
 

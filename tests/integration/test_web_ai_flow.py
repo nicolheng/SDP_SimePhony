@@ -52,7 +52,7 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
     c = _case(case_id)
     assert c["status"] == "VISIT_SCHEDULED" and c["category"] == "water_leak"
     first = _messages(case_id)[-1]
-    assert first["title"] == "We've received your report" and "Requested visit time:" in first["body"]  # CommsAgent
+    assert first["title"] == "We've received your report" and "Visit time:" in first["body"]  # CommsAgent
     assert any(t.get("agent") == "TriageAgent" and t["message"].startswith("Triage:") for t in _trace(case_id))
     assert not any((t.get("data") or {}).get("fallback_used") for t in _trace(case_id))
 
@@ -60,11 +60,13 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
     _web(workflow.record_verdict, case_id, "VALID", "Pipe joint leaking above the wardrobe; ceiling board soaked.", None)
     c = _case(case_id)
     assert c["repair_hours"] in (2, 4, 8)  # RepairEstimateAgent
-    assert "Please choose a repair time in the app." in _messages(case_id)[-1]["body"]
+    # The buyer doesn't pick a time (#79): the repair is booked straight after the verdict
+    assert c["status"] == "REPAIR_BOOKED"
+    titles = [m["title"] for m in _messages(case_id)[-2:]]
+    assert titles == ["Defect confirmed: repair being arranged", "Repair booked"]
+    assert "We're booking the repair with the first available technician and will send you the time." in _messages(case_id)[-2]["body"]
 
     import tools
-    start = tools.get_booking_options(case_id, "repair")["options"][0]["start"]
-    _web(workflow.book_repair, case_id, start)
     _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
     _web(workflow.mark_repaired, case_id, "Resealed the joint and replaced the board.", None)
     assert _case(case_id)["status"] == "PENDING_SIGNOFF"
@@ -153,7 +155,7 @@ def test_llm_down_falls_back_to_the_stand_ins(fake_llm, ai_on):
                for t in _trace(case_id))
     m = _messages(case_id)[-1]
     # CommsAgent has its own fallback: the fixed safe template, still with the visit time
-    assert m["body"].startswith(NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]) and "Requested visit time:" in m["body"]
+    assert m["body"].startswith(NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]) and "Visit time:" in m["body"]
 
 
 def test_intake_deletes_temporary_browser_photo_after_vision_call(monkeypatch):
@@ -320,7 +322,7 @@ def test_switch_off_uses_the_stand_ins(fake_llm, monkeypatch):
     monkeypatch.delenv("USE_AI_AGENTS", raising=False)
     case_id = _report()
     assert fake_llm.calls == []  # no agent ran
-    assert "Requested visit time:" not in _messages(case_id)[-1]["body"]
+    assert "Visit time:" not in _messages(case_id)[-1]["body"]
 
 
 def test_api_defers_ai_until_the_action_is_committed(fake_llm, monkeypatch):
@@ -672,7 +674,7 @@ def _repaired(repair_photo, report_photo=_LEAK_PHOTO):
                    "Water dripping from the master bedroom ceiling above the wardrobe.", report_photo, None)["caseId"]
     _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
     _web(workflow.record_verdict, case_id, "VALID", "Pipe joint leaking above the wardrobe.", None)
-    _web(workflow.book_repair, case_id, tools.get_booking_options(case_id, "repair")["options"][0]["start"])
+    assert _case(case_id)["status"] == "REPAIR_BOOKED"  # booked automatically (#79)
     _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
     _web(workflow.mark_repaired, case_id, "Resealed the joint and replaced the board.", repair_photo)
     return case_id
@@ -696,20 +698,19 @@ def test_same_repair_photo_is_flagged_at_signoff_not_held(fake_llm, ai_on):
     assert _messages(case_id)[-1]["title"] == "Repair done"
 
 
-def test_sdp_rejects_the_repair_and_the_buyer_rebooks(fake_llm, ai_on, photo_check_resolved):
-    import tools
+def test_sdp_rejects_the_repair_and_a_new_repair_is_booked(fake_llm, ai_on, photo_check_resolved):
     from demo_api import workflow
     case_id = _repaired(_LEAK_PHOTO)
     with pytest.raises(workflow.WorkflowError):
         _web(workflow.reject_repair, case_id, "   ")  # a reason is required
     _web(workflow.reject_repair, case_id, "The photo still shows the stain; please redo the repair.")
     c = _case(case_id)
-    assert c["status"] == "VALID" and c["repaired_at"] is None
-    last = _messages(case_id)[-1]
-    assert last["title"] == "Your repair needs another visit" and "still shows the stain" in last["body"]
-    assert tools.get_booking_options(case_id, "repair")["options"]  # the buyer can book again
+    # A new repair is booked straight away (#79); the buyer is told why, then the new time
+    assert c["status"] == "REPAIR_BOOKED" and c["repaired_at"] is None and c["booking_status"] == "PENDING"
+    told, booked = _messages(case_id)[-2:]
+    assert told["title"] == "Your repair needs another visit" and "still shows the stain" in told["body"]
+    assert booked["title"] == "Repair booked"
     # A fresh Mark Repaired clears the old photo check
-    _web(workflow.book_repair, case_id, tools.get_booking_options(case_id, "repair")["options"][0]["start"])
     _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
     _web(workflow.mark_repaired, case_id, "Redid the seal.", "tests/data/test_cases/images/ceiling_repaired.jpg")
     assert json.loads(_case(case_id)["repair_photo_check"])["flagged"] is False  # the old flagged check is replaced
@@ -761,7 +762,10 @@ def test_only_mode_clicks_return_before_the_ai_writes_the_message(fake_llm, monk
                                           "needs_drying_or_curing": False}))
     _run_task(tasks, workflow.run_after_click)
     assert _case(case_id)["repair_hours"]
-    assert "Please choose a repair time in the app." in _messages(case_id)[-1]["body"]
+    # After the estimate and the message quoting it, the repair is booked (#79)
+    assert _case(case_id)["status"] == "REPAIR_BOOKED"
+    confirmed, booked = _messages(case_id)[-2:]
+    assert "We're booking the repair with the first available technician and will send you the time." in confirmed["body"] and booked["title"] == "Repair booked"
     trace = _trace(case_id)
     assert any(t.get("agent") == "RepairEstimateAgent" and (t.get("data") or {}).get("model") for t in trace)
 

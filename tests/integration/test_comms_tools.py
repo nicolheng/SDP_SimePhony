@@ -22,9 +22,9 @@ def test_update_lands_in_buyer_inbox_and_outbox(fake_llm):
         msg = conn.execute("SELECT title, body FROM buyer_messages WHERE message_id = ?", (r["message_id"],)).fetchone()
         mail = conn.execute("SELECT to_addr, subject, body FROM outbox WHERE case_id = 'C-0007' ORDER BY email_id DESC").fetchone()
         buyer = conn.execute("SELECT b.email FROM cases c JOIN buyers b ON b.buyer_id = c.buyer_id WHERE c.case_id = 'C-0007'").fetchone()
-    assert msg["title"] == "Defect confirmed: please book a repair"
+    assert msg["title"] == "Defect confirmed: repair being arranged"
     assert msg["body"] == r["message"]
-    assert mail["subject"] == "[C-0007] Defect confirmed: please book a repair"
+    assert mail["subject"] == "[C-0007] Defect confirmed: repair being arranged"
     assert mail["to_addr"] == buyer["email"]
 
 

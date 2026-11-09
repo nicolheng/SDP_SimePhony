@@ -156,7 +156,8 @@ def triage(ctx, case: dict, preferred: str | None) -> dict:
     slot = options[0]
     tech = next(t for t in techs if not busy(ctx, t["technician_id"], slot))
     return {"technician_id": tech["technician_id"], "slot": slot,
-            "reason": f"No {skill} technician free at the chosen time; booked {tech['name']} at the earliest alternative, {fmt_datetime(slot)}."}
+            "reason": (f"No {skill} technician free at the chosen time; booked {tech['name']} at the earliest alternative, {fmt_datetime(slot)}."
+                       if preferred else f"{label} needs {skill}; booked {tech['name']} at the earliest free time, {fmt_datetime(slot)}.")}
 
 
 # ---------- Repair allocation ----------
@@ -246,7 +247,7 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
     messages = {
         "received": ("We've received your report", f"{ref}. Inspection visit: {tech_name} on {extra.get('slot')}."),
         "info_needed": ("We need a little more information", f"{ref}. {case.get('follow_up_question') or ''}"),
-        "valid": ("Defect confirmed — please book a repair", f"{ref}. The technician confirmed the defect: \"{extra.get('note', '')}\". Please choose a repair slot in the app."),
+        "valid": ("Defect confirmed: repair being arranged", f"{ref}. The technician confirmed the defect: \"{extra.get('note', '')}\". We're booking the repair with the first available technician and will send you the time."),
         "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect: \"{extra.get('note', '')}\". This case is now closed. If the problem gets worse or changes, please submit a new report."),
         "repair_booked": ("Repair booked", f"{ref}. Repair on {extra.get('slot')} by {tech_name}, estimated {extra.get('duration')}."),
         "verify": ("Repair done", f"{ref}. The repair is done. The developer reviews it first; we'll let you know when you can check it and sign off."),

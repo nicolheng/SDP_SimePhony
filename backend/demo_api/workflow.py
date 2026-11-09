@@ -184,7 +184,7 @@ def _route_to_human_review(ctx: Ctx, case_id: str, decision: dict) -> None:
 # ---------- buyer ----------
 
 
-def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo: str | None, slot: str) -> dict:
+def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo: str | None, slot: str | None) -> dict:
     if not description.strip():
         raise WorkflowError("Please describe the problem.")
     if not ctx.conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
@@ -294,6 +294,8 @@ def run_after_click(jobs: list[tuple]) -> None:
                     ai_agents.repair_estimate(ctx, load_case(ctx, case_id))
                 elif job[0] == "extra_inspection":
                     start_extra_inspection(ctx, case_id, job[2])
+                elif job[0] == "repair_booking":
+                    book_repair_now(ctx, case_id)
                 else:
                     notify_buyer(ctx, case_id, job[2], **job[3])
         except Exception as e:
@@ -301,6 +303,7 @@ def run_after_click(jobs: list[tuple]) -> None:
             try:
                 with db.get_conn() as conn:
                     agent, what = {"estimate": ("RepairEstimateAgent", "repair estimate"),
+                                   "repair_booking": ("TriageAgent", "repair booking"),
                                    "extra_inspection": ("InitialInspectionAgent", "inspection brief and booking")
                                    }.get(job[0], ("CommsAgent", f"buyer message ({job[2]})"))
                     step(Ctx(conn), case_id, agent, f"Could not finish the {what}: {type(e).__name__}: {str(e)[:200]}")
@@ -402,6 +405,24 @@ def book_repair(ctx: Ctx, case_id: str, start: str) -> None:
     notify_buyer(ctx, case_id, "repair_booked", slot=fmt_datetime(r["start"]), duration=r["duration"])
 
 
+def book_repair_now(ctx: Ctx, case_id: str) -> None:
+    """The buyer no longer picks a repair time (#79): once a defect is VALID, the repair is booked at the first time
+    a qualified worker is free for the whole job; the worker still accepts or hands it over. Nobody free in the next
+    2 weeks: SDP is asked to book it by hand (booking_status NEEDS_STAFF). On a web click in USE_AI_AGENTS=only it
+    runs right after the click, behind the repair estimate whose hours it books."""
+    if ctx.async_ai:
+        ctx.after_click.append(("repair_booking", case_id))
+        return
+    if load_case(ctx, case_id)["status"] != "VALID":
+        return  # someone acted on the case meanwhile
+    options = _tool(ctx, tools.get_booking_options, case_id, "repair")["options"]
+    if not options:
+        _tool(ctx, tools.escalate_booking, case_id, "no qualified worker is free for the repair in the next 2 weeks")
+        step(ctx, case_id, "TriageAgent", "No worker free for the repair in the next 2 weeks: flagged to SDP to book by hand")
+        return
+    book_repair(ctx, case_id, options[0]["start"])
+
+
 def submit_verification(ctx: Ctx, case_id: str, result: str, note: str, photo: str | None) -> None:
     r = _tool(ctx, tools.record_verification, case_id, result, note, photo)
     step(ctx, case_id, "VerificationAgent", f"Recorded result {result}{' with photo evidence' if photo else ''}")
@@ -436,7 +457,9 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
                   "Please contact us if you have any questions.")
         else:  # VALID: the repair is redone
             _tool(ctx, tools.notify_buyer, case_id, "Your repair needs another visit",
-                  f"Case {case_id} ({c['summary']}). Our team checked the repair and it needs more work. Please book a new repair slot in the app.")
+                  f"Case {case_id} ({c['summary']}). Our team checked the repair and it needs more work. "
+                  "We're booking another repair and will send you the time.")
+            book_repair_now(ctx, case_id)
         return
     if r["status"] == "SUBMITTED":
         _continue_new_case(ctx, case_id, reviewed=True)
@@ -456,8 +479,9 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
         # the buyer can check and sign off straight away, without a second SDP click.
         developer_signoff(ctx, case_id)
     elif r["status"] == "VALID":
-        _tool(ctx, tools.notify_buyer, case_id, "Please book your repair",
-              f"Case {case_id} ({c['summary']}). Our team has checked your case. Please choose a repair slot in the app.")
+        _tool(ctx, tools.notify_buyer, case_id, "Your repair is being arranged",
+              f"Case {case_id} ({c['summary']}). Our team has checked your case. We're booking the repair and will send you the time.")
+        book_repair_now(ctx, case_id)
 
 
 def developer_signoff(ctx: Ctx, case_id: str) -> None:
@@ -483,17 +507,18 @@ def sign_off_unit(ctx: Ctx, unit_id: str, note: str) -> None:
 
 
 def reject_repair(ctx: Ctx, case_id: str, note: str) -> None:
-    """SDP won't sign off the repair (e.g. the photo check showed the fault is still there): the buyer books a
-    new repair and the technician is told why."""
+    """SDP won't sign off the repair (e.g. the photo check showed the fault is still there): a new repair is booked
+    automatically and the technician is told why."""
     _tool(ctx, tools.reject_repair, case_id, note)
     c = load_case(ctx, case_id)
     reason = " ".join(note.split())
     _tool(ctx, tools.notify_buyer, case_id, "Your repair needs another visit",
           f"Case {case_id} ({c['summary']}). Our team checked the repair and it needs more work: \"{reason}\" "
-          "Please book a new repair slot in the app.")
+          "We're booking another repair and will send you the time.")
     notify_tech(ctx, case_id, "Repair not accepted",
                 f"SDP did not accept the repair at {c['unit_id']}.\n\n{_defect(c)}\n"
-                f'Reason: "{reason}"\n\nThe buyer will book a new repair slot; you will be emailed if you are assigned.')
+                f'Reason: "{reason}"\n\nA new repair is being booked; you will be emailed if you are assigned.')
+    book_repair_now(ctx, case_id)
 
 
 def reopen_case(ctx: Ctx, case_id: str, description: str, photo: str | None) -> None:
@@ -547,6 +572,8 @@ def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str |
         else:
             ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
     notify_buyer(ctx, case_id, "valid" if outcome == "VALID" else "invalid", note=note.strip())
+    if outcome == "VALID":
+        book_repair_now(ctx, case_id)
 
 
 def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
@@ -605,6 +632,7 @@ def decide_approval(ctx: Ctx, approval_id: str, approve: bool) -> None:
     if not approve:
         if load_case(ctx, case_id)["status"] == "VALID":  # a new report's request leaves its visit as booked
             notify_buyer(ctx, case_id, "valid", note="Our team will repair this as a normal case")
+            book_repair_now(ctx, case_id)
         return
     if ctx.async_ai:  # the brief (about 12 s of model time) and the booking run right after the click
         ctx.after_click.append(("extra_inspection", case_id, approval_id))

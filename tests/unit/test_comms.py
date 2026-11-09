@@ -122,7 +122,7 @@ def test_system_prompt_forbids_greeting_subject_and_technical_detail(fake_llm):
 
 # --- Final review fix wave ---
 from agents.simephony.comms import NEUTRAL_TEMPLATES
-BOOK_STEP = "Please choose a repair time in the app."
+BOOK_STEP = "We're booking the repair with the first available technician and will send you the time."
 from agents.simephony.guardrails import scan_for_liability
 
 PROTOCOL = (
@@ -320,13 +320,13 @@ def test_valid_booking_step_is_fixed_text_after_the_guardrail(fake_llm):
     _, body = _send({"current_status": "VALID", "case_id": "C-1", "intake_result": {"category": "water_leak"},
                      "repair_estimate": {"hours": 8}})
     assert body == ("Our technician has confirmed the defect in your bedroom ceiling.\n\n"
-                    "The repair will take about 8 hours. Please choose a repair time in the app.")
+                    "The repair will take about 8 hours. We're booking the repair with the first available technician and will send you the time.")
 
 
 def test_valid_without_estimate_still_asks_to_book(fake_llm):
     fake_llm.responses = ["Our technician has confirmed the defect."]
     _, body = _send({"current_status": "VALID", "case_id": "C-1"})
-    assert body.endswith("\n\nPlease choose a repair time in the app.")
+    assert body.endswith("\n\nWe're booking the repair with the first available technician and will send you the time.")
 
 
 OLD_NOTE = "Resealed the pipe joint above the wardrobe."
@@ -437,7 +437,7 @@ from agents.simephony.comms import email_subject
 
 @pytest.mark.parametrize("state,subject", [
     ({"current_status": "VISIT_SCHEDULED"}, "We've received your report"),
-    ({"current_status": "VALID"}, "Defect confirmed: please book a repair"),
+    ({"current_status": "VALID"}, "Defect confirmed: repair being arranged"),
     ({"current_status": "INVALID"}, "Inspection result"),
     ({"current_status": "PENDING_SIGNOFF", "verification_result": {"protocol": "Look."}}, "Please check the repair and sign off"),
     ({"current_status": "CLOSED", "verification_status": "verified"}, "Your case is closed"),
@@ -462,7 +462,7 @@ def test_sent_email_uses_plain_subject(fake_llm):
     fake_llm.responses = ["Your defect is confirmed."]
     with patch(NOTIFY, return_value=SENT_OK) as notify:
         comms_node({"current_status": "VALID", "case_id": "C-7"})
-    assert notify.call_args.kwargs["title"] == "Defect confirmed: please book a repair"  # tools adds "[C-7] "
+    assert notify.call_args.kwargs["title"] == "Defect confirmed: repair being arranged"  # tools adds "[C-7] "
     assert "VALID" not in notify.call_args.kwargs["title"]
 
 
@@ -532,7 +532,7 @@ def test_no_technician_free_prompt_mentions_high_demand(fake_llm):
 def test_old_needs_staff_flag_ignored_once_case_moves_on(fake_llm):
     fake_llm.responses = ["Your defect is confirmed."]
     state = {"current_status": "VALID", "case_id": "C-1", "booking_result": {"booking_status": "NEEDS_STAFF"}}
-    assert email_subject(state) == "[C-1] Defect confirmed: please book a repair"
+    assert email_subject(state) == "[C-1] Defect confirmed: repair being arranged"
 
 
 def test_reopened_case_with_nobody_free_gets_high_demand_prompt(fake_llm):
@@ -575,7 +575,7 @@ def test_handover_with_nobody_free_uses_arranging_message(fake_llm):
 def test_old_handover_result_ignored_for_later_updates(fake_llm):
     state = _reassigned(True)
     state.update(event="verdict.recorded", current_status="VALID")
-    assert email_subject(state) == "[C-1] Defect confirmed: please book a repair"
+    assert email_subject(state) == "[C-1] Defect confirmed: repair being arranged"
 
 
 # --- Sign-off order technician -> SDP -> buyer: the guide goes out only once SDP has signed ---
