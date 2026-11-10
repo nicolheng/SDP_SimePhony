@@ -130,10 +130,14 @@ def satisfaction(ctx) -> dict:
     rated = [dict(r) for r in ctx.conn.execute(
         """SELECT case_id, unit_id, category, technician_id, buyer_rating, buyer_rating_comment, buyer_rated_at FROM cases
            WHERE buyer_rating IS NOT NULL ORDER BY buyer_rated_at DESC, case_id DESC""")]
-    signed = ctx.conn.execute("SELECT COUNT(*) FROM cases WHERE buyer_signed_at IS NOT NULL").fetchone()[0]
+    # A unit rating is saved on every defect that sign-off closed: count it once (same unit, same rating time).
+    signed = ctx.conn.execute(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT unit_id, buyer_signed_at FROM cases WHERE buyer_signed_at IS NOT NULL)").fetchone()[0]
     by_cat: dict[str, list[int]] = defaultdict(list)
     for r in rated:
         by_cat[r["category"] if r["category"] in config.CATEGORY_LABEL else "other"].append(r["buyer_rating"])
+    seen: set = set()
+    rated = [r for r in rated if not ((r["unit_id"], r["buyer_rated_at"]) in seen or seen.add((r["unit_id"], r["buyer_rated_at"])))]
     stars = [r["buyer_rating"] for r in rated]
     return {
         "count": len(stars),

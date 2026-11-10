@@ -10,24 +10,13 @@ import type { Technician } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMyJobs } from "../use-my-jobs";
 
-/** Not offered in the demo switcher (still assignable by the backend). */
-const HIDDEN = new Set(["T-04", "T-05", "T-06", "SC-03", "SC-04"]);
-
 export default function TechnicianProfile() {
   const { tech } = useMyJobs();
   // Read after every state update so the list follows the technicians table.
   useDemo((s) => s.workers);
   const groups: { title: string; note: string; people: Technician[] }[] = [
-    {
-      title: "In-House Technicians",
-      note: "Inspection visits and minor repairs",
-      people: TECHNICIANS.filter((t) => !HIDDEN.has(t.id)),
-    },
-    {
-      title: "Subcontractors",
-      note: "Specialised repairs under contract; join extra inspections",
-      people: SUBCONTRACTORS.filter((t) => !HIDDEN.has(t.id)),
-    },
+    { title: "In-House Technicians", note: "Inspection visits and minor repairs", people: TECHNICIANS },
+    { title: "Subcontractors", note: "Specialised repairs under contract; join extra inspections", people: SUBCONTRACTORS },
   ];
 
   return (
@@ -46,18 +35,7 @@ export default function TechnicianProfile() {
           iconClassName={tech.kind === "subcontractor" ? "size-12" : "size-14"}
         />
         <p className="mt-4 text-2xl font-semibold">{tech.name}</p>
-        {tech.company && (
-          <p className="text-sm text-zinc-300">{tech.company}</p>
-        )}
-        <p className="mt-1 text-sm capitalize text-zinc-400">
-          {tech.kind === "subcontractor"
-            ? "Subcontractor"
-            : "In-house technician"}{" "}
-          · {tech.skills.join(" · ")}
-        </p>
-        <p className="text-xs text-zinc-500">
-          Blocks {tech.blocks.join(", ")}
-        </p>
+
       </header>
       <div className="px-5 py-4">
         {groups.map((g) => (
@@ -66,7 +44,7 @@ export default function TechnicianProfile() {
               {g.title}
               <span className="block text-xs text-zinc-400">{g.note}</span>
             </h2>
-            <ul>
+            <ul className="divide-y divide-zinc-100">
               {g.people.map((t) => (
                 <li key={t.id}>
                   <button
@@ -100,13 +78,7 @@ export default function TechnicianProfile() {
                         )}
                       </span>
                     )}
-                    <span className="flex-1">
-                      <span className="block text-[15px]">{t.name}</span>
-                      <span className="text-xs capitalize text-zinc-500">
-                        {t.company ? `${t.company} · ` : ""}
-                        {t.skills.join(", ")} · Blocks {t.blocks.join(", ")}
-                      </span>
-                    </span>
+                    <span className="flex-1 text-[15px]">{t.name}</span>
                   </button>
                 </li>
               ))}

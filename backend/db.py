@@ -52,6 +52,25 @@ def init_schema(path: Path | None = None) -> None:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
+UNIT_SIGNOFFS_TABLE = """CREATE TABLE IF NOT EXISTS unit_signoffs (
+    record_id       TEXT PRIMARY KEY,          -- e.g. RR-0001: one defect rectification record per unit sign-off
+    unit_id         TEXT NOT NULL REFERENCES units(unit_id),
+    buyer_id        TEXT REFERENCES buyers(buyer_id),
+    kind            TEXT NOT NULL,             -- signed (buyer signed off) | auto_closed (no sign-off within the period)
+    signed_at       TEXT NOT NULL,             -- ISO 8601: buyer sign-off, or the deadline for auto_closed
+    case_ids        TEXT NOT NULL,             -- JSON list of the defects this sign-off closed
+    note            TEXT,                      -- buyer's sign-off note
+    rating          INTEGER,                   -- 1-5, the buyer's rating of this sign-off
+    rating_comment  TEXT,
+    rated_at        TEXT
+)"""
+
+
+def ensure_unit_signoffs(conn: sqlite3.Connection) -> None:
+    """Create unit_signoffs (defect rectification records) on databases made before it existed."""
+    conn.execute(UNIT_SIGNOFFS_TABLE)
+
+
 def next_record_id(conn: sqlite3.Connection, table: str) -> str:
     """Return the next prefixed ID (e.g. CE-0042) for a table with prefixed text IDs."""
     identifiers = {
@@ -62,6 +81,7 @@ def next_record_id(conn: sqlite3.Connection, table: str) -> str:
         "outbox": ("email_id", "OB"),
         "verifications": ("verification_id", "V"),
         "assignment_history": ("assignment_id", "AH"),
+        "unit_signoffs": ("record_id", "RR"),
     }
     if table not in identifiers:
         raise ValueError(f"Unsupported record ID table: {table}")

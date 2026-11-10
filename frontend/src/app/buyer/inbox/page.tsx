@@ -19,7 +19,7 @@ export default function Inbox() {
 
   return (
     <div>
-      <MobileHeader title="My Inbox" back="/buyer" badge={updates.length} />
+      <MobileHeader title="Latest Updates" back="/buyer" badge={updates.length} />
       <div className="grid grid-cols-2 border-b bg-white text-sm font-medium">
         {(["updates", "emails"] as const).map((t) => (
           <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-11 capitalize", tab === t ? "border-b-2 border-brand text-brand" : "text-zinc-500")}>

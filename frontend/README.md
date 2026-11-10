@@ -14,7 +14,7 @@ It opens on the SDP dashboard. Switch roles with the **role dropdown** (SDP side
 | Role | Route | Layout |
 |---|---|---|
 | Buyer | `/buyer` | Mobile (phone frame on desktop) |
-| Technician | `/technician` | Mobile — shows only the signed-in technician's jobs (default Hafiz Osman; change in Profile) |
+| Technician | `/technician` | Mobile — shows only the signed-in technician's jobs (default Olaf; switch to Kamal Yusof in Profile) |
 | SDP staff | `/sdp` | Desktop dashboard |
 
 ## Data: FastAPI + SQLite
@@ -52,11 +52,11 @@ Tip: open **http://localhost:3000/split** to watch the buyer and technician phon
 3. The repair is booked automatically at the first time a qualified worker is free. **Technician / subcontractor** →
    repair job → **Accept** → repair description + photo → **Mark Repaired**.
 4. **SDP** → Approvals → **Sign-Offs** (or the case page) → **Approve repair**.
-5. **Buyer** → case → **Check Repair & Sign Off** (case-specific checklist) → **Fixed**. This marks the defect as checked;
-   the buyer then signs off the whole unit once, which closes every defect in it. *(The Sign off unit button is not in
-   the buyer app yet: the backend call `POST /api/units/{unit}/signoff` exists. Until then, step 6 closes the defects.)*
-6. **SDP** sidebar → **Skip 2 weeks**: the unit's sign-off period ends and its defects auto-close.
-   **Buyer** → case → **Reopen Case** with a new photo.
+5. Once SDP has approved every defect in the unit, the buyer's home **Sign Off** button turns red. **Buyer** → **Sign Off**
+   (opens My Defects → Pending) → each defect → **Verify Repair** (case-specific checklist) → **Fixed — Verify**.
+   When every defect is verified, **Sign Off Unit** in My Defects turns red → **Sign Off**: every defect in the unit closes.
+6. **Buyer** → case → **Reopen Case** with a new photo (within 30 days). It goes through the normal flow again, so the
+   unit needs verifying and signing off again.
 7. RecurrenceAgent escalates (3rd occurrence + stack cluster). **SDP → Approvals** → Extra Inspections → **Approve**.
 8. InitialInspectionAgent writes the brief (technician job + SDP case). **SDP → Systemic Issues** heatmap shows stack
    A-08 lit up; **Simulate rain** adds more reports.

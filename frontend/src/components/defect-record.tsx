@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { fmtDateTime } from "@/lib/dates";
 import { buildDefectRecord, downloadDefectRecordPdf, type StepState } from "@/lib/defect-record";
-import { useDemo } from "@/lib/store";
 import type { Case } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -22,9 +21,9 @@ const BADGE: Record<StepState, string> = {
 };
 
 /** Digital defect record with role-based sign-off history and a PDF download. */
-export function DefectRecordCard({ c, viewer, large }: { c: Case; viewer: string; large?: boolean }) {
-  const approvals = useDemo((s) => s.approvals);
-  const record = useMemo(() => buildDefectRecord(c, approvals), [c, approvals]);
+/** hideDownload: the page offers its own PDF (a whole sign-off). */
+export function DefectRecordCard({ c, viewer, large, hideDownload }: { c: Case; viewer: string; large?: boolean; hideDownload?: boolean }) {
+  const record = useMemo(() => buildDefectRecord(c), [c]);
   const [busy, setBusy] = useState(false);
   const t = large ? "text-base" : "text-sm";
   const ts = large ? "text-sm" : "text-xs";
@@ -52,6 +51,7 @@ export function DefectRecordCard({ c, viewer, large }: { c: Case; viewer: string
     <div className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className={cn("font-semibold", large ? "text-lg" : "text-sm")}>Digital defect record</p>
+        {!hideDownload && (
         <button
           type="button"
           onClick={download}
@@ -60,6 +60,7 @@ export function DefectRecordCard({ c, viewer, large }: { c: Case; viewer: string
         >
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} Download PDF
         </button>
+        )}
       </div>
       <dl>
         {head.map(([k, v]) => (

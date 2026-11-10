@@ -297,6 +297,8 @@ export interface DemoState {
   cases: Case[];
   /** Keyed by unit id; only units with at least one defect. */
   unitSignoff?: Record<string, UnitSignoff>;
+  /** One defect rectification record per unit sign-off (unit_signoffs), newest first. */
+  rectificationRecords?: RectificationRecord[];
   events: CaseEvent[];
   messages: BuyerMessage[];
   outbox: Email[];
@@ -438,4 +440,19 @@ export interface PhotoCheck {
   /** The repair photo looks almost the same as the original (a picture-fingerprint check, not AI). */
   similarToOriginal: boolean;
   at: string | null;
+}
+
+/** A unit sign-off and the defects it closed (backend unit_signoffs). */
+export interface RectificationRecord {
+  id: string;
+  unitId: string;
+  buyerId: string | null;
+  /** signed = the buyer signed off; auto_closed = no sign-off within the period. */
+  kind: "signed" | "auto_closed";
+  signedAt: string;
+  caseIds: string[];
+  note: string;
+  rating: number | null;
+  ratingComment: string;
+  ratedAt: string | null;
 }

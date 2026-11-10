@@ -23,24 +23,26 @@ def _state(case_id, unit_id, status, urgency, skill="plumbing", **extra):
 
 
 def test_visit_is_booked_with_a_qualified_technician():
-    # C-0009: C-8-06 sanitary fittings, SUBMITTED; only T-02 does plumbing in block C
+    # C-0009: C-8-06 sanitary fittings, SUBMITTED; Olaf (T-01) is the only in-house technician
     out = booking_node(_state("C-0009", "C-8-06", "SUBMITTED", "normal"))
     r = out["booking_result"]
-    assert r["assigned_technician"] == "T-02"
+    assert r["assigned_technician"] == "T-01"
     assert out["current_status"] == "VISIT_SCHEDULED"
     db_case = _case("C-0009")
-    assert db_case["status"] == "VISIT_SCHEDULED" and db_case["booking_status"] == "PENDING" and db_case["technician_id"] == "T-02"
+    assert db_case["status"] == "VISIT_SCHEDULED" and db_case["booking_status"] == "PENDING" and db_case["technician_id"] == "T-01"
     assert db_case["triage_reason"] == r["reason"]
 
 
 def test_handover_goes_to_a_colleague():
     import tools
-    # C-0008: B-3-08 water leak, REOPENED, high urgency; T-01 and T-02 both qualify
+    from conftest import add_test_colleague
+    colleague = add_test_colleague()
+    # C-0008: B-3-08 water leak, REOPENED, high urgency; Olaf and the test colleague both qualify
     first = booking_node(_state("C-0008", "B-3-08", "REOPENED", "high"))["booking_result"]["assigned_technician"]
     assert tools.respond_to_assignment("C-0008", False, "On leave that day")["ok"] is True
     out = booking_node(_state("C-0008", "B-3-08", "VISIT_SCHEDULED", "high", event="booking.rejected"))
     r = out["booking_result"]
-    assert {first, r["assigned_technician"]} == {"T-01", "T-02"} and r["same_time"] is True
+    assert {first, r["assigned_technician"]} == {"T-01", colleague} and r["same_time"] is True
     db_case = _case("C-0008")
     assert db_case["technician_id"] == r["assigned_technician"] and db_case["booking_status"] == "PENDING"
     assert db_case["status"] == out["current_status"] == "VISIT_SCHEDULED"
@@ -48,7 +50,7 @@ def test_handover_goes_to_a_colleague():
 
 def test_nobody_left_escalates_to_sdp():
     import tools
-    booking_node(_state("C-0009", "C-8-06", "SUBMITTED", "normal"))  # T-02 (the only one)
+    booking_node(_state("C-0009", "C-8-06", "SUBMITTED", "normal"))  # T-01 (the only one)
     assert tools.respond_to_assignment("C-0009", False, "Not my area")["ok"] is True
     out = booking_node(_state("C-0009", "C-8-06", "VISIT_SCHEDULED", "normal", event="booking.rejected"))
     assert out["booking_result"]["booking_status"] == "NEEDS_STAFF"

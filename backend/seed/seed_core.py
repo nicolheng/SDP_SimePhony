@@ -29,12 +29,7 @@ CONTRACTORS = {
 }
 
 TECHNICIANS = [
-    {"id": "T-01", "name": "Hafiz Osman", "email": "hafiz.tech@example.com", "skills": ["plumbing", "waterproofing"], "blocks": ["A", "B"]},
-    {"id": "T-02", "name": "Ravi Kumar", "email": "ravi.tech@example.com", "skills": ["plumbing"], "blocks": ["A", "B", "C"]},
-    {"id": "T-03", "name": "Lim Wei Jie", "email": "weijie.tech@example.com", "skills": ["electrical"], "blocks": ["A", "B", "C"]},
-    {"id": "T-04", "name": "Nurul Izzah", "email": "nurul.tech@example.com", "skills": ["civil", "tiling", "painting"], "blocks": ["A", "B", "C"]},
-    {"id": "T-05", "name": "Daniel Tan", "email": "daniel.tech@example.com", "skills": ["carpentry", "glazing", "general"], "blocks": ["A", "B", "C"]},
-    {"id": "T-06", "name": "Siti Aminah", "email": "siti.tech@example.com", "skills": ["waterproofing", "civil"], "blocks": ["C"]},
+    {"id": "T-01", "name": "Olaf", "email": "hafiz.tech@example.com", "skills": ["plumbing", "waterproofing", "electrical", "civil", "tiling", "flooring", "roofing", "painting", "carpentry", "glazing", "general"], "blocks": ["A", "B", "C"]},
 ]
 
 
@@ -94,7 +89,7 @@ def seed_core():
         print(f"Created {len(unit_rows)} units and {len(buyer_rows)} buyers.")
 
         # 2. Technicians
-        print("Seeding 6 technicians...")
+        print("Seeding 1 technician...")
         tech_rows = [
             (t["id"], t["name"], t["email"], json.dumps(t["skills"]), json.dumps(t["blocks"]))
             for t in TECHNICIANS

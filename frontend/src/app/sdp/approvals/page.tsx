@@ -48,13 +48,13 @@ export default function Approvals() {
   const [picked, setTab] = useState<Tab | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   // Default to the first queue with work in it.
-  const tab: Tab = picked ?? (held.length ? "review" : pending.length ? "extra" : signoffCount ? "signoff" : "decided");
+  const tab: Tab = picked ?? (held.length ? "review" : signoffCount ? "signoff" : pending.length ? "extra" : "decided");
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
 
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "review", label: "Held for Review", count: held.length },
-    { id: "extra", label: "Extra Inspections", count: pending.length },
     { id: "signoff", label: "Sign-Offs", count: signoffCount },
+    { id: "extra", label: "Extra Inspections", count: pending.length },
     { id: "decided", label: "Decided", count: decided.length },
   ];
 

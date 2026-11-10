@@ -2,7 +2,7 @@
 import { Loader2, Star } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { rateRepair } from "@/lib/api";
+import { rateUnit } from "@/lib/api";
 import { useOffline } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Overlay } from "./overlay";
@@ -20,8 +20,8 @@ export function Stars({ value, className }: { value: number; className?: string 
   );
 }
 
-/** Asks the buyer to rate the repair after they sign off. `onDone` runs after rating or "Not now". */
-export function RatingDialog({ caseId, onDone }: { caseId: string; onDone: () => void }) {
+/** Asks the buyer to rate their unit sign-off (one rating for every repair it closed). `onDone` runs after rating or "Not now". */
+export function RatingDialog({ unitId, onDone }: { unitId: string; onDone: () => void }) {
   const [stars, setStars] = useState(0);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,7 +30,7 @@ export function RatingDialog({ caseId, onDone }: { caseId: string; onDone: () =>
   async function submit() {
     setBusy(true);
     try {
-      await rateRepair(caseId, stars, comment.trim());
+      await rateUnit(unitId, stars, comment.trim());
       toast.success("Thank you for your feedback");
       onDone();
     } catch (err) {
@@ -40,12 +40,12 @@ export function RatingDialog({ caseId, onDone }: { caseId: string; onDone: () =>
   }
 
   return (
-    <Overlay label="Rate the repair" className="grid place-items-center bg-black/50 p-4">
+    <Overlay label="Rate the repairs" className="grid place-items-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
         <h2 id="rating-title" className="text-center text-lg font-semibold">
-          How happy are you with the repair?
+          How happy are you with the repairs?
         </h2>
-        <p className="mt-1 text-center text-sm text-zinc-500">Your rating helps the developer improve its defect service.</p>
+        
         <div className="mt-4 flex justify-center gap-1">
           {[1, 2, 3, 4, 5].map((n) => (
             <button key={n} type="button" onClick={() => setStars(n)} className="p-1" aria-label={`${n} star${n > 1 ? "s" : ""}: ${STAR_LABEL[n]}`} aria-pressed={stars === n}>
@@ -59,7 +59,7 @@ export function RatingDialog({ caseId, onDone }: { caseId: string; onDone: () =>
           onChange={(e) => setComment(e.target.value)}
           rows={2}
           maxLength={500}
-          placeholder="Anything you'd like to tell us? (optional)"
+          placeholder="Anything you'd like to tell us? (Optional)"
           className="mt-3 w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand"
         />
         <button

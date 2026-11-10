@@ -24,7 +24,7 @@ export function DefectCard({ c, href, buyer }: { c: Case; href: string; buyer?: 
         </p>
         {/* One line: status and DLP badges are slightly compact so they fit side by side on a phone. */}
         <div className="mt-1.5 flex flex-nowrap items-center gap-1">
-          <StatusBadge status={c.status} buyer={buyer} className="px-1.5 text-[11px]" />
+          <StatusBadge status={c.status} buyer={buyer} of={c} className="px-1.5 text-[11px]" />
           <RepairClockBadge c={c} now={now} className="px-1.5 text-[11px]" />
         </div>
       </div>

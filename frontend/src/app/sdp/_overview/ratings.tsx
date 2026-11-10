@@ -1,9 +1,7 @@
 "use client";
-import Link from "next/link";
 import { Stars } from "@/components/rating";
 import { Kpi, Panel } from "@/components/sdp-ui";
 import { useAnalytics } from "@/lib/analytics";
-import { workerName } from "@/lib/constants";
 import { fmtDate } from "@/lib/dates";
 
 /** Overview › Ratings: how satisfied buyers are with repairs, rated when they sign off. */
@@ -52,14 +50,11 @@ export function Ratings() {
             {s.recent.map((r) => (
               <li key={r.caseId} className="rounded-lg p-2.5 ring-1 ring-zinc-200">
                 <div className="flex items-center justify-between gap-2">
-                  <Link href={`/sdp/defects/${r.caseId}`} className="font-mono text-sm hover:underline">
-                    {r.caseId} · {r.unitId}
-                  </Link>
+                  <span className="text-sm font-medium">Unit {r.unitId}</span>
                   <Stars value={r.stars} />
                 </div>
                 {r.comment && <p className="mt-1 text-base text-zinc-700">&ldquo;{r.comment}&rdquo;</p>}
                 <p className="mt-1 text-sm text-zinc-500">
-                  {r.technicianId ? `${workerName(r.technicianId)} · ` : ""}
                   {fmtDate(r.at)}
                 </p>
               </li>

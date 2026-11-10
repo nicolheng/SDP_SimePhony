@@ -77,20 +77,12 @@ export const buyerUnits = (b: Buyer): string[] => {
 
 // In-house technicians: inspection visits and minor repairs.
 export let TECHNICIANS: Technician[] = [
-  { id: "T-01", name: "Hafiz Osman", email: "hafiz.tech@example.com", skills: ["plumbing", "waterproofing"], blocks: ["A", "B"], kind: "technician" },
-  { id: "T-02", name: "Ravi Kumar", email: "ravi.tech@example.com", skills: ["plumbing"], blocks: ["A", "B", "C"], kind: "technician" },
-  { id: "T-03", name: "Lim Wei Jie", email: "weijie.tech@example.com", skills: ["electrical"], blocks: ["A", "B", "C"], kind: "technician" },
-  { id: "T-04", name: "Nurul Izzah", email: "nurul.tech@example.com", skills: ["civil", "tiling", "painting"], blocks: ["A", "B", "C"], kind: "technician" },
-  { id: "T-05", name: "Daniel Tan", email: "daniel.tech@example.com", skills: ["carpentry", "glazing", "general"], blocks: ["A", "B", "C"], kind: "technician" },
-  { id: "T-06", name: "Siti Aminah", email: "siti.tech@example.com", skills: ["waterproofing", "civil"], blocks: ["C"], kind: "technician" },
+  { id: "T-01", name: "Olaf", email: "hafiz.tech@example.com", skills: ["plumbing", "waterproofing", "electrical", "civil", "tiling", "flooring", "roofing", "painting", "carpentry", "glazing", "general"], blocks: ["A", "B", "C"], kind: "technician" },
 ];
 
 // Subcontractors: specialised repair work under contract.
 export let SUBCONTRACTORS: Technician[] = [
-  { id: "SC-01", name: "Kamal Yusof", company: "Alpha Waterproofing Sdn Bhd", email: "kamal.subcon@example.com", skills: ["waterproofing", "plumbing"], blocks: ["A", "B", "C"], kind: "subcontractor" },
-  { id: "SC-02", name: "Tan Mei Ling", company: "Beta Structural Works Sdn Bhd", email: "meiling.subcon@example.com", skills: ["structural", "civil"], blocks: ["A", "B", "C"], kind: "subcontractor" },
-  { id: "SC-03", name: "Arjun Pillai", company: "Gamma Tiling & Flooring Sdn Bhd", email: "arjun.subcon@example.com", skills: ["tiling", "flooring"], blocks: ["A", "B", "C"], kind: "subcontractor" },
-  { id: "SC-04", name: "Ong Chee Keong", company: "Delta Electrical Services Sdn Bhd", email: "cheekeong.subcon@example.com", skills: ["electrical"], blocks: ["A", "B", "C"], kind: "subcontractor" },
+  { id: "SC-01", name: "Kamal Yusof", company: "Alpha Building Services Sdn Bhd", email: "kamal.subcon@example.com", skills: ["waterproofing", "plumbing", "structural", "civil", "tiling", "flooring", "electrical"], blocks: ["A", "B", "C"], kind: "subcontractor" },
 ];
 
 export let WORKERS: Technician[] = [...TECHNICIANS, ...SUBCONTRACTORS];

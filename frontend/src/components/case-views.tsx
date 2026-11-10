@@ -202,7 +202,7 @@ export function PreviousReports({ c, buyer }: { c: Case; buyer?: boolean }) {
             <p className="text-sm font-medium">{x.summary}</p>
             <div className="flex shrink-0 flex-col items-end gap-1">
               <span className="text-xs text-zinc-500">{fmtDate(x.createdAt)}</span>
-              <StatusBadge status={x.status} buyer={buyer} className="px-1.5 py-0 text-[10px]" />
+              <StatusBadge status={x.status} buyer={buyer} of={x} className="px-1.5 py-0 text-[10px]" />
             </div>
           </div>
         </li>

@@ -1,12 +1,14 @@
-import { statusMeta, TONE_CLASS } from "@/lib/status";
+import { buyerBadge, statusMeta, TONE_CLASS } from "@/lib/status";
 import type { CaseStatus, Urgency } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export function StatusBadge({ status, buyer, className }: { status: CaseStatus; buyer?: boolean; className?: string }) {
+/** `of` (buyer only): the case, so the label follows its booking, approval and verification (status.buyerBadge). */
+export function StatusBadge({ status, buyer, className, of }: { status: CaseStatus; buyer?: boolean; className?: string; of?: Parameters<typeof buyerBadge>[0] }) {
   const m = statusMeta(status);
+  const b = buyer && of ? buyerBadge(of) : null;
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap", TONE_CLASS[m.tone], className)}>
-      {buyer ? m.buyer : m.label}
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap", TONE_CLASS[b?.tone ?? m.tone], className)}>
+      {b ? b.label : buyer ? m.buyer : m.label}
     </span>
   );
 }

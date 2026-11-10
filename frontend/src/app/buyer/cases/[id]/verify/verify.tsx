@@ -7,7 +7,6 @@ import { useCase, useCaseId } from "@/components/case-views";
 import { PhotoCheckSummary } from "@/components/developer-signoff";
 import { MobileHeader, Section } from "@/components/mobile";
 import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
-import { RatingDialog } from "@/components/rating";
 import { signoffDeadline, submitVerification } from "@/lib/api";
 import { fmtDate } from "@/lib/dates";
 import { useOffline } from "@/lib/store";
@@ -22,8 +21,6 @@ export function VerifyRepair() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  // Set once the buyer has signed off: the satisfaction rating pop-up shows, then we go back to the case.
-  const [rating, setRating] = useState(false);
   const offline = useOffline();
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
@@ -39,28 +36,28 @@ export function VerifyRepair() {
     setBusy(true);
     try {
       await submitVerification(c!.id, result, note.trim(), photo);
-      toast.success(result === "FIXED" ? "Signed off: case closed" : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
-      if (result === "FIXED") setRating(true);
-      else router.push(`/buyer/cases/${c!.id}`);
+      toast.success(result === "FIXED" ? "Verified. Sign off your unit once every repair is verified." : result === "NOT_FIXED" ? "Case reopened" : "Saved — check again when you can");
+      // Fixed: back to the defects still waiting to be verified; the unit Sign Off button is on that page.
+      router.push(result === "FIXED" ? "/buyer/cases?tab=pending" : `/buyer/cases/${c!.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setBusy(false);
     }
   }
 
-  // After signing off the case has left PENDING_SIGNOFF, so this also covers the rating step.
-  if (rating || c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer || !c.signoff?.developer)
+  if (c.status !== "PENDING_SIGNOFF" || !g || c.signoff?.buyer || !c.signoff?.developer || c.verificationStatus === "verified")
     return (
       <div>
-        <MobileHeader title="Check & Sign Off" back={`/buyer/cases/${c.id}`} />
-        <p className="p-6 text-sm text-zinc-500">{rating ? "Signed off. Thank you!" : "Nothing to sign off for this case right now."}</p>
-        {rating && <RatingDialog caseId={c.id} onDone={() => router.push(`/buyer/cases/${c.id}`)} />}
+        <MobileHeader title="Verify Repair" back={`/buyer/cases/${c.id}`} />
+        <p className="p-6 text-sm text-zinc-500">
+          {c.verificationStatus === "verified" ? "You have verified this repair. Sign off your unit from My Defects once every repair is verified." : "Nothing to verify for this case right now."}
+        </p>
       </div>
     );
 
   return (
     <div>
-      <MobileHeader title="Check & Sign Off" back={`/buyer/cases/${c.id}`} />
+      <MobileHeader title="Verify Repair" back={`/buyer/cases/${c.id}`} />
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-1.5 text-[11px] font-medium text-violet-700">
@@ -138,10 +135,10 @@ export function VerifyRepair() {
           />
         </Section>
 
-        <h2 className="px-1 text-sm font-semibold text-zinc-900">4. Sign-Off</h2>
+        <h2 className="px-1 text-sm font-semibold text-zinc-900">4. Verification</h2>
         <label className="flex gap-3 rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-700">
           <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 size-4 accent-[var(--brand)]" />
-          I confirm that I have inspected the repair and the defect has been rectified. As the developer has approved the repair, this case will be closed upon my sign-off.
+          I confirm that I have inspected the repair and the defect has been rectified. I will sign off my unit once every repair is verified.
         </label>
 
         <div className="space-y-2">
@@ -151,7 +148,7 @@ export function VerifyRepair() {
             onClick={() => submit("FIXED")}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
           >
-            <Check className="size-4" /> Fixed — Sign Off
+            <Check className="size-4" /> Fixed — Verify
           </button>
           <button
             type="button"

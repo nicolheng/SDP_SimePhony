@@ -440,6 +440,11 @@ def rate_case(ctx: Ctx, case_id: str, rating: int, comment: str) -> None:
     _tool(ctx, tools.record_rating, case_id, rating, comment)
 
 
+def rate_unit(ctx: Ctx, unit_id: str, rating: int, comment: str) -> None:
+    """One rating for the buyer's latest unit sign-off (saved on each defect it closed)."""
+    _tool(ctx, tools.record_unit_rating, unit_id, rating, comment)
+
+
 def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
     """SDP staff approve or reject a case an AI agent held for review. An approved case carries on from the held
     step with the rule-based agents (a person has checked it, so it is not held again)."""

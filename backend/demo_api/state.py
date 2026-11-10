@@ -313,6 +313,14 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
         "cases": cases,
         # Per unit with a defect: may the buyer check repairs yet, and can the unit be signed off (tools.unit_signoff_state)
         "unitSignoff": {u: tools.unit_signoff_state(conn, u) for u in sorted(set(unit_of.values()))},
+        # One defect rectification record per unit sign-off (signed by the buyer, or closed automatically), newest first.
+        "rectificationRecords": [] if not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'unit_signoffs'").fetchone() else [
+            {"id": r["record_id"], "unitId": r["unit_id"], "buyerId": r["buyer_id"], "kind": r["kind"], "signedAt": norm(r["signed_at"]),
+             "caseIds": json.loads(r["case_ids"]), "note": r["note"] or "", "rating": r["rating"],
+             "ratingComment": r["rating_comment"] or "", "ratedAt": norm(r["rated_at"])}
+            for r in conn.execute("SELECT * FROM unit_signoffs ORDER BY signed_at DESC, record_id DESC")
+        ],
         "events": events,
         "messages": [
             {"id": _num(r["message_id"]), "caseId": r["case_id"], "at": norm(r["created_at"]), "title": r["title"], "body": r["body"]}

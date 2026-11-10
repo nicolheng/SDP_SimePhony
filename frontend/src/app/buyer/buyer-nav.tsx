@@ -1,5 +1,5 @@
 "use client";
-import { Bell, ClipboardList, Home, PlusCircle } from "lucide-react";
+import { ClipboardList, FileText, Home, PlusCircle } from "lucide-react";
 import { useMemo } from "react";
 import { BottomNav } from "@/components/mobile";
 import { DEMO_BUYER } from "@/lib/constants";
@@ -16,7 +16,7 @@ export function BuyerNav() {
         { href: "/buyer", label: "Home", icon: <Home className="size-5" /> },
         { href: "/buyer/report", label: "Report", icon: <PlusCircle className="size-5" /> },
         { href: "/buyer/cases", label: "My Defects", icon: <ClipboardList className="size-5" />, badge: action },
-        { href: "/buyer/inbox", label: "Inbox", icon: <Bell className="size-5" /> },
+        { href: "/buyer/records", label: "Records", icon: <FileText className="size-5" /> },
       ]}
     />
   );

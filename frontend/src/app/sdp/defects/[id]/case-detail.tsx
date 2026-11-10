@@ -1,5 +1,5 @@
 "use client";
-import { AlertTriangle, ArrowLeft, Bot, ChevronDown, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, ChevronDown, ChevronRight, FileText, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
@@ -197,6 +197,8 @@ function WhyList({ events }: { events: CaseEvent[] }) {
 export function SdpCaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
+  const records = useDemo((s) => s.rectificationRecords);
+  const unitRecord = useMemo(() => records?.find((r) => r.caseIds.includes(c?.id ?? "")), [records, c?.id]);
   const events = useCaseEvents(id);
   const whyEvents = useMemo(() => events.filter(hasWhyData), [events]);
   const now = useDemo((s) => s.now);
@@ -319,6 +321,16 @@ export function SdpCaseDetail() {
               <p className="mt-2 text-base text-zinc-700">&ldquo;{c.rating.comment}&rdquo;</p>
               <p className="mt-1 text-sm text-zinc-500">{fmtDateTime(c.rating.at)}</p>
             </Panel>
+          )}
+          {unitRecord && (
+            <Link href={`/sdp/records/${unitRecord.id}`} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200/70 hover:ring-brand">
+              <FileText className="size-5 shrink-0 text-brand" />
+              <span className="flex-1 text-base">
+                Part of rectification record <span className="font-semibold">{unitRecord.id}</span> · Unit {unitRecord.unitId} ·{" "}
+                {unitRecord.kind === "signed" ? "signed off" : "closed automatically"} {fmtDate(unitRecord.signedAt)}
+              </span>
+              <ChevronRight className="size-4 text-zinc-400" />
+            </Link>
           )}
           {recordAvailable(c) && <DefectRecordCard c={c} viewer={`${SDP_STAFF.name} (${SDP_STAFF.title})`} large />}
           {!!c.assignments?.length && (

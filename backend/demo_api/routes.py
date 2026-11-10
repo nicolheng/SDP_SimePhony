@@ -215,8 +215,14 @@ class Rating(BaseModel):
 
 @router.post("/cases/{case_id}/rating")
 def rating(case_id: str, body: Rating, request: Request):
-    """Buyer's satisfaction rating, asked once they have signed off."""
+    """Buyer's satisfaction rating for one case (older per-case flow; the web app rates per unit)."""
     return _run(request, workflow.rate_case, case_id, body.rating, body.comment)
+
+
+@router.post("/units/{unit_id}/rating")
+def unit_rating(unit_id: str, body: Rating, request: Request):
+    """Buyer's satisfaction rating for their latest unit sign-off, asked right after it."""
+    return _run(request, workflow.rate_unit, unit_id, body.rating, body.comment)
 
 
 class Reopen(BaseModel):

@@ -138,7 +138,7 @@ export default function ReportDefect() {
         </div>
       </div>
       <div className="space-y-4 p-4">
-        <Section title="1. Defect Photos & Descriptions *">
+        <Section title="Defect Photos & Descriptions *">
           <p className="-mt-1 mb-3 text-xs text-zinc-500">One photo per defect. Each photo is filed as its own defect case.</p>
 
           {items.length > 0 && (
@@ -251,7 +251,7 @@ function SubmittedCase({ id }: { id: string }) {
         <p className="font-semibold">{id}</p>
         <p className="truncate text-xs text-zinc-500">{c.summary || c.description}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <StatusBadge status={c.status} buyer className="px-1.5 text-[11px]" />
+          <StatusBadge status={c.status} buyer of={c} className="px-1.5 text-[11px]" />
           {c.visitSlot && c.bookingStatus !== "pending" && (
             <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
               <CalendarClock className="size-3.5" /> {fmtDateTime(c.visitSlot)}

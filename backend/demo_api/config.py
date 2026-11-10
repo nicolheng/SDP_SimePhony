@@ -36,12 +36,16 @@ SDP_STAFF_TITLE = "SDP Defect Team"
 SDP_STAFF_EMAIL = "sdp.staff@example.com"
 APP_URL = "http://localhost:3000"
 
-# Demo subcontractors, added to the technicians table by migrate.py (seed.db has in-house technicians only).
+# The demo workforce: one in-house technician (inspections and minor repairs) and one subcontractor (specialised
+# repairs: waterproofing, structural, tiling). migrate.py adds the subcontractor, gives both the whole job scope,
+# moves every job of any other worker to them, and removes the others.
+# Workers retired from the demo; migrate.py moves their jobs to the keeper (value) and removes them.
+RETIRED_WORKERS = {"T-02": "T-01", "T-03": "T-01", "T-04": "T-01", "T-05": "T-01", "T-06": "T-01",
+                   "SC-02": "SC-01", "SC-03": "SC-01", "SC-04": "SC-01"}
+IN_HOUSE_TECHNICIAN = {"technician_id": "T-01", "skills": ["plumbing", "waterproofing", "electrical", "civil", "tiling", "flooring", "roofing", "painting", "carpentry", "glazing", "general"], "blocks": ["A", "B", "C"]}
 SUBCONTRACTORS = [
-    {"technician_id": "SC-01", "name": "Kamal Yusof", "company": "Alpha Waterproofing Sdn Bhd", "email": "kamal.subcon@example.com", "skills": ["waterproofing", "plumbing"], "blocks": ["A", "B", "C"]},
-    {"technician_id": "SC-02", "name": "Tan Mei Ling", "company": "Beta Structural Works Sdn Bhd", "email": "meiling.subcon@example.com", "skills": ["structural", "civil"], "blocks": ["A", "B", "C"]},
-    {"technician_id": "SC-03", "name": "Arjun Pillai", "company": "Gamma Tiling & Flooring Sdn Bhd", "email": "arjun.subcon@example.com", "skills": ["tiling", "flooring"], "blocks": ["A", "B", "C"]},
-    {"technician_id": "SC-04", "name": "Ong Chee Keong", "company": "Delta Electrical Services Sdn Bhd", "email": "cheekeong.subcon@example.com", "skills": ["electrical"], "blocks": ["A", "B", "C"]},
+    {"technician_id": "SC-01", "name": "Kamal Yusof", "company": "Alpha Building Services Sdn Bhd", "email": "kamal.subcon@example.com",
+     "skills": ["waterproofing", "plumbing", "structural", "civil", "tiling", "flooring", "electrical"], "blocks": ["A", "B", "C"]},
 ]
 
 

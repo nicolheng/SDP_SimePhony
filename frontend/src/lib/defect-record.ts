@@ -1,9 +1,9 @@
 // Digital defect record: one approval history with role-based sign-off, shared by the on-screen card and the PDF.
 import { fmtHours } from "./agents";
-import { CATEGORY_LABEL, DEMO_BUYER, getBuyer, getUnit, PROJECT_NAME, REPAIR_PLAN, RULES, SDP_STAFF, TZ, workerLabel } from "./constants";
+import { CATEGORY_LABEL, DEMO_BUYER, getBuyer, getUnit, PROJECT_NAME, REPAIR_PLAN, RULES, TZ, workerLabel } from "./constants";
 import { fmtDateTime } from "./dates";
 import { STATUS_META } from "./status";
-import type { Approval, Case } from "./types";
+import type { Case, RectificationRecord } from "./types";
 
 export type StepState = "done" | "pending" | "attention" | "skipped";
 
@@ -45,10 +45,10 @@ export const buyerName = (c: Pick<Case, "buyerId" | "unitId">) => getBuyer(c.buy
 /** The record (with its approval history) is shown once the case reaches the sign-off stage. */
 export const recordAvailable = (c: Case) => c.status === "PENDING_SIGNOFF" || !!c.signoff || !!c.autoClosedAt;
 
-export function buildDefectRecord(c: Case, approvals: Approval[]): DefectRecord {
+/** The defect's sign-off history (SDP's internal extra-inspection decision is not part of the record). */
+export function buildDefectRecord(c: Case): DefectRecord {
   const plan = REPAIR_PLAN[c.category];
   const invalid = c.verdict?.outcome === "INVALID" || c.status === "INVALID";
-  const approval = approvals.filter((a) => a.caseId === c.id).at(-1);
   const steps: RecordStep[] = [];
 
   steps.push({
@@ -81,18 +81,6 @@ export function buildDefectRecord(c: Case, approvals: Approval[]): DefectRecord 
           detail: c.visitSlot ? `Inspection visit ${fmtDateTime(c.visitSlot)}` : undefined,
         },
   );
-
-  if (approval) {
-    steps.push({
-      title: "Extra inspection approval",
-      desc: "SDP decision on a recurring or clustered defect",
-      state: approval.status === "pending" ? "pending" : "done",
-      badge: approval.status === "approved" ? "Approved" : approval.status === "rejected" ? "Rejected" : "Pending",
-      who: approval.status === "pending" ? undefined : (approval.decidedBy ?? `${SDP_STAFF.name}, ${SDP_STAFF.title}`),
-      at: approval.decidedAt,
-      detail: [approval.reasons.join(" "), c.supportId ? `Joint inspection with ${workerLabel(c.supportId)}` : ""].filter(Boolean).join(" · "),
-    });
-  }
 
   if (invalid) {
     for (const title of ["Repair completion", "Developer verification", "Buyer acceptance"])
@@ -170,6 +158,64 @@ export async function downloadDefectRecordPdf(r: DefectRecord, viewer: string, p
 export async function buildDefectRecordPdf(r: DefectRecord, viewer: string, photoUrl?: string | null) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
+  drawDefect(doc, r, photoUrl, `Sime Darby Property · SimePhony · ${r.defectId}`);
+  footer(doc, viewer);
+  return doc;
+}
+
+/** One PDF for a unit sign-off: a cover with the sign-off, then every defect it closed in the usual layout. */
+export async function downloadUnitRecordPdf(rec: RectificationRecord, defects: { record: DefectRecord; photoUrl?: string | null }[], viewer: string) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = 210;
+  const M = 16;
+  const unit = getUnit(rec.unitId);
+  doc.setFillColor(215, 25, 32);
+  doc.rect(0, 0, W, 26, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Defect Rectification Record", M, 13);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(`Sime Darby Property · SimePhony · ${rec.id}`, M, 20);
+  let y = 36;
+  const row = (label: string, value: string) => {
+    doc.setTextColor(113, 113, 122);
+    doc.setFontSize(9);
+    doc.text(label, M, y);
+    doc.setTextColor(24, 24, 27);
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(value, 120);
+    doc.text(lines, W - M, y, { align: "right" });
+    y += Math.max(6, lines.length * 5);
+  };
+  row("Record", rec.id);
+  row("Unit", `${PROJECT_NAME} · ${unit.id} (Block ${unit.block}, level ${unit.floor})`);
+  row("Owner", defects[0]?.record.buyer ?? DEMO_BUYER.name);
+  row(rec.kind === "signed" ? "Signed off" : "Closed automatically", fmtDateTime(rec.signedAt));
+  row("Defects", defects.map((d) => `${d.record.defectId} · ${d.record.defect}`).join("\n"));
+  if (rec.rating) row("Rating", `${rec.rating} / 5${rec.ratingComment ? ` · ${rec.ratingComment}` : ""}`);
+  for (const d of defects) {
+    doc.addPage();
+    drawDefect(doc, d.record, d.photoUrl, `${rec.id} · ${d.record.defectId}`);
+  }
+  footer(doc, viewer);
+  doc.save(`${rec.id}-${rec.unitId}.pdf`);
+}
+
+function footer(doc: import("jspdf").jsPDF, viewer: string) {
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(161, 161, 170);
+    doc.text(`Downloaded by ${viewer} on ${fmtDateTime(new Date().toISOString())} · demo record, not a legal document`, 16, 290);
+  }
+}
+
+/** One defect on the current page (and following pages when it runs long). */
+function drawDefect(doc: import("jspdf").jsPDF, r: DefectRecord, photoUrl: string | null | undefined, subtitle: string) {
   const W = 210;
   const M = 16;
   let y = 0;
@@ -182,9 +228,8 @@ export async function buildDefectRecordPdf(r: DefectRecord, viewer: string, phot
   doc.text("Digital Defect Record", M, 13);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`Sime Darby Property · SimePhony · ${r.defectId}`, M, 20);
+  doc.text(subtitle, M, 20);
   y = 36;
-
   const row = (label: string, value: string) => {
     doc.setTextColor(113, 113, 122);
     doc.setFontSize(9);
@@ -253,8 +298,4 @@ export async function buildDefectRecordPdf(r: DefectRecord, viewer: string, phot
     y += 4;
   }
 
-  doc.setFontSize(8);
-  doc.setTextColor(161, 161, 170);
-  doc.text(`Downloaded by ${viewer} on ${fmtDateTime(new Date().toISOString())} · demo record, not a legal document`, M, 290);
-  return doc;
 }

@@ -270,3 +270,52 @@ def test_skip_days_in_the_demo_still_auto_closes(monkeypatch):
     _approved("C-0004")
     state = client.post("/api/demo/skip-days", json={"days": 15}).json()["state"]
     assert next(c for c in state["cases"] if c["id"] == "C-0004")["status"] == "CLOSED"
+
+
+def test_one_rating_per_unit_sign_off():
+    import tools
+    assert "after you have signed off" in tools.record_unit_rating(UNIT, 4)["error"]
+    ids = _two_approved_defects()
+    for cid in ids:
+        tools.record_verification(cid, "FIXED", "")
+    tools.sign_off_unit(UNIT)
+    r = tools.record_unit_rating(UNIT, 4, "Quick and tidy")
+    assert r["ok"] and r["case_ids"] == ids
+    for cid in ids:  # saved on every defect the sign-off closed
+        case = _case(cid)
+        assert case["buyer_rating"] == 4 and case["buyer_rating_comment"] == "Quick and tidy"
+    assert "already rated" in tools.record_unit_rating(UNIT, 5)["error"]
+
+
+def _records():
+    import json
+
+    import db
+    with db.get_conn() as conn:
+        rows = conn.execute("SELECT * FROM unit_signoffs WHERE unit_id = ? ORDER BY signed_at", (UNIT,)).fetchall()
+    return [{**dict(r), "case_ids": json.loads(r["case_ids"])} for r in rows]
+
+
+def test_each_sign_off_writes_one_rectification_record_with_its_rating():
+    import tools
+    before = len(_records())
+    ids = _two_approved_defects()
+    for cid in ids:
+        tools.record_verification(cid, "FIXED", "")
+    r = tools.sign_off_unit(UNIT, "All good")
+    records = _records()
+    assert len(records) == before + 1 and r["record_id"] == records[-1]["record_id"].replace("", "")
+    rec = records[-1]
+    assert rec["kind"] == "signed" and rec["case_ids"] == ids and rec["note"] == "All good" and rec["rating"] is None
+    tools.record_unit_rating(UNIT, 5, "Great")
+    rec = _records()[-1]
+    assert rec["rating"] == 5 and rec["rating_comment"] == "Great"
+
+
+def test_auto_close_writes_an_auto_closed_record():
+    before = len(_records())
+    ids = _two_approved_defects()
+    _move_clock(15)  # past the 14-day deadline
+    _sweep()
+    rec = _records()[-1]
+    assert len(_records()) == before + 1 and rec["kind"] == "auto_closed" and sorted(rec["case_ids"]) == sorted(ids)

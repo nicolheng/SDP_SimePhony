@@ -162,6 +162,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     _add_columns(conn, "case_events", EVENT_COLUMNS)
     conn.execute("UPDATE case_events SET id = CAST(SUBSTR(event_id, 4) AS INTEGER) WHERE id IS NULL")
     conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
+    db.ensure_unit_signoffs(conn)
     for statement in INDEXES:
         conn.execute(statement)
     _infer_assignment_jobs(conn)
@@ -178,6 +179,9 @@ def migrate(conn: sqlite3.Connection) -> None:
             (s["technician_id"], s["name"], s["email"], json.dumps(s["skills"]), json.dumps(s["blocks"]), s["company"]),
         )
 
+    consolidate_workforce(conn)
+    backfill_unit_signoffs(conn)
+
     # Demo vacant possession dates, handed over block by block (seed.db has none).
     for block, vp in config.DEMO_VP_DATES.items():
         conn.execute("UPDATE units SET vp_date = ? WHERE block = ? AND vp_date IS NULL", (vp, block))
@@ -189,3 +193,52 @@ def migrate(conn: sqlite3.Connection) -> None:
     # Demo clock runs on real time; "Skip days" adds to this offset.
     conn.execute("INSERT OR IGNORE INTO app_meta (key, value) VALUES ('clock_offset_days', '0')")
     _spread_seed_repair_times(conn)
+
+
+def consolidate_workforce(conn) -> None:
+    """The demo workforce is one in-house technician and one subcontractor (config.IN_HOUSE_TECHNICIAN,
+    config.SUBCONTRACTORS), with the whole job scope between them. Every job, booking and history row of a retired
+    worker (config.RETIRED_WORKERS) moves to its keeper, then the retired worker is removed. Idempotent; workers added
+    later are left alone."""
+    tech = config.IN_HOUSE_TECHNICIAN
+    if conn.execute("SELECT 1 FROM technicians WHERE technician_id = ?", (tech["technician_id"],)).fetchone() is None:
+        return  # not a SimePhony demo database (e.g. an empty test schema)
+    conn.execute("UPDATE technicians SET skills = ?, blocks = ? WHERE technician_id = ?",
+                 (json.dumps(tech["skills"]), json.dumps(tech["blocks"]), tech["technician_id"]))
+    for s in config.SUBCONTRACTORS:
+        conn.execute("UPDATE technicians SET skills = ?, blocks = ?, company = ? WHERE technician_id = ?",
+                     (json.dumps(s["skills"]), json.dumps(s["blocks"]), s["company"], s["technician_id"]))
+    for old, new in config.RETIRED_WORKERS.items():
+        for table, col in (("cases", "technician_id"), ("cases", "inspector_id"), ("cases", "support_id"),
+                           ("cases", "handed_over_from"), ("slots", "technician_id"), ("assignment_history", "technician_id")):
+            conn.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
+        conn.execute("DELETE FROM technicians WHERE technician_id = ?", (old,))
+
+
+def backfill_unit_signoffs(conn) -> None:
+    """One defect rectification record per unit sign-off (unit_signoffs). Cases signed off or auto-closed before the
+    table existed are grouped by unit and time, as tools.sign_off_unit / sweep_signoffs now record them. Idempotent:
+    a group that already has a record is skipped."""
+    import db
+
+    existing = {(r[0], r[1]) for r in conn.execute("SELECT unit_id, signed_at FROM unit_signoffs")}
+    groups = conn.execute(
+        """SELECT unit_id, 'signed' AS kind, buyer_signed_at AS at FROM cases WHERE buyer_signed_at IS NOT NULL
+           UNION SELECT unit_id, 'auto_closed', auto_closed_at FROM cases WHERE auto_closed_at IS NOT NULL AND buyer_signed_at IS NULL
+           ORDER BY at""").fetchall()
+    for unit_id, kind, at in groups:
+        if (unit_id, at) in existing:
+            continue
+        field = "buyer_signed_at" if kind == "signed" else "auto_closed_at"
+        rows = conn.execute(
+            f"""SELECT case_id, buyer_id, buyer_signoff_note, buyer_rating, buyer_rating_comment, buyer_rated_at FROM cases
+                WHERE unit_id = ? AND {field} = ? ORDER BY case_id""", (unit_id, at)).fetchall()
+        if not rows:
+            continue
+        rated = next((r for r in rows if r[3] is not None), None)
+        conn.execute(
+            """INSERT INTO unit_signoffs (record_id, unit_id, buyer_id, kind, signed_at, case_ids, note, rating, rating_comment, rated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (db.next_record_id(conn, "unit_signoffs"), unit_id, rows[0][1], kind, at, json.dumps([r[0] for r in rows]),
+             rows[0][2], rated[3] if rated else None, rated[4] if rated else None, rated[5] if rated else None))
+        existing.add((unit_id, at))

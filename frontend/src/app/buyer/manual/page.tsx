@@ -13,8 +13,8 @@ const FLOW = [
   { title: "Inspection Visit", text: "The technician inspects and marks the defect as confirmed or not a defect. You get an update in the app and by email." },
   { title: "Repair Arranged", text: "If confirmed, we arrange the repair automatically. You will see the technician and the time once they confirm." },
   { title: "Repair", text: "The technician fixes the defect and marks it done." },
-  { title: "Check Each Repair", text: "The developer approves every repaired defect in your unit first. Then follow the short checklist for each defect and mark it as fixed, or report that it is not fixed with a new photo." },
-  { title: "Sign Off Your Unit", text: `Once every defect in your unit is checked, sign off the unit once; all its defects close together. Please sign off within ${RULES.signoffPeriodDays} days of the developer's last approval. We remind you ${RULES.signoffReminderDaysBefore} days before the deadline; if you don't sign off, the defects close automatically.` },
+  { title: "Verify Each Repair", text: "The developer approves every repaired defect in your unit first; the Sign Off button on your home page then turns red. Open each defect in the Pending tab, follow its short checklist and tap Fixed to verify it, or report that it is not fixed with a new photo." },
+  { title: "Sign Off Your Unit", text: `Once every defect in your unit is verified, the Sign Off button in My Defects turns red. Sign off the unit once; all its defects close together. Please sign off within ${RULES.signoffPeriodDays} days of the developer's last approval. We remind you ${RULES.signoffReminderDaysBefore} days before the deadline; if you don't sign off, the defects close automatically.` },
   { title: "Defects Closed", text: "Your defects close once the developer has approved them and you have signed off the unit." },
   { title: "Came Back?", text: `Within ${RULES.gracePeriodDays} days of closing, reopen the same case with a new photo. No need to report again.` },
 ];

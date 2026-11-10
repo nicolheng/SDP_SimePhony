@@ -195,6 +195,19 @@ CREATE TABLE IF NOT EXISTS buyer_messages (
     created_at  TEXT NOT NULL              -- ISO 8601
 );
 
+CREATE TABLE IF NOT EXISTS unit_signoffs (
+    record_id       TEXT PRIMARY KEY,          -- e.g. RR-0001: one defect rectification record per unit sign-off
+    unit_id         TEXT NOT NULL REFERENCES units(unit_id),
+    buyer_id        TEXT REFERENCES buyers(buyer_id),
+    kind            TEXT NOT NULL,             -- signed (buyer signed off) | auto_closed (no sign-off within the period)
+    signed_at       TEXT NOT NULL,             -- ISO 8601: buyer sign-off, or the deadline for auto_closed
+    case_ids        TEXT NOT NULL,             -- JSON list of the defects this sign-off closed
+    note            TEXT,                      -- buyer's sign-off note
+    rating          INTEGER,                   -- 1-5, the buyer's rating of this sign-off
+    rating_comment  TEXT,
+    rated_at        TEXT
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_cases_unit           ON cases(unit_id);
 CREATE INDEX IF NOT EXISTS idx_cases_status         ON cases(status);

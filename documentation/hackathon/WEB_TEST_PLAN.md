@@ -70,20 +70,16 @@ photo goes to the vision model (llava). The screen just waits; don't click twice
 - **Buyer app:** always Aisyah Rahman, **B-0118**, unit **A-12-08**. A-12-08 already has 3 water leaks
   (H-0001, H-0002, C-0014), and stack A-08 has leaks in 4 units. So a water-leak report from this buyer
   is a repeat defect.
-- **Technician app:** starts as Hafiz Osman (T-01). Switch technician in **Profile**.
+- **Technician app:** starts as Olaf (T-01). Switch to Kamal Yusof (SC-01) in **Profile**.
 
-**Technicians:**
+**Workforce** (one of each; `backend/demo_api/config.py`):
 
-| ID | Name | Skills | Blocks |
-|---|---|---|---|
-| T-01 | Hafiz Osman | plumbing, waterproofing | A, B |
-| T-02 | Ravi Kumar | plumbing | A, B, C |
-| T-03 | Lim Wei Jie | electrical | A, B, C |
-| T-04 | Nurul Izzah | civil, tiling, painting | A, B, C |
-| T-05 | Daniel Tan | carpentry, glazing, general | A, B, C |
+| ID | Name | Role | Skills | Blocks |
+|---|---|---|---|---|
+| T-01 | Olaf | In-house technician: every inspection visit and the minor repairs | all trades | A, B, C |
+| SC-01 | Kamal Yusof (Alpha Building Services Sdn Bhd) | Subcontractor: specialised repairs (water leaks, structural cracks, tiles) | waterproofing, plumbing, structural, civil, tiling, flooring, electrical | A, B, C |
 
-**Subcontractors (repairs):** SC-01 Kamal (waterproofing/plumbing), SC-02 Tan Mei Ling (structural/civil),
-SC-03 Arjun (tiling), SC-04 Ong (electrical).
+The other workers in older data were retired: their jobs moved to Olaf or Kamal (`migrate.py`, `RETIRED_WORKERS`).
 
 **Photos to upload** (from `tests/data/test_cases/images/`). The "Use a sample photo" button is only a
 drawn stain, so upload real photos to test the vision model.
@@ -121,13 +117,13 @@ not pick a time: the earliest free qualified technician is booked.
 - **Trace:**
   - IntakeAgent: category door_window, location bedroom.
   - TriageAgent: `Triage: normal urgency …`.
-  - TriageAgent: `Needs carpentry; Daniel Tan covers this block and is free <slot>.`
-- **Case:** Visit scheduled, technician T-05, booking pending.
+  - TriageAgent: `Needs carpentry; Olaf covers this block and is free <slot>.`
+- **Case:** Visit scheduled, technician T-01 (Olaf), booking pending.
 - **Buyer screens:** Report Submitted and the case page show "A technician will be arranged soon" (no name or time yet).
 - **Inbox:** "We've received your report", with the inspection visit and its time.
 - **No "also reviewing" line**, because this is the first door case in A-12-08.
 
-**2. Technician → Profile → Daniel Tan → My Jobs → open the job → Accept.**
+**2. Technician (Olaf) → My Jobs → open the job → Accept.**
 - **Buyer case page:** the waiting message is replaced by the technician card (photo, name, date and time).
 - **Inbox:** "Technician confirmed", with the visit time.
 
@@ -154,12 +150,15 @@ Pick an **Expected repair duration** (2 hours, half day or full day), then press
   `<date>`. Door steps include opening and closing the door 10 times.
 - **Not expected:** steps about panels, wiring, ladders or tools.
 
-**7. Buyer → case → Check Repair & Sign Off → Fixed.**
-- **Case:** stays Pending sign-off, with the defect marked as checked (`verification_status = verified`).
-- **Then the buyer signs off the unit once** (`POST /api/units/A-12-08/signoff`), which closes every defect in the unit
-  together. The buyer app has no **Sign off unit** button yet, so test this step through the API, or use **Skip 2 weeks**
-  so the unit's sign-off period ends and its defects auto-close.
-- **Case:** Closed. **Inbox:** "Case closed" (or "Unit signed off").
+**7. Buyer → home → Sign Off → Pending tab → case → Verify Repair → Fixed — Verify.**
+- **Home:** the **Sign Off** button is grey until SDP has approved every open defect in the unit, then red. It opens
+  My Defects on the **Pending** tab (defects waiting for the buyer to verify).
+- **Case:** stays Pending sign-off with a green **Verified** badge (`verification_status = verified`); it leaves the
+  Pending tab.
+- **My Defects → Sign Off Unit:** grey with the reason (waiting for the developer, or defects still to verify) until every
+  open defect is verified, then red. Confirm **Sign Off**: every defect in the unit closes together.
+- **Case:** Closed. **Inbox:** "Unit signed off", listing the closed defects.
+- **New account / no defects:** both Sign Off buttons stay grey ("No defects to sign off yet").
 
 ### TC2 Repeat water leak, extra inspection asked straight away
 
@@ -189,12 +188,13 @@ Pick an **Expected repair duration** (2 hours, half day or full day), then press
 
 **1. Buyer → Submit Defect.** Upload `bathroom_pooling.jpg`.
 - Text: `Sinki dapur bocor dari paip bawah, air bertakung dalam kabinet.`
-- The visit goes to Hafiz (T-01) or Ravi (T-02).
+- The visit goes to Olaf (T-01), the only in-house technician.
 - If intake files it as a water leak, A-12-08's leak history also sends an SDP request. That's expected.
 
-**2. Technician (the assigned one) → job → Hand over.** Reason: `Called to an emergency.`
-- **Case:** keeps its status, now with the other plumber.
-- **Inbox:** "Your technician has changed": `Your inspection visit stays at the same time: <slot>.` (or `has moved to <slot>.`)
+**2. Technician (Olaf) → job → Hand over.** Reason: `Called to an emergency.`
+- With one in-house technician there is no colleague to take it: the hand-over is refused with "No other qualified
+  technician is free in the next 2 weeks. Please contact the SDP office." (For a repair, Kamal can take it if the trade
+  matches.) Testing a hand-over to a colleague needs a second technician; the automated tests add one to a test copy.
 
 ### TC4 Reopen within 30 days, revisit booked
 

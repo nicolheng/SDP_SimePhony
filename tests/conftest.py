@@ -358,3 +358,18 @@ def _no_live_db_writes(request, monkeypatch):
 def booking_db(_no_live_db_writes):
     """The FakeBookingDB the live-DB guard installed (adjust options / refuse, read assigned / escalated)."""
     return _no_live_db_writes.booking
+
+
+def add_test_colleague(technician_id="T-90"):
+    """The demo has one in-house technician (Olaf). Hand-over tests need a colleague to hand the job to: add one with
+    the same skills and blocks to the temporary test database only."""
+    import json
+
+    import db
+    with db.get_conn() as conn:
+        skills, blocks = conn.execute("SELECT skills, blocks FROM technicians WHERE technician_id = 'T-01'").fetchone()
+        conn.execute(
+            "INSERT OR IGNORE INTO technicians (technician_id, name, email, skills, blocks, kind) VALUES (?, ?, ?, ?, ?, 'technician')",
+            (technician_id, "Test Colleague", "colleague.test@example.com", skills, blocks))
+        conn.commit()
+    return technician_id

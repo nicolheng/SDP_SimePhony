@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import add_test_colleague
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -254,6 +255,7 @@ def test_rejected_escalation_returns_to_valid():
 
 def test_revisit_after_reopen_below_threshold():
     async def scenario(client, call):
+        add_test_colleague()  # one in-house technician in the demo: a colleague to hand over to
         # B-2-01 has no water-leak history: reopen -> no escalation -> revisit booking
         cid, _, _ = await reported_and_triaged(call, unit_id="B-2-01")
         await repaired_and_verifying(call, cid)
@@ -277,6 +279,7 @@ def test_revisit_after_reopen_below_threshold():
 
 def test_hand_over_keeps_the_time_then_escalates_when_nobody_is_left():
     async def scenario(client, call):
+        add_test_colleague()  # one in-house technician in the demo: a colleague to hand over to
         cid, preferred, first = await reported_and_triaged(call, accept=False)
         refused(tools.respond_to_assignment(cid, False), "reason")
         res = ok(tools.respond_to_assignment(cid, False, "Emergency elsewhere"))
@@ -316,6 +319,7 @@ def test_hand_over_keeps_the_time_then_escalates_when_nobody_is_left():
 
 def test_hand_over_after_accepting_and_new_round_of_exclusions():
     async def scenario(client, call):
+        add_test_colleague()  # one in-house technician in the demo: a colleague to hand over to
         cid, _, first = await reported_and_triaged(call)   # accepted
         res = ok(tools.respond_to_assignment(cid, False, "Van broke down", technician_id=first))
         opt = res["handover_options"][0]

@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { CaseChat } from "@/components/case-chat";
 import { CaseProgress, useCase, useCaseId } from "@/components/case-views";
 import { ArrangingSoon } from "@/components/arranging-soon";
+import { useSignoffOverdue, useUnitSignoff } from "@/components/unit-signoff";
 import { TechAvatar } from "@/components/brand";
 import { DefectRecordCard } from "@/components/defect-record";
 import { FollowUpForm } from "@/components/follow-up-form";
@@ -17,7 +18,7 @@ import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { canReopen, signoffDeadline } from "@/lib/api";
 import { CATEGORY_LABEL, DEMO_BUYER, getTechnician, RULES, workerName } from "@/lib/constants";
 import { addDays, daysBetween, fmtDate, fmtDateTime } from "@/lib/dates";
-import { BUYER_EXPLAIN, fmtRepairHours, isOpen, TECHNICIAN_ESTIMATE } from "@/lib/status";
+import { BUYER_EXPLAIN, fmtRepairHours, isOpen } from "@/lib/status";
 import { useDemo } from "@/lib/store";
 import type { Case } from "@/lib/types";
 
@@ -114,6 +115,8 @@ const TABS: { id: Tab; label: string }[] = [
 export function CaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
+  const unitSignoff = useUnitSignoff(c?.unitId ?? "");
+  const signoffOver = useSignoffOverdue(c?.unitId ?? "");
   const now = useDemo((s) => s.now);
   const allMessages = useDemo((s) => s.messages);
   const messages = useMemo(() => allMessages.filter((m) => m.caseId === id).reverse(), [allMessages, id]);
@@ -154,16 +157,19 @@ export function CaseDetail() {
                 {c.reopenCount > 0 && <span className="font-medium text-red-700"> · Reopened {c.reopenCount}×</span>}
               </p>
               <div className="mt-3 rounded-xl bg-zinc-50 p-3">
-                <StatusBadge status={c.status} buyer />
+                <StatusBadge status={c.status} buyer of={c} />
                 <p className="mt-1.5 text-sm text-zinc-700">
                   {c.status === "PENDING_SIGNOFF" && c.signoff?.developer && !c.signoff?.buyer
-                    ? "The developer has approved the repair. Please check it and sign off."
+                    ? c.verificationStatus === "verified"
+                      ? "You verified this repair. Sign off your unit from My Defects once every repair is verified."
+                      : unitSignoff && !unitSignoff.canVerify
+                        ? "The developer has approved this repair and is still reviewing the other repairs in your unit. You can verify once all are approved."
+                        : "The developer has approved the repair. Please verify it."
                     : (BUYER_EXPLAIN[c.status] ?? "We're working on your case.")}
                 </p>
                 {(c.status === "VALID" || c.status === "REPAIR_BOOKED") && !!c.repairHours && (
                   <p className="mt-1.5 text-xs text-zinc-700">
                     Expected repair duration: <span className="font-semibold">{fmtRepairHours(c.repairHours)}</span>
-                    {c.repairEstimateReason === TECHNICIAN_ESTIMATE && <span className="text-zinc-500"> (set by your technician)</span>}
                   </p>
                 )}
                 {c.repairClock && !c.repairClock.doneAt && isOpen(c.status) && (
@@ -183,7 +189,7 @@ export function CaseDetail() {
                 <FollowUpForm caseId={c.id} />
               </Section>
             )}
-            {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && c.signoff?.developer && (
+            {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && c.signoff?.developer && (!unitSignoff || unitSignoff.canVerify || !!c.signoffOverdueAt) && (
               <div className="space-y-2">
                 <p
                   className={
@@ -194,14 +200,20 @@ export function CaseDetail() {
                 >
                   <Clock className="size-4 shrink-0" />
                   {c.signoffOverdueAt
-                    ? "The sign-off period has passed. Our team will contact you; you can still sign off below."
-                    : `Please sign off by ${fmtDate(deadline)} (${signoffDaysLeft} day(s) left). ${
-                        c.urgency === "high" ? "After that our team will follow up." : "After that the case closes automatically."
+                    ? "The sign-off period has passed. Our team will contact you."
+                    : `Please verify and sign off your unit by ${fmtDate(deadline)} (${signoffDaysLeft} day(s) left). ${
+                        c.urgency === "high" ? "After that our team will follow up." : "After that the defects close automatically."
                       }`}
                 </p>
-                <Link href={`/buyer/cases/${c.id}/verify`} className={primaryButtonClass}>
-                  Check Repair &amp; Sign Off
-                </Link>
+                {c.signoffOverdueAt || signoffOver ? null : c.verificationStatus === "verified" ? (
+                  <Link href="/buyer/cases" className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200">
+                    <CheckCircle2 className="size-4" /> Verified · Sign off your unit in My Defects
+                  </Link>
+                ) : (
+                  <Link href={`/buyer/cases/${c.id}/verify`} className={primaryButtonClass}>
+                    Verify Repair
+                  </Link>
+                )}
               </div>
             )}
             {c.status === "ESCALATION_PENDING" && (
@@ -244,7 +256,7 @@ export function CaseDetail() {
                 )}
               </Section>
             )}
-            {rating && <RatingDialog caseId={c.id} onDone={() => setRating(false)} />}
+            {rating && <RatingDialog unitId={c.unitId} onDone={() => setRating(false)} />}
 
             {/* What the buyer sent */}
             <Section title="Your Report">
@@ -361,6 +373,7 @@ export function CaseDetail() {
           ) : (
             <EmptyState icon={<FileText className="size-16" strokeWidth={1.5} />} text="The digital defect record is ready once your defect has been repaired." />
           ))}
+
       </div>
     </div>
   );

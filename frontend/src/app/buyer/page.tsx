@@ -3,6 +3,7 @@ import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList, Clock, Hea
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AssetPicker } from "@/components/asset-picker";
+import { HomeSignOffButton } from "@/components/unit-signoff";
 import { Avatar, BrandMark } from "@/components/brand";
 import { useRecentActivity } from "@/components/case-views";
 import { BuildingBanner } from "@/components/illustrations";
@@ -15,7 +16,7 @@ import { useDemo } from "@/lib/store";
 export default function BuyerHome() {
   const cases = useDemo((s) => s.cases);
   const messages = useDemo((s) => s.messages);
-  const own = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id && !c.historical), [cases]);
+  const own = useMemo(() => cases.filter((c) => c.buyerId === DEMO_BUYER.id), [cases]);
   const { sorted: mine } = useRecentActivity(own);
   const ongoing = mine.filter((c) => isOpen(c.status));
   const closed = mine.filter((c) => !isOpen(c.status));
@@ -54,13 +55,16 @@ export default function BuyerHome() {
                   Unit <span className="font-mono font-semibold text-zinc-900">{unit.id}</span>
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setPicking(true)}
-                className="shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-semibold text-brand ring-1 ring-brand/40 hover:bg-red-50"
-              >
-                Select Another Asset
-              </button>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPicking(true)}
+                  className="shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-semibold text-brand ring-1 ring-brand/40 hover:bg-red-50"
+                >
+                  Select Another Asset
+                </button>
+                <HomeSignOffButton unitId={unitId} />
+              </div>
             </div>
           </div>
           {picking && <AssetPicker value={unitId} onPick={setBuyerUnit} onClose={() => setPicking(false)} />}

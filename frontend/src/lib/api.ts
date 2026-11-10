@@ -51,6 +51,11 @@ export async function rateRepair(caseId: string, stars: number, comment: string)
   await apiAction(`/api/cases/${caseId}/rating`, { rating: stars, comment });
 }
 
+/** One rating for the buyer's latest unit sign-off (saved on every defect it closed). */
+export async function rateUnit(unitId: string, stars: number, comment: string) {
+  await apiAction(`/api/units/${unitId}/rating`, { rating: stars, comment });
+}
+
 export async function reopenCase(caseId: string, description: string, photoUrl: string) {
   await apiAction(`/api/cases/${caseId}/reopen`, { description, photo: photoUrl });
 }

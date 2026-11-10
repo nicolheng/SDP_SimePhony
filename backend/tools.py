@@ -599,7 +599,19 @@ def sign_off_unit(unit_id: str, note: str = "") -> dict:
             _save(conn, case_id, buyer_signed=1, buyer_signed_at=now, buyer_signoff_note=note)
             _emit(conn, case_id, "signoff.completed", f"Buyer signed off unit {unit_id}", party="buyer", unit_id=unit_id)
             _close_if_both_signed(conn, case_id)
-    return {"ok": True, "unit_id": unit_id, "closed": unit["caseIds"]}
+        record_id = _record_signoff(conn, unit_id, "signed", now, unit["caseIds"], note)
+    return {"ok": True, "unit_id": unit_id, "closed": unit["caseIds"], "record_id": record_id}
+
+
+def _record_signoff(conn: sqlite3.Connection, unit_id: str, kind: str, at: str, case_ids: list[str], note: str = "") -> str:
+    """Write the unit's defect rectification record (unit_signoffs) for one sign-off: kind signed or auto_closed."""
+    db.ensure_unit_signoffs(conn)
+    buyer = conn.execute("SELECT buyer_id FROM cases WHERE case_id = ?", (case_ids[0],)).fetchone() if case_ids else None
+    record_id = db.next_record_id(conn, "unit_signoffs")
+    conn.execute(
+        "INSERT INTO unit_signoffs (record_id, unit_id, buyer_id, kind, signed_at, case_ids, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (record_id, unit_id, buyer["buyer_id"] if buyer else None, kind, at, json.dumps(case_ids), (note or "").strip() or None))
+    return record_id
 
 
 def _reopen(conn: sqlite3.Connection, case: dict, description: str) -> int:
@@ -2055,6 +2067,38 @@ def record_rating(case_id: str, rating: int, comment: str = "") -> dict:
 
 
 @_returns_errors
+def record_unit_rating(unit_id: str, rating: int, comment: str = "") -> dict:
+    """Buyer's satisfaction with a unit sign-off (1-5 stars, optional comment): one rating per sign-off, saved on
+    every defect that sign-off closed (so the per-category figures still work). The latest sign-off of the unit that
+    is not rated yet. Returns {ok, rating, case_ids}."""
+    if not isinstance(rating, int) or not 1 <= rating <= 5:
+        raise ToolError("Please choose a rating from 1 to 5 stars.")
+    with _connect() as conn:
+        last = conn.execute(
+            "SELECT MAX(buyer_signed_at) AS at FROM cases WHERE unit_id = ? AND buyer_signed_at IS NOT NULL", (unit_id,)
+        ).fetchone()["at"]
+        if not last:
+            raise ToolError("You can rate the repairs after you have signed off your unit.")
+        batch = [r["case_id"] for r in conn.execute(
+            "SELECT case_id FROM cases WHERE unit_id = ? AND buyer_signed_at = ? AND buyer_rating IS NULL ORDER BY case_id",
+            (unit_id, last))]
+        if not batch:
+            raise ToolError("You have already rated this sign-off.")
+        comment = (comment or "").strip()
+        now = _now(conn)
+        db.ensure_unit_signoffs(conn)
+        conn.execute(
+            "UPDATE unit_signoffs SET rating = ?, rating_comment = ?, rated_at = ? WHERE unit_id = ? AND signed_at = ? AND kind = 'signed'",
+            (rating, comment or None, now, unit_id, last))
+        for case_id in batch:
+            _save(conn, case_id, buyer_rating=rating, buyer_rating_comment=comment or None, buyer_rated_at=now)
+            _emit(conn, case_id, "feedback.submitted",
+                  f"Buyer rated the unit {unit_id} sign-off {rating}/5" + (f' — "{comment}"' if comment else ""),
+                  rating=rating, unit_id=unit_id)
+    return {"ok": True, "rating": rating, "case_ids": batch}
+
+
+@_returns_errors
 def reopen_case(case_id: str, description: str, photo: str) -> dict:
     """Buyer reopens a CLOSED case within the grace period (rules.yaml grace_period_days, counted on the
     demo clock from closed_at) with a mandatory new photo (-> REOPENED; RecurrenceAgent runs next).
@@ -2164,6 +2208,7 @@ def sweep_signoffs() -> list[dict]:
                 else:
                     mark("auto_closed", "case.closed", f"Closed automatically with unit {unit_id}: no buyer sign-off within {p} days",
                          status="CLOSED", closed_at=deadline, auto_closed_at=deadline)
+                    _record_signoff(conn, unit_id, "auto_closed", deadline, [c["case_id"] for c in cases])
                     message("Repairs closed automatically", f"Unit {unit_id}: {refs}. We didn't receive your sign-off within "
                             f"{p} days, so these repairs were closed. If a problem comes back, you can reopen it within "
                             f"{g} days with a new photo.")
