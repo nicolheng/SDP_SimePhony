@@ -306,7 +306,7 @@ export function JobDetail() {
                     onClick={() =>
                       run(
                         () => recordVerdict(c.id, "VALID", note.trim(), photo, hours ?? undefined),
-                        "Marked valid: buyer asked to book a repair",
+                        "Marked valid: the repair is being booked",
                       )
                     }
                     className="h-12 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:bg-zinc-200 disabled:text-zinc-400"

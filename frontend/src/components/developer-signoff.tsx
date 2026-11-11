@@ -64,7 +64,7 @@ export function DeveloperSignoffPanel({ c }: { c: Case }) {
         toast.success(c.signoff?.buyer ? "Approved: case closed" : "Approved: buyer asked to sign off");
       } else {
         await rejectRepair(c.id, note.trim());
-        toast.success("Sent back: the buyer will book a new repair");
+        toast.success("Sent back: a new repair is being booked");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
