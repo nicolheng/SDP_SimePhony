@@ -1699,9 +1699,12 @@ def _fmt_hours(h: float) -> str:
 
 
 @_returns_errors
-def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: Optional[str] = None, photo: Optional[str] = None) -> dict:
+def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: Optional[str] = None, photo: Optional[str] = None,
+                pin: Optional[dict] = None) -> dict:
     """Buyer reports a defect (-> SUBMITTED; intake runs next). preferred_slot: the visit time the buyer
-    picked (ISO). photo: data URL or local file path. Returns {ok, case_id, status, preferred_visit_at, photo}."""
+    picked (ISO). photo: data URL or local file path. pin: where the buyer tapped the unit floor plan,
+    {x, y, room} from floor_plan.resolve_pin (x, y None for "Whole unit"); IntakeAgent then takes the room from it.
+    Returns {ok, case_id, status, preferred_visit_at, photo}."""
     if not description.strip():
         raise ToolError("Please describe the problem.")
     with _connect() as conn:
@@ -1714,6 +1717,8 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
                VALUES (?, ?, ?, 'SUBMITTED', ?, 1, 0, ?, ?)""",
             (case_id, unit_id, buyer_id, description.strip(), preferred, _now(conn)),
         )
+        if pin:  # pin columns only when there is a pin: reports without one work on a database not yet migrated
+            _save(conn, case_id, pin_x=pin.get("x"), pin_y=pin.get("y"), pin_room=pin.get("room"))
         saved = _save_photo(conn, case_id, photo, "original")
         _emit(conn, case_id, "case.created", f"Buyer submitted a defect report{' with photo' if saved else ''}", preferred_visit_at=preferred)
     return {"ok": True, "case_id": case_id, "status": "SUBMITTED", "preferred_visit_at": preferred, "photo": saved}

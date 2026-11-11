@@ -9,6 +9,7 @@ import { ArrangingSoon } from "@/components/arranging-soon";
 import { useSignoffOverdue, useUnitSignoff } from "@/components/unit-signoff";
 import { TechAvatar } from "@/components/brand";
 import { DefectRecordCard } from "@/components/defect-record";
+import { CasePinMap } from "@/components/floor-plan";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { recordAvailable } from "@/lib/defect-record";
 import { EmptyState, MobileHeader, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
@@ -303,6 +304,7 @@ export function CaseDetail() {
                   </Row>
                 </dl>
               )}
+              <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-3" />
             </Section>
 
             {/* Inspection + repair */}

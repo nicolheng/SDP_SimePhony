@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 
 import db
+import floor_plan
 import tools
 from agents.simephony.llm_client import ai_only
 from agents.telemetry import record_agent_reasoning, telemetry_payload, telemetry_scope
@@ -219,7 +220,10 @@ def _cleanup_temp_photos(temporary_photos: list[str]) -> None:
 
 # ---------- IntakeAgent ----------
 
-def intake(ctx, description: str, photo: str | None, has_photo: bool | None = None, case_id: str | None = None) -> dict:
+def intake(ctx, description: str, photo: str | None, has_photo: bool | None = None, case_id: str | None = None,
+           pin_room: str | None = None) -> dict:
+    """pin_room: the room the buyer pinned on the floor plan (or "Whole unit"). It becomes the location, so no
+    follow-up question asks which room it is (floor_plan.apply_pin); other missing details are still asked."""
     stand = standins.intake(description, bool(photo) if has_photo is None else has_photo)
     if "non_defect" in stand:
         return stand  # the rule-based building-management screen stays in front
@@ -231,7 +235,7 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
             image = _photo_path(ctx, case_id, "original", temporary_photos, photo)
             result = intake_node({
                 "case_id": case_id,
-                "user_description": description,
+                "user_description": floor_plan.intake_text(description, pin_room),
                 "image_path": image,
                 "decide_only": True,
             })
@@ -253,8 +257,7 @@ def intake(ctx, description: str, photo: str | None, has_photo: bool | None = No
                 "needs_human_review": result.get("needs_human_review", False),
                 "review_reason": result.get("review_reason"),
                 "review_step": "IntakeAgent"}
-    return _run(ctx, "intake", ai, lambda: stand,
-                {"case_id": case_id})
+    return floor_plan.apply_pin(_run(ctx, "intake", ai, lambda: stand, {"case_id": case_id}), pin_room, description)
 
 
 # ---------- SimilarDefectAgent ----------

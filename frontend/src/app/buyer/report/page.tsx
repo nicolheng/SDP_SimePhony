@@ -1,5 +1,5 @@
 "use client";
-import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, MapPin, Plus, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { ArrangingSoon } from "@/components/arranging-soon";
 import { AssetPicker } from "@/components/asset-picker";
 import { TechAvatar } from "@/components/brand";
 import { useCase, useCaseEvents } from "@/components/case-views";
+import { FloorPlan, WHOLE_UNIT, type PlanPin } from "@/components/floor-plan";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { BuildingBanner } from "@/components/illustrations";
 import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
@@ -20,8 +21,9 @@ import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { setBuyerUnit, useBuyerUnit } from "@/lib/session";
 import { useDemo } from "@/lib/store";
 import type { Category, Urgency } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-const EXAMPLES = ["Ceiling in master bedroom seems to be leaking", "Bocor"];
+const EXAMPLES = ["Water stain on the ceiling, seems to be leaking", "Bocor"];
 
 /** What the priority badge means for the buyer (high urgency books the earliest technician and is watched by SDP staff). */
 const PRIORITY_NOTE: Record<Urgency, string> = {
@@ -46,19 +48,28 @@ const CARE_TIP: Record<Category, string> = {
   other: "Avoid using or disturbing the affected area until the technician has inspected it.",
 };
 
-/** One defect in the report: its photo and what the buyer says about it. Each becomes its own case. */
+/** Where a defect is: a spot on the unit floor plan (fractions 0-1) and its room, or the whole unit. */
+type DefectPin = { x: number; y: number; room: string } | "whole_unit";
+
+/** One defect in the report: its photo, where it is and what the buyer says about it. Each becomes its own case. */
 interface DefectItem {
   id: number;
   photo: string;
+  pin: DefectPin;
   text: string;
 }
+
+const DRAFT_ID = -1;
+const pinRoom = (p: DefectPin) => (p === "whole_unit" ? WHOLE_UNIT : p.room);
 
 export default function ReportDefect() {
   const now = useDemo((s) => s.now);
   // Defects already added to this report, plus the one being written now.
   const [items, setItems] = useState<DefectItem[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [pin, setPin] = useState<DefectPin | null>(null);
   const [text, setText] = useState("");
+  const [moving, setMoving] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [caseIds, setCaseIds] = useState<string[]>([]);
   const [nonDefect, setNonDefect] = useState<string | null>(null);
@@ -69,17 +80,27 @@ export default function ReportDefect() {
   const dlpEnd = getUnit(unitId).dlpExpiry;
   const dlpOver = !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
 
-  const draftReady = !!photo && !!text.trim();
-  const draftStarted = !!photo || !!text.trim();
+  const draftReady = !!photo && !!pin && !!text.trim();
+  const draftStarted = !!photo || !!pin || !!text.trim();
   // Everything that will be submitted: the added defects, plus the current one when it is complete.
-  const toSubmit = draftReady ? [...items, { id: -1, photo: photo!, text: text.trim() }] : items;
+  const toSubmit = draftReady ? [...items, { id: DRAFT_ID, photo: photo!, pin: pin!, text: text.trim() }] : items;
   const canSubmit = toSubmit.length > 0 && (!draftStarted || draftReady) && !busy && !dlpOver;
+  const addedPins: PlanPin[] = items.flatMap((it, i) => (it.pin === "whole_unit" ? [] : [{ x: it.pin.x, y: it.pin.y, label: String(i + 1) }]));
+  const draftRoom = pin ? pinRoom(pin) : null;
 
   function addAnother() {
     if (!draftReady) return;
-    setItems((xs) => [...xs, { id: Date.now(), photo: photo!, text: text.trim() }]);
+    setItems((xs) => [...xs, { id: Date.now(), photo: photo!, pin: pin!, text: text.trim() }]);
     setPhoto(null);
+    setPin(null);
     setText("");
+  }
+
+  function movePin(x: number, y: number, room: string) {
+    if (moving === null) return;
+    if (moving === DRAFT_ID) setPin({ x, y, room });
+    else setItems((xs) => xs.map((it) => (it.id === moving ? { ...it, pin: { x, y, room } } : it)));
+    setMoving(null);
   }
 
   async function submit() {
@@ -90,7 +111,8 @@ export default function ReportDefect() {
     // One case per photo: the system files each defect separately, so each gets its own technician and record.
     for (const it of toSubmit) {
       try {
-        const r = await submitReport({ description: it.text, photoUrl: it.photo, unitId, buyerId: DEMO_BUYER.id }, (id) => {
+        const where = it.pin === "whole_unit" ? "whole_unit" : { x: it.pin.x, y: it.pin.y };
+        const r = await submitReport({ description: it.text, photoUrl: it.photo, pin: where, unitId, buyerId: DEMO_BUYER.id }, (id) => {
           created.push(id);
           setCaseIds([...created]);
         });
@@ -149,11 +171,17 @@ export default function ReportDefect() {
                   <img src={it.photo} alt={`Defect ${i + 1}`} className="size-16 shrink-0 rounded-lg object-cover" />
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Defect {i + 1}</p>
+                    <p className="flex items-center gap-1 text-xs font-medium text-zinc-600">
+                      <MapPin className="size-3 shrink-0 text-brand" /> {pinRoom(it.pin)}
+                    </p>
                     <p className="line-clamp-2 text-sm text-zinc-800">{it.text}</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setItems((xs) => xs.filter((x) => x.id !== it.id))}
+                    onClick={() => {
+                      setItems((xs) => xs.filter((x) => x.id !== it.id));
+                      setMoving(null);
+                    }}
                     className="grid size-7 shrink-0 place-items-center self-start rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
                     aria-label={`Remove defect ${i + 1}`}
                   >
@@ -168,14 +196,45 @@ export default function ReportDefect() {
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Defect {items.length + 1}</p>
             <PhotoInput value={photo} onChange={setPhoto} />
             {photo && (
-              <div className="mt-3">
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-zinc-900">Where is it?</p>
+                <p className="mb-2 text-xs text-zinc-500">Tap the spot on your floor plan. Tap again to move the pin.</p>
+                <div className="rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
+                  <FloorPlan
+                    unitId={unitId}
+                    pins={[...addedPins, ...(pin && pin !== "whole_unit" ? [{ x: pin.x, y: pin.y, label: String(items.length + 1), active: true }] : [])]}
+                    onPick={(x, y, room) => setPin({ x, y, room })}
+                    className={pin === "whole_unit" ? "opacity-50" : undefined}
+                    label={`Floor plan of unit ${unitId}: tap where defect ${items.length + 1} is`}
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className={cn("flex items-center gap-1 text-sm", draftRoom ? "font-medium text-zinc-900" : "text-zinc-500")} aria-live="polite">
+                    <MapPin className={cn("size-4", draftRoom ? "text-brand" : "text-zinc-400")} />
+                    {draftRoom ?? "No spot marked yet"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPin(pin === "whole_unit" ? null : "whole_unit")}
+                    aria-pressed={pin === "whole_unit"}
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition",
+                      pin === "whole_unit" ? "bg-brand text-white ring-brand" : "text-zinc-700 ring-zinc-300 hover:bg-zinc-100",
+                    )}
+                  >
+                    Whole unit / not one spot
+                  </button>
+                </div>
+              </div>
+            )}
+            {photo && pin && (
+              <div className="mt-4">
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   rows={3}
                   maxLength={500}
-                  autoFocus
-                  placeholder="Tell us what's wrong."
+                  placeholder={pin === "whole_unit" ? "Tell us what's wrong." : `Tell us what's wrong in the ${pinRoom(pin).toLowerCase()}.`}
                   className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                 />
                 <p className="-mt-1 text-right text-xs text-zinc-400">{text.length} / 500</p>
@@ -198,8 +257,44 @@ export default function ReportDefect() {
           >
             <Plus className="size-4" /> Add Another Defect
           </button>
-          {draftStarted && !draftReady && <p className="mt-1.5 text-center text-[11px] text-zinc-500">Add a photo and a description to finish this defect.</p>}
+          {draftStarted && !draftReady && (
+            <p className="mt-1.5 text-center text-[11px] text-zinc-500">Add a photo, mark where it is and describe it to finish this defect.</p>
+          )}
         </Section>
+
+        {/* Review: every defect on one plan before submitting; tap a numbered pin, then the new spot, to move it. */}
+        {toSubmit.length > 1 && (!draftStarted || draftReady) && (
+          <Section title="Your Defects on the Floor Plan">
+            <p className="-mt-1 mb-2 text-xs text-zinc-500">
+              {moving === null
+                ? "Check each pin. To move one, tap it, then tap the new spot."
+                : `Now tap the new spot for defect ${toSubmit.findIndex((it) => it.id === moving) + 1}.`}
+            </p>
+            <div className="rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
+              <FloorPlan
+                unitId={unitId}
+                pins={toSubmit.flatMap((it, i) =>
+                  it.pin === "whole_unit" ? [] : [{ x: it.pin.x, y: it.pin.y, label: String(i + 1), active: it.id === moving }],
+                )}
+                onPinClick={(i) => {
+                  const placed = toSubmit.filter((it) => it.pin !== "whole_unit");
+                  setMoving((m) => (m === placed[i].id ? null : placed[i].id));
+                }}
+                onPick={moving === null ? undefined : movePin}
+                label="Floor plan with every defect in this report"
+              />
+            </div>
+            <ol className="mt-2 space-y-1">
+              {toSubmit.map((it, i) => (
+                <li key={it.id} className="flex items-center gap-2 text-xs text-zinc-700">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-zinc-500 text-[10px] font-bold text-white">{i + 1}</span>
+                  <span className="font-medium">{pinRoom(it.pin)}</span>
+                  <span className="truncate text-zinc-500">{it.text}</span>
+                </li>
+              ))}
+            </ol>
+          </Section>
+        )}
 
         {nonDefect && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{nonDefect}</p>}
 

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { EventTimeline, SimilarList, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
 import { BriefProgress } from "@/components/brief-progress";
 import { DefectRecordCard } from "@/components/defect-record";
+import { CasePinMap } from "@/components/floor-plan";
 import { DeveloperSignoffPanel } from "@/components/developer-signoff";
 import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
@@ -253,6 +254,7 @@ export function SdpCaseDetail() {
                 </div>
               ))}
             </dl>
+            <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-4 max-w-md" />
             <p className="mt-4 whitespace-pre-line rounded-lg bg-zinc-50 p-3 text-base text-zinc-700">&ldquo;{c.description}&rdquo;</p>
             {c.triageReason && <p className="mt-2 text-sm text-zinc-500">Triage: {c.triageReason}</p>}
           </Panel>
