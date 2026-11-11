@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { CaseChat } from "@/components/case-chat";
-import { CaseProgress, useCase, useCaseId } from "@/components/case-views";
+import { CaseProgress, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
 import { ArrangingSoon } from "@/components/arranging-soon";
 import { useSignoffOverdue, useUnitSignoff } from "@/components/unit-signoff";
 import { TechAvatar } from "@/components/brand";
@@ -115,6 +115,7 @@ const TABS: { id: Tab; label: string }[] = [
 export function CaseDetail() {
   const id = useCaseId();
   const c = useCase(id);
+  const events = useCaseEvents(id);
   const unitSignoff = useUnitSignoff(c?.unitId ?? "");
   const signoffOver = useSignoffOverdue(c?.unitId ?? "");
   const now = useDemo((s) => s.now);
@@ -124,8 +125,11 @@ export function CaseDetail() {
   const [rating, setRating] = useState(false);
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
-  // IntakeAgent hasn't finished: still missing a detail, or rerunning with the buyer's answer.
-  const assessing = c.status === "INFO_NEEDED" || c.status === "SUBMITTED";
+  // IntakeAgent hasn't finished: still missing a detail, or rerunning with the buyer's answer. Its result is shown as
+  // soon as IntakeAgent is done, without waiting for the booking that keeps the case SUBMITTED a little longer.
+  const since = Math.max(0, ...events.filter((e) => e.type === "case.answered").map((e) => e.id));
+  const intakeDone = events.some((e) => e.type === "agent.step" && e.agent === "IntakeAgent" && e.id > since);
+  const assessing = c.status === "INFO_NEEDED" || (c.status === "SUBMITTED" && !intakeDone);
   const reopenable = canReopen(c, now);
   const graceEnd = c.closedAt ? addDays(c.closedAt, RULES.gracePeriodDays) : null;
   const daysLeft = c.closedAt ? Math.max(0, Math.ceil(RULES.gracePeriodDays - daysBetween(c.closedAt, now))) : 0;
