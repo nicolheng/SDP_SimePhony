@@ -8,9 +8,11 @@ import { useDemo } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Ratings } from "./_overview/ratings";
 import { Reporting } from "./_overview/reporting";
+import { Statutory } from "./_overview/statutory";
 
 const TABS = [
   { id: "analytics", label: "Analytics" },
+  { id: "statutory", label: "Statutory Clocks" },
   { id: "ratings", label: "Ratings" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
@@ -23,7 +25,7 @@ export default function Page() {
   );
 }
 
-/** ?tab=ratings opens Ratings; Analytics is the default (the old /sdp/analytics and /sdp/satisfaction pages redirect here). */
+/** ?tab=statutory or ?tab=ratings opens that tab; Analytics is the default (the old /sdp/analytics and /sdp/satisfaction pages redirect here). */
 function SdpOverview() {
   const now = useDemo((s) => s.now);
   const router = useRouter();
@@ -49,6 +51,7 @@ function SdpOverview() {
         ))}
       </div>
       {tab === "analytics" && <Reporting />}
+      {tab === "statutory" && <Statutory />}
       {tab === "ratings" && <Ratings />}
     </div>
   );

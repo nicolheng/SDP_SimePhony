@@ -3,6 +3,7 @@ import { Bell, BookOpen, ChevronRight, ClipboardCheck, ClipboardList } from "luc
 import Link from "next/link";
 import { useMemo } from "react";
 import { BrandMark, TechAvatar } from "@/components/brand";
+import { useRecentActivity } from "@/components/case-views";
 import { QuickAction, SectionHead, SummaryStrip } from "@/components/mobile";
 import { dayKey, fmtDay, fmtTime } from "@/lib/dates";
 import { isOpen, TECH_TODO } from "@/lib/status";
@@ -13,7 +14,9 @@ export default function TechnicianHome() {
   const { tech, jobs } = useMyJobs();
   const now = useDemo((s) => s.now);
   const outbox = useDemo((s) => s.outbox);
-  const todo = useMemo(() => jobs.filter((c) => TECH_TODO.includes(c.status)).sort((a, b) => jobSlot(a).localeCompare(jobSlot(b))), [jobs]);
+  // Latest added or updated job first.
+  const { sorted } = useRecentActivity(jobs);
+  const todo = useMemo(() => sorted.filter((c) => TECH_TODO.includes(c.status)), [sorted]);
   const today = todo.filter((c) => dayKey(jobSlot(c)) === dayKey(now));
   const closed = jobs.filter((c) => !isOpen(c.status)).length;
   const inbox = useMemo(() => outbox.filter((e) => e.to === tech.email).length, [outbox, tech.email]);

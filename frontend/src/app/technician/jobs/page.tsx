@@ -1,11 +1,12 @@
 "use client";
 import { ClipboardX } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useRecentActivity } from "@/components/case-views";
 import { EmptyState, MobileHeader, SummaryStrip, UnderlineTabs } from "@/components/mobile";
 import { isOpen, TECH_TABS, TECH_TODO } from "@/lib/status";
 import type { Case, CaseStatus } from "@/lib/types";
 import { JobCard } from "../job-card";
-import { jobSlot, useMyJobs } from "../use-my-jobs";
+import { useMyJobs } from "../use-my-jobs";
 
 type TabId = (typeof TECH_TABS)[number]["id"];
 
@@ -18,11 +19,9 @@ export default function MyJobs() {
   const { jobs } = useMyJobs();
   const [tab, setTab] = useState<TabId>("todo");
 
-  const shown = useMemo(() => {
-    const list = jobs.filter((c) => inTab(c, tab));
-    // Upcoming work soonest first; everything else newest first.
-    return list.sort((a, b) => (tab === "todo" ? jobSlot(a).localeCompare(jobSlot(b)) : jobSlot(b).localeCompare(jobSlot(a))));
-  }, [jobs, tab]);
+  // Latest added or updated job first, the same order as the buyer's My Defects.
+  const { sorted } = useRecentActivity(jobs);
+  const shown = useMemo(() => sorted.filter((c) => inTab(c, tab)), [sorted, tab]);
 
   return (
     <div>

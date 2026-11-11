@@ -5,13 +5,20 @@ const AXIS = { fontSize: 14, fill: "#52525b" };
 const TOOLTIP = { contentStyle: { borderRadius: 10, border: "1px solid #e4e4e7", fontSize: 14 }, cursor: { fill: "#f4f4f5" } };
 
 /** Single-series horizontal bars: one hue, rounded data ends, hover tooltip. */
-export function HBars({ data, dataKey = "count", height = 280 }: { data: { name: string }[]; dataKey?: string; height?: number }) {
+export function HBars({ data, dataKey = "count", height = 280, labelWidth = 130 }: { data: { name: string }[]; dataKey?: string; height?: number; labelWidth?: number }) {
+  // Labels start at the left edge of the label column (left aligned) and every bar keeps its label.
+  // The tick x arrives 8px inside the column (tick size + margin), so +12 lands the text 4px from the edge.
+  const tick = ({ x, y, payload }: { x?: number | string; y?: number | string; payload?: { value?: unknown } }) => (
+    <text x={Number(x) - labelWidth + 12} y={Number(y)} dy={5} textAnchor="start" fontSize={AXIS.fontSize} fill={AXIS.fill}>
+      {String(payload?.value ?? "")}
+    </text>
+  );
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }} barCategoryGap={6}>
+      <BarChart data={data} layout="vertical" margin={{ left: 0, right: 16 }} barCategoryGap={6}>
         <CartesianGrid horizontal={false} stroke="#f4f4f5" />
         <XAxis type="number" tick={AXIS} axisLine={false} tickLine={false} allowDecimals={false} />
-        <YAxis type="category" dataKey="name" tick={AXIS} axisLine={false} tickLine={false} width={130} />
+        <YAxis type="category" dataKey="name" tick={tick} interval={0} axisLine={false} tickLine={false} width={labelWidth} />
         <Tooltip {...TOOLTIP} />
         <Bar dataKey={dataKey} name="Defects" fill="var(--brand)" radius={[0, 4, 4, 0]} />
       </BarChart>

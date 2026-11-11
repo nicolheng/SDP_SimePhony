@@ -2,15 +2,16 @@
 import { ChevronRight, Scale } from "lucide-react";
 import Link from "next/link";
 import { Kpi, Panel } from "@/components/sdp-ui";
+import { useAnalytics } from "@/lib/analytics";
 import { RULES } from "@/lib/constants";
 import { fmtDate } from "@/lib/dates";
 import type { Statutory } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Defect liability period per block and the 30-day repair-from-notice clock (rules.yaml statutory). */
-export function StatutoryClocks({ s }: { s: Statutory }) {
+export function StatutoryClocks({ s, tab }: { s: Statutory; tab?: boolean }) {
   return (
-    <section className="mt-8">
+    <section className={tab ? undefined : "mt-8"}>
       <h2 className="mb-3 flex items-center gap-2 text-xl font-semibold">
         <Scale className="size-5 text-zinc-500" /> Statutory Clocks
       </h2>
@@ -82,4 +83,12 @@ function DlpEndingSoon({ s }: { s: Statutory }) {
       </ul>
     </Panel>
   );
+}
+
+/** Overview › Statutory tab: the clocks on their own page (calculated by the backend with the analytics). */
+export function Statutory() {
+  const a = useAnalytics();
+  if (!a) return <p className="rounded-2xl bg-white p-6 text-base text-zinc-600 ring-1 ring-zinc-200">Statutory clocks are calculated by the backend. Start it to see them.</p>;
+  if (!a.statutory) return <p className="rounded-2xl bg-white p-6 text-base text-zinc-600 ring-1 ring-zinc-200">No statutory data yet.</p>;
+  return <StatutoryClocks s={a.statutory} tab />;
 }

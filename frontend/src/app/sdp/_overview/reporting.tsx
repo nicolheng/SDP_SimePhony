@@ -2,7 +2,6 @@
 import { HBars, Kpi, Panel, TrendLine } from "@/components/sdp-ui";
 import { useAnalytics } from "@/lib/analytics";
 import { CATEGORY_LABEL } from "@/lib/constants";
-import { StatutoryClocks } from "./statutory";
 
 /** Overview › Analytics: reporting only (KPIs, trend, recurring units, category and block breakdowns).
  *  Systemic detection and the stack heatmap live on the Systemic Issues page. */
@@ -47,10 +46,10 @@ export function Reporting() {
           </ol>
         </Panel>
         <Panel title="Defects by Category">
-          <HBars data={a.byCategory} height={340} />
+          <HBars data={a.byCategory} height={340} labelWidth={130} />
         </Panel>
         <Panel title="Defects by Block">
-          <HBars data={blocks} dataKey="total" height={170} />
+          <HBars data={blocks} dataKey="total" height={170} labelWidth={72} />
           <table className="mt-4 w-full text-base">
             <thead>
               <tr className="text-left text-sm text-zinc-500">
@@ -71,8 +70,6 @@ export function Reporting() {
           </table>
         </Panel>
       </div>
-
-      {a.statutory && <StatutoryClocks s={a.statutory} />}
     </>
   );
 }
