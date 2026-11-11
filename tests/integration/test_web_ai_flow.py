@@ -880,6 +880,30 @@ def test_only_mode_question_and_booking_are_saved_before_the_buyer_message(fake_
     assert _messages(case_id)[-1]["title"] == "We've received your report"
 
 
+def test_only_mode_unsure_intake_asks_the_buyer_before_sdp_review(fake_llm, monkeypatch):
+    # Live: "Bocor" + a blurry photo scored 0.60, so it went to SDP review instead of asking which room (A6).
+    from demo_api import ai_agents, routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    real_intake = ai_agents.intake
+
+    def unsure(*args, **kwargs):
+        return {**real_intake(*args, **kwargs), "needs_human_review": True, "confidence_score": 0.6,
+                "review_reason": "AI abstained due to low confidence (score: 0.60). Routed to human review.",
+                "review_step": "IntakeAgent"}
+
+    monkeypatch.setattr(ai_agents, "intake", unsure)
+    response, tasks = _api_report(text="Water keeps dripping from the ceiling.")  # names no room: IntakeAgent asks
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    assert _case(case_id)["status"] == "INFO_NEEDED"  # asked the buyer, not held for SDP
+    assert _messages(case_id)[-1]["title"] == "We need a little more information"
+
+    tasks = __import__("fastapi").BackgroundTasks()
+    routes.follow_up(case_id, routes.FollowUp(answer="In the master bedroom, above the wardrobe."), _request("/follow-up"), tasks)
+    _run_task(tasks, workflow.process_new_report)
+    assert _case(case_id)["status"] == "VISIT_SCHEDULED"  # the answer is taken as given
+
+
 def test_only_mode_mark_repaired_returns_before_the_photo_check(fake_llm, ai_on, photo_check_resolved, monkeypatch):
     # The photo check (vision model, 9-18 s live) froze the Mark Repaired button: it now runs after the click.
     import db

@@ -218,12 +218,15 @@ def _save_intake(ctx: Ctx, case_id: str, result: dict) -> bool:
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     c = load_case(ctx, case_id)
     step(ctx, case_id, "IntakeAgent", f"Category: {config.CATEGORY_LABEL.get(c['category'])} › {c['sub_category']}; location: {c['location_in_unit'] or 'missing'}; urgency: {c['urgency']}")
-    if result.get("needs_human_review"):
-        _route_to_human_review(ctx, case_id, result)
-        return False
+    # The question comes first: a vague report ("Bocor" + a blurry photo) scores low *because* details are missing,
+    # and the buyer can give them, SDP can't. Their answer is then taken as given (no review), so a person is only
+    # asked when there is nothing to ask the buyer and the AI is still unsure.
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", f"Missing info ({', '.join(result['missing_info'])}): asking a follow-up question")
         notify_buyer(ctx, case_id, "info_needed")
+        return False
+    if result.get("needs_human_review"):
+        _route_to_human_review(ctx, case_id, result)
         return False
     return True
 
