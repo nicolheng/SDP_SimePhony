@@ -38,7 +38,7 @@ backend/            FastAPI web API (demo_api/), tools.py (all business rules + 
 frontend/           Next.js apps: buyer and technician (mobile), SDP console (desktop)
 data/               seed.db (committed demo data); simephony.db (live, gitignored)
 tests/              unit, integration and functional tests (pytest)
-scripts/            demo_flow.py: watch the agents run through scenarios end to end
+scripts/            check_llm.py: tests that your AI model setup works
 rules.yaml          business rules: categories, urgency, grace period, escalation thresholds
 CONTRACTS.md        statuses, events, tools and DB rules shared by the team
 ```
@@ -82,7 +82,7 @@ cd frontend
 npm run dev
 ```
 
-In the SDP console, **Reset demo** restores the demo data from `data/seed.db`. The buyer app is signed in
+In the SDP console, **Reset demo** restores the demo data from `data/seed.db` (the same as `POST /demo/reset` on the backend). The buyer app is signed in
 as the demo buyer of unit A-12-08. See [frontend/README.md](frontend/README.md) for a 3-minute demo script.
 
 ### Settings
@@ -91,13 +91,13 @@ All settings live in `.env`, and [.env.example](.env.example) has the full list.
 
 | Setting | What it does |
 |---|---|
-| `USE_AI_AGENTS` | Turns the AI agents on. **The demo uses `only`**: every agent's answer is the one saved, and nothing falls back to the rule-based stand-ins, so what you see is the AI's own work. `true` or `all` runs every agent but lets the rules take over when a step fails (safer on a slow laptop or a busy free tier), `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. A new report is saved first and its agents run straight after, on the progress screen. Buyer messages, the repair estimate, and an approved extra inspection's brief and booking are made just after a click is saved, so buttons like Accept, Valid and Approve extra inspection don't wait. Mark Repaired still waits for the photo check. A failed AI step holds a new report for SDP review, shows an error on the click, or, after a click, is noted in the case trace. |
+| `USE_AI_AGENTS` | Turns the AI agents on. **The demo uses `true`**: the AI decides first, and the rules take over only when a step fails or gives a broken answer (safer on a slow laptop or a busy free tier; SDP's "Why the AI decided this" marks each step AI or Rules (backup)). `only` is the same but with no rule-based backup: a failed step is held for SDP review or shows an error, so you see only the AI's own work. `false` or empty uses only the rule-based stand-ins, and a list like `comms,triage` runs just those. The names are intake, similar, triage, estimate, verification, inspection and comms. A new report is saved first and its agents run straight after, on the progress screen. Buyer messages, the repair estimate, and an approved extra inspection's brief and booking are made just after a click is saved, so buttons like Accept, Valid, Mark Repaired and Approve extra inspection don't wait. One model call, retries included, stops after twice its time limit (`LLM_TIMEOUT_TEXT` / `LLM_TIMEOUT_VISION`). In `only`, a failed AI step holds a new report for SDP review, shows an error on the click, or, after a click, is noted in the case trace. |
 | `LLM_BASE_URL`, `LLM_API_KEY` | The AI server. Defaults to local Ollama. |
 | `MODEL_TEXT`, `MODEL_VL` | The text and vision models. Changing a model only needs this `.env` edit. |
-| `LLM_TIMEOUT_TEXT`, `LLM_TIMEOUT_VISION` | Seconds to wait per attempt before trying again, then falling back to the rules (in `only` mode, showing an error). Raise these if a slow laptop falls back on normal runs. |
+| `LLM_TIMEOUT_TEXT`, `LLM_TIMEOUT_VISION` | Seconds to wait per attempt before trying again, then falling back to the rules (in `only` mode, showing an error). Raise these if a slow laptop falls back on normal runs. For Gemini, `LLM_TIMEOUT_TEXT=10` is a good value. |
 | `LLM_MAX_TOKENS` | Longest JSON answer a model may write, which stops runaway output. |
 | `LLM_REASONING_EFFORT`, `LLM_MAX_RETRIES` | For cloud models. How hard the model thinks before answering (`low` keeps it quick), and how many times a call is tried again, for example when a free tier says "too many requests". |
-| `EMAIL_ENABLED` | Off in `.env.example`, so emails only go to the `outbox` table. Set it to `true` after adding real Gmail details. |
+| `EMAIL_ENABLED` | `true` sends real emails through Gmail. `false` only saves them to the `outbox` table. `.env.example` ships `false`. If it is not set at all, it counts as `true`, but nothing is sent until the Gmail details are filled in. See [Email setup](#email-setup). |
 | `EMBEDDINGS_ENABLED` | `false` skips the embedding model used to search for similar past cases. |
 
 ### Cloud model (no Ollama needed)
@@ -123,13 +123,85 @@ several requests, so if a whole team tests on one key, the limit can run out.
 
 Restart the backend after changing `.env`.
 
+## Email setup
+
+SimePhony sends real emails to buyers, technicians and SDP staff (case updates, visit and repair times,
+approval requests). It uses Gmail SMTP with an **app password**. No Google Cloud project is needed.
+
+Every email is also saved in the `outbox` table, whether it was sent or not. If sending fails, the app keeps
+working and the outbox row records the error.
+
+### 1. Make a Gmail app password
+
+1. Use a Gmail account for the team, for example a new one made for the demo.
+2. Open your Google Account, then **Security**.
+3. Turn on **2-Step Verification** if it is off. App passwords need it.
+4. Search for **App passwords** (Security, 2-Step Verification, App passwords). Create one, name it
+   `SimePhony`, and copy the 16-letter password.
+5. Never paste this password in git, chat or the README.
+
+### 2. Fill in `.env`
+
+```
+EMAIL_ENABLED=true
+GMAIL_ADDRESS=your_team_email@gmail.com
+GMAIL_APP_PASSWORD=your_16_letter_app_password
+EMAIL_REDIRECT_TO=your_real_email@gmail.com
+EMAIL_FROM_NAME=SimePhony Defect Care
+SDP_STAFF_EMAIL=sdp_manager@example.com
+```
+
+| Variable | What it does |
+|---|---|
+| `EMAIL_ENABLED` | `true` turns sending on. `false` turns it off. |
+| `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | The Gmail login used to send. Both must be set, or nothing is sent. |
+| `EMAIL_REDIRECT_TO` | Sends **every** email to this one inbox instead of the buyer or technician. Use it while testing so you never email the seed addresses. Leave it empty to send to the real addresses. |
+| `EMAIL_FROM_NAME` | The sender name people see. |
+| `SDP_STAFF_EMAIL` | Where SDP staff emails go (for example, "No technician available"). |
+| `FRONTEND_BASE_URL` | Optional. The web app address used for links in emails. Default `http://localhost:3000`. |
+| `API_BASE_URL` | The backend address used for the "Add to Calendar" link in emails. Default `http://localhost:8001`. |
+
+Restart the backend after you change `.env`.
+
+### 3. Test that an email is sent
+
+1. Start the backend and the web app.
+2. In the buyer app, submit a new defect report.
+3. Check the inbox in `EMAIL_REDIRECT_TO`. An email from "SimePhony Defect Care" should arrive within a minute.
+4. Not there? Look in the SDP console, or at the `outbox` table in `data/simephony.db`. The `status` column is
+   `sent` or `logged, not sent`, and the `error` column says why. Also check the Spam folder.
+
+Common errors: `GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set` (fill in both), and a Gmail login error (the app
+password is wrong, or 2-Step Verification is off).
+
+### Calendar invitations (optional)
+
+Emails about a visit or repair always include an **Add to Calendar** link (a `.ics` file from the backend).
+That is enough for most demos. To also create a real Google Calendar event and invite the attendees:
+
+1. In Google Cloud, create an OAuth client of type **Desktop app** and download its JSON.
+2. Save it as `backend/oauth-credentials.json`.
+3. Run `python backend/setup_oauth.py` once and sign in. It writes `backend/token.json`.
+4. In `.env`, set `GOOGLE_CALENDAR_CREATE_EVENT=true`. Optional: `GOOGLE_CALENDAR_ID` (default `primary`) and
+   `GOOGLE_CALENDAR_SEND_UPDATES` (default `none`).
+
+Both JSON files are gitignored. Never commit them. If the Google call fails, the email with the `.ics` link
+is still sent.
+
+### Keep email off
+
+Set `EMAIL_ENABLED=false` in `.env` and restart the backend. Emails are then only saved to the `outbox`
+table and shown in the app. This is the safe choice when you are not testing email. Leaving the Gmail
+variables empty has the same effect.
+
 ## Tests
 
 ```bash
-pytest                          # all tests with a stand-in model; the live DB is never written
-pytest -m live_llm              # the same checks against the real Ollama models (slow)
-python scripts/demo_flow.py     # scenarios printed step by step; add --live for the real models
+python -m pytest -q             # all tests with a stand-in model; the live DB is never written
+python -m pytest -m live_llm   # the same checks against the real Ollama models (slow)
 ```
+
+Run these from the repo root with the virtual environment active.
 
 ## Team
 

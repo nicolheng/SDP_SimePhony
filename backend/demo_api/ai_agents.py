@@ -44,6 +44,13 @@ def enabled(name: str) -> bool:
     return name in {x.strip() for x in value.split(",")}
 
 
+def ai_first() -> bool:
+    """USE_AI_AGENTS=true or only (#81): the AI decides each step. In the web app the agents run after the click is
+    saved (process_new_report / run_after_click). The two modes differ only when an AI step fails or gives a broken
+    answer: true uses the rule-based answer, only holds the case for SDP review."""
+    return any(enabled(name) for name in AGENTS)
+
+
 def warmup_ollama_models() -> None:
     """Load configured Ollama models with a minimal completion before live requests use them."""
     if not any(enabled(name) for name in AGENTS):
@@ -68,11 +75,9 @@ def warmup_ollama_models() -> None:
 
 
 def _run(ctx, name: str, ai, fallback, background_args: dict | None = None, failure_fallback=None):
-    """Run inline, defer after commit, or use the rule-based result when disabled or unavailable."""
+    """Run the AI step; use the rule-based result when the agent is switched off, or when it fails in
+    USE_AI_AGENTS=true (in only the failure is raised and the case is held for SDP review)."""
     if not enabled(name):
-        return fallback()
-    if ctx.defer_agents and not ai_only():
-        ctx.defer_agent_step(name, **(background_args or {}))
         return fallback()
     error = None
     with telemetry_scope() as telemetry:
@@ -439,48 +444,3 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
         return message_for_kind(kind, case, extra)
     return _run(ctx, "comms", ai, lambda: standins.comms(ctx, kind, case, extra),
                 {"case_id": case["case_id"], "kind": kind, "extra": extra})
-
-
-def run_background_steps(case_id: str, steps: list[dict]) -> None:
-    """Run queued AI computations after the request commits, using fresh DB sessions and current case data."""
-    for step in steps:
-        name = step["name"]
-        try:
-            with db.get_conn() as conn:
-                from .workflow import Ctx, WorkflowError, latest_verification, load_case
-
-                ctx = Ctx(conn)
-                case = load_case(ctx, case_id)
-                result = None
-                if name == "intake":
-                    result = intake(ctx, case["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
-                elif name == "similar":
-                    result = similar(ctx, case)
-                elif name == "triage":
-                    result = triage(ctx, case, case.get("preferred_visit_at"))
-                elif name == "estimate":
-                    result = repair_estimate(ctx, case)
-                elif name == "verification":
-                    result = verification_guide(ctx, case)
-                elif name == "inspection":
-                    result = initial_inspection(ctx, case, case.get("verdict_note"), latest_verification(ctx, case_id))
-                elif name == "comms":
-                    result = comms(ctx, step["kind"], case, step.get("extra"))
-                else:
-                    raise ValueError(f"Unknown background agent step: {name}")
-                review = result[2] if name == "verification" and isinstance(result, tuple) and len(result) > 2 else result
-                if isinstance(review, dict) and review.get("needs_human_review"):
-                    with tools.use_connection(conn):
-                        review_result = tools.flag_case_for_human_review(
-                            case_id,
-                            review.get("review_step", _agent_label(name)),
-                            review.get("review_reason") or "AI abstained and routed the case to human review.",
-                            float(review.get("confidence_score", 0.0)),
-                        )
-                    if review_result.get("ok") is False:
-                        log.error("Could not route case %s to human review: %s", case_id, review_result["error"])
-                    break
-        except WorkflowError:
-            log.info("Skipping %s agent step for case %s because the case no longer exists", name, case_id)
-        except Exception:
-            log.exception("Background %s agent step failed for case %s", name, case_id)

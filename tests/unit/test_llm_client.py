@@ -97,6 +97,21 @@ def test_hung_server_fails_within_the_limit():
     assert time.perf_counter() - start < 5
 
 
+def test_retries_stop_at_the_total_time_limit():
+    # #81: 3 retries on a hung server used to cost the timeout 4 times (plus waits); the total is now about twice it
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        port = server.getsockname()[1]
+        client = OpenAI(base_url=f"http://127.0.0.1:{port}/v1", api_key="test", max_retries=3)
+
+        start = time.perf_counter()
+        with pytest.raises(APITimeoutError):
+            chat_json(client, "model", [{"role": "user", "content": "hi"}], SCHEMA, timeout=0.5)
+
+    assert time.perf_counter() - start < 1.8
+
+
 @pytest.mark.parametrize("data, mime", [
     (b"\xff\xd8\xff\xe0rest", "image/jpeg"),
     (b"\x89PNG\r\n\x1a\nrest", "image/png"),

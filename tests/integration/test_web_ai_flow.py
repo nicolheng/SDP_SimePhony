@@ -366,7 +366,9 @@ def test_api_defers_ai_until_the_action_is_committed(fake_llm, monkeypatch):
     assert fake_llm.calls == []
     assert len(tasks.tasks) == 1
     task = tasks.tasks[0]
-    assert task.func is ai_agents.run_background_steps
+    # USE_AI_AGENTS=all (#81): the AI decides first, after the report is saved
+    from demo_api import workflow
+    assert task.func is workflow.process_new_report
     assert task.args[0] == response["caseId"]
 
     task.func(*task.args, **task.kwargs)
@@ -441,14 +443,13 @@ def test_case_action_succeeds_while_background_agent_is_running(fake_llm, monkey
     agent_thread.start()
     try:
         assert started.wait(5)
-        case = _case(response["caseId"])
-        accepted = routes.accept(
-            response["caseId"],
-            routes.Worker(technician_id=case["technician_id"]),
+        # Another buyer's report is saved while the first report's AI is still working (no database lock)
+        other = routes.create_case(
+            routes.NewReport(unit_id="A-1-01", buyer_id="B-0001", description="Crack on the living room wall.", slot=""),
             request,
             BackgroundTasks(),
         )
-        assert "state" in accepted
+        assert other["caseId"] and "state" in other
     finally:
         release.set()
         agent_thread.join(timeout=10)
@@ -655,6 +656,27 @@ def test_only_mode_holds_the_report_for_review_when_an_agent_fails(fake_llm, mon
                                          (case_id,)).fetchone()["payload"])["message"]
     assert "could not finish" in reason and "IntakeAgent failed" in reason
     assert not _messages(case_id)  # no rule-based message was sent instead
+
+
+def test_true_mode_ai_decides_first_and_rules_take_over_when_it_fails(fake_llm, monkeypatch):
+    # #81: USE_AI_AGENTS=true runs the AI first (after the report is saved); the rules only answer when it fails
+    from demo_api import workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "true")
+    response, tasks = _api_report()
+    case_id = response["caseId"]
+    assert _case(case_id)["status"] == "SUBMITTED" and not fake_llm.calls  # saved first, nothing decided yet
+    _run_task(tasks, workflow.process_new_report)
+    assert fake_llm.calls and _case(case_id)["status"] == "VISIT_SCHEDULED"
+    assert not any((t.get("data") or {}).get("fallback_used") for t in _trace(case_id))  # the AI's answer was used
+
+    fake_llm.client.chat.completions.create.side_effect = RuntimeError("gemini down")
+    response, tasks = _api_report()
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    c = _case(case_id)
+    assert c["status"] == "VISIT_SCHEDULED" and c["technician_id"]  # the rules carried on: not held for SDP
+    assert any((t.get("data") or {}).get("fallback_used") for t in _trace(case_id))  # and the trace says so
+    assert _messages(case_id)[-1]["title"] == "We've received your report"
 
 
 # ---------- Repair sign-off: VerificationAgent's photo check goes to SDP, never to "Held for review" ----------
@@ -878,6 +900,30 @@ def test_only_mode_question_and_booking_are_saved_before_the_buyer_message(fake_
     _run_task(tasks, workflow.process_new_report)
     assert seen[-1] == ("received", "VISIT_SCHEDULED")
     assert _messages(case_id)[-1]["title"] == "We've received your report"
+
+
+def test_only_mode_unsure_intake_asks_the_buyer_before_sdp_review(fake_llm, monkeypatch):
+    # Live: "Bocor" + a blurry photo scored 0.60, so it went to SDP review instead of asking which room (A6).
+    from demo_api import ai_agents, routes, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    real_intake = ai_agents.intake
+
+    def unsure(*args, **kwargs):
+        return {**real_intake(*args, **kwargs), "needs_human_review": True, "confidence_score": 0.6,
+                "review_reason": "AI abstained due to low confidence (score: 0.60). Routed to human review.",
+                "review_step": "IntakeAgent"}
+
+    monkeypatch.setattr(ai_agents, "intake", unsure)
+    response, tasks = _api_report(text="Water keeps dripping from the ceiling.")  # names no room: IntakeAgent asks
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    assert _case(case_id)["status"] == "INFO_NEEDED"  # asked the buyer, not held for SDP
+    assert _messages(case_id)[-1]["title"] == "We need a little more information"
+
+    tasks = __import__("fastapi").BackgroundTasks()
+    routes.follow_up(case_id, routes.FollowUp(answer="In the master bedroom, above the wardrobe."), _request("/follow-up"), tasks)
+    _run_task(tasks, workflow.process_new_report)
+    assert _case(case_id)["status"] == "VISIT_SCHEDULED"  # the answer is taken as given
 
 
 def test_only_mode_mark_repaired_returns_before_the_photo_check(fake_llm, ai_on, photo_check_resolved, monkeypatch):

@@ -1,5 +1,5 @@
 "use client";
-import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, MessageSquare, ShieldAlert, Star, Wrench } from "lucide-react";
+import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, MessageSquare, ShieldAlert, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -308,7 +308,9 @@ export function CaseDetail() {
             </Section>
 
             {/* Inspection + repair */}
-            {(c.verdict || c.repairNote) && (
+            {/* Technician notes are internal (SDP and technician only): written for colleagues, they can say things
+                the developer must not tell a buyer ("we admit…"). The buyer's explanation is CommsAgent's message. */}
+            {(c.verdict || c.repairedAt) && (
               <Section title="Inspection & Repair">
                 <dl>
                   {c.verdict && (
@@ -319,12 +321,6 @@ export function CaseDetail() {
                   )}
                   {c.repairedAt && <Row label="Repaired on">{fmtDate(c.repairedAt)}</Row>}
                 </dl>
-                {c.verdict?.note && <p className="mt-2 text-sm text-zinc-700">Technician: &ldquo;{c.verdict.note}&rdquo;</p>}
-                {c.repairNote && (
-                  <p className="mt-2 flex gap-1.5 text-sm text-zinc-700">
-                    <Wrench className="mt-0.5 size-3.5 shrink-0 text-zinc-400" /> {c.repairNote}
-                  </p>
-                )}
                 {evidence.length > 0 && (
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     {evidence.map((p, i) => (

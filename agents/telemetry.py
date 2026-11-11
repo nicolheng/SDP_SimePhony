@@ -148,13 +148,13 @@ def tracked_chat_completion(client, **kwargs):
     start = perf_counter()
     response = None
     from agents.simephony import privacy
-    from agents.simephony.llm_client import extra_params
+    from agents.simephony.llm_client import create_completion, extra_params
     kwargs = {**extra_params(), **kwargs}
     redactor = None
     if isinstance(kwargs.get("messages"), list):
         kwargs["messages"], redactor = privacy.protect(kwargs["messages"])  # cloud model: no personal data
     try:
-        response = client.chat.completions.create(**kwargs)
+        response = create_completion(client, **kwargs)
         return privacy.restore_response(response, redactor)
     finally:
         if telemetry is not None:

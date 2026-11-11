@@ -59,13 +59,6 @@ def _run(request: Request, action=None, *args, background_tasks: BackgroundTasks
         if background_tasks and ctx.deferred_reports:
             for case_id in ctx.deferred_reports:
                 background_tasks.add_task(workflow.process_new_report, case_id)
-        if background_tasks and ctx.deferred_agent_steps:
-            case_id = extra.get("caseId") or next(
-                (step.get("case_id") for step in ctx.deferred_agent_steps if step.get("case_id")),
-                None,
-            )
-            if case_id:
-                background_tasks.add_task(ai_agents.run_background_steps, case_id, ctx.deferred_agent_steps)
         # Send queued fallback emails first so a slow Google API cannot delay them.
         if conn.execute("SELECT 1 FROM outbox WHERE status = 'queued' LIMIT 1").fetchone():
             if background_tasks:

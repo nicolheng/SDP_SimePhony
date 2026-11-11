@@ -35,17 +35,15 @@ class Ctx:
     def __init__(self, conn: sqlite3.Connection, defer_agents: bool = False):
         self.conn = conn
         self.defer_agents = defer_agents
-        self.deferred_agent_steps: list[dict] = []
         self.deferred_rain_cases: list[str] = []
         self.deferred_calendar_cases: list[str] = []
         self.deferred_reports: list[str] = []
         self.deferred_answers: list[tuple[str, str]] = []  # (case_id, answer): agents run after the request (only mode)
-        # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
+        # USE_AI_AGENTS=true or only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
         # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id)
         # | ("extra_inspection", case_id, approval_id) | ("verification", case_id).
         self.after_click: list[tuple] = []
-        from agents.simephony.llm_client import ai_only
-        self.async_ai = defer_agents and ai_only() and ai_agents.enabled("comms")
+        self.async_ai = defer_agents and ai_agents.ai_first()
         self.pending_agent_fallbacks: list[dict] = []
         self.pending_agent_telemetry: dict[str, dict] = {}
         row = conn.execute("SELECT value FROM app_meta WHERE key = 'clock_offset_days'").fetchone()
@@ -90,9 +88,6 @@ class Ctx:
     def invalidate(self) -> None:
         self._cases = None
         self._bookings = None
-
-    def defer_agent_step(self, name: str, **args) -> None:
-        self.deferred_agent_steps.append({"name": name, **args})
 
 
 # ---------- reads and the tools bridge ----------
@@ -202,8 +197,8 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     if left is not None and left < 0:
         raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
                             "so new defects can no longer be reported here. Please contact the developer directly.")
-    if ctx.defer_agents and ai_agents.ai_only():
-        # USE_AI_AGENTS=only: save the report now and let the agents work after the request returns
+    if ctx.defer_agents and ai_agents.ai_first():
+        # USE_AI_AGENTS=true or only: save the report now and let the agents work after the request returns
         # (process_new_report), so the buyer's progress screen shows each step as it really finishes.
         non_defect = agents.intake(description, bool(photo)).get("non_defect")
         if non_defect:
@@ -227,18 +222,21 @@ def _save_intake(ctx: Ctx, case_id: str, result: dict) -> bool:
     status = _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))["status"]
     c = load_case(ctx, case_id)
     step(ctx, case_id, "IntakeAgent", f"Category: {config.CATEGORY_LABEL.get(c['category'])} › {c['sub_category']}; location: {c['location_in_unit'] or 'missing'}; urgency: {c['urgency']}")
-    if result.get("needs_human_review"):
-        _route_to_human_review(ctx, case_id, result)
-        return False
+    # The question comes first: a vague report ("Bocor" + a blurry photo) scores low *because* details are missing,
+    # and the buyer can give them, SDP can't. Their answer is then taken as given (no review), so a person is only
+    # asked when there is nothing to ask the buyer and the AI is still unsure.
     if status == "INFO_NEEDED":
         step(ctx, case_id, "IntakeAgent", f"Missing info ({', '.join(result['missing_info'])}): asking a follow-up question")
         notify_buyer(ctx, case_id, "info_needed")
+        return False
+    if result.get("needs_human_review"):
+        _route_to_human_review(ctx, case_id, result)
         return False
     return True
 
 
 def process_new_report(case_id: str, answer: str | None = None) -> None:
-    """USE_AI_AGENTS=only: the agents for a report submit_report saved, run after that request has returned.
+    """USE_AI_AGENTS=true or only: the agents for a report submit_report saved, run after that request has returned.
     IntakeAgent's result is committed on its own, then the booking and buyer message, then the related cases,
     so the progress screen (3-second refresh) sees each step end. SimilarDefectAgent comes last because only the
     case page shows its links: the buyer's visit is booked about 7 s sooner. If intake or booking fails, the case
@@ -347,8 +345,8 @@ def _send_queued_emails(case_id: str) -> None:
 def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slot: str | None) -> None:
     """The buyer answers once: their answer is taken as given (it fills what was missing) and the case moves on to
     booking, even if the IntakeAgent is still unsure. The technician's inspection visit checks the details."""
-    if ctx.defer_agents and ai_agents.ai_only():
-        # USE_AI_AGENTS=only: save the answer now; IntakeAgent and the booking run after the request returns
+    if ctx.defer_agents and ai_agents.ai_first():
+        # USE_AI_AGENTS=true or only: save the answer now; IntakeAgent and the booking run after the request returns
         # (process_new_report), so the Send button doesn't wait about 15 s for the models.
         _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot, resume=True)
         ctx.deferred_answers.append((case_id, answer))

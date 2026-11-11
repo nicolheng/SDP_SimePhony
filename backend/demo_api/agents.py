@@ -247,8 +247,8 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
     messages = {
         "received": ("We've received your report", f"{ref}. We've asked a technician to inspect it and will confirm the visit time once they accept."),
         "info_needed": ("We need a little more information", f"{ref}. {case.get('follow_up_question') or ''}"),
-        "valid": ("Defect confirmed: repair being arranged", f"{ref}. The technician confirmed the defect: \"{extra.get('note', '')}\". We're booking the repair with the first available technician and will send you the time."),
-        "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect: \"{extra.get('note', '')}\". This case is now closed. If the problem gets worse or changes, please submit a new report."),
+        "valid": ("Defect confirmed: repair being arranged", f"{ref}. The technician confirmed the defect. We're booking the repair with the first available technician and will send you the time."),
+        "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect. This case is now closed. If the problem gets worse or changes, please submit a new report."),
         "repair_booked": ("Repair booked", f"{ref}. A technician has been asked to do the repair (estimated {extra.get('duration')}). We will confirm the time once they accept."),
         "verify": ("Repair done", f"{ref}. The repair is done. The developer reviews it first; we'll let you know when you can check it and sign off."),
         "ready_signoff": ("Please check the repair", f"{ref}. Our team has approved the repair. You can check it now in "
@@ -307,10 +307,8 @@ def verification_guide(case: dict) -> dict:
         steps = [f"Use the repaired {sub.lower() or 'fitting'} ({where}) normally 3 times (run the tap / flush).", "Check underneath and around it for drips or wet spots."]
     else:
         steps = [f"Check the item you reported (\"{case.get('description', '')}\") in the {loc.lower() or 'same spot'}: it should now work or look as expected."]
-    note = case.get("repair_note")
-    note_text = f' Technician\'s note: "{note}".' if note else ""
-    return {
-        "intro": f"Your {(case.get('summary') or '').lower()} was repaired.{note_text} Please check only these points:",
+    return {  # no technician note: notes are internal (SDP and technician only)
+        "intro": f"Your {(case.get('summary') or '').lower()} was repaired. Please check only these points:",
         "steps": steps,
         "ifFails": 'If any check fails, do not sign off: choose "Still not fixed" and add a photo. Your case will be reopened.',
     }
