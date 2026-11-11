@@ -880,6 +880,30 @@ def test_only_mode_question_and_booking_are_saved_before_the_buyer_message(fake_
     assert _messages(case_id)[-1]["title"] == "We've received your report"
 
 
+def test_only_mode_mark_repaired_returns_before_the_photo_check(fake_llm, ai_on, photo_check_resolved, monkeypatch):
+    # The photo check (vision model, 9-18 s live) froze the Mark Repaired button: it now runs after the click.
+    import db
+    from demo_api import workflow
+    case_id = _repaired("tests/data/test_cases/images/ceiling_repaired.jpg")  # sync path: reaches PENDING_SIGNOFF
+    assert _case(case_id)["status"] == "PENDING_SIGNOFF"
+
+    other = _web(workflow.submit_report, "A-1-01", "B-0001",
+                 "Water dripping from the master bedroom ceiling above the wardrobe.", _LEAK_PHOTO, None)["caseId"]
+    _web(workflow.accept_job, other, _case(other)["technician_id"])
+    _web(workflow.record_verdict, other, "VALID", "Pipe joint leaking above the wardrobe.", None)
+    _web(workflow.accept_job, other, _case(other)["technician_id"])
+    monkeypatch.setenv("USE_AI_AGENTS", "only")  # only the Mark Repaired click runs in only mode
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn, defer_agents=True)
+        calls = len(fake_llm.calls)
+        workflow.mark_repaired(ctx, other, "Resealed the joint.", "tests/data/test_cases/images/ceiling_repaired.jpg")
+        jobs = list(ctx.after_click)
+    assert len(fake_llm.calls) == calls  # the click returned before any model call
+    assert _case(other)["status"] == "REPAIRED" and ("verification", other) in jobs
+    workflow.run_after_click(jobs)
+    assert _case(other)["status"] == "PENDING_SIGNOFF"
+
+
 def test_only_mode_follow_up_answer_returns_before_the_agents_run(fake_llm, monkeypatch):
     from fastapi import BackgroundTasks
     from demo_api import routes, workflow

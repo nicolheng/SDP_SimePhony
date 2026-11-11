@@ -41,7 +41,7 @@ class Ctx:
         self.deferred_answers: list[tuple[str, str]] = []  # (case_id, answer): agents run after the request (only mode)
         # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
         # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id)
-        # | ("extra_inspection", case_id, approval_id).
+        # | ("extra_inspection", case_id, approval_id) | ("verification", case_id).
         self.after_click: list[tuple] = []
         from agents.simephony.llm_client import ai_only
         self.async_ai = defer_agents and ai_only() and ai_agents.enabled("comms")
@@ -307,6 +307,8 @@ def run_after_click(jobs: list[tuple]) -> None:
                     start_extra_inspection(ctx, case_id, job[2])
                 elif job[0] == "repair_booking":
                     book_repair_now(ctx, case_id)
+                elif job[0] == "verification":
+                    start_buyer_check(ctx, case_id)
                 else:
                     notify_buyer(ctx, case_id, job[2], **job[3])
         except Exception as e:
@@ -315,6 +317,7 @@ def run_after_click(jobs: list[tuple]) -> None:
                 with db.get_conn() as conn:
                     agent, what = {"estimate": ("RepairEstimateAgent", "repair estimate"),
                                    "repair_booking": ("TriageAgent", "repair booking"),
+                                   "verification": ("VerificationAgent", "repair photo check"),
                                    "extra_inspection": ("InitialInspectionAgent", "inspection brief and booking")
                                    }.get(job[0], ("CommsAgent", f"buyer message ({job[2]})"))
                     step(Ctx(conn), case_id, agent, f"Could not finish the {what}: {type(e).__name__}: {str(e)[:200]}")
@@ -595,6 +598,15 @@ def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str |
 
 def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.mark_repaired, case_id, note, photo)
+    if ctx.async_ai:  # the photo check (vision model, 9-18 s) runs right after the click, so the button doesn't freeze
+        ctx.after_click.append(("verification", case_id))
+        return
+    start_buyer_check(ctx, case_id)
+
+
+def start_buyer_check(ctx: Ctx, case_id: str) -> None:
+    """VerificationAgent after a repair: check the repair photo against the original, then give the buyer the
+    checklist (REPAIRED -> PENDING_SIGNOFF)."""
     c = load_case(ctx, case_id)
     guide, photo_note, review = ai_agents.verification_guide(ctx, c)
     if review and review.get("needs_human_review"):
