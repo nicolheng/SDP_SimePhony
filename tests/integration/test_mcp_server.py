@@ -72,8 +72,8 @@ def ok(result):
 
 
 def finish_other_defects(cid):
-    """Close the unit's other open defects (A-12-08 has C-0014 in seed.db), so the buyer may check this one:
-    the buyer checks repairs only once SDP has approved every open defect in the unit (#71)."""
+    """Close the unit's other open defects (A-12-08 has C-0014 in seed.db), so the unit can be signed off:
+    that needs every open defect in the unit approved by SDP and checked (#71)."""
     with db.get_conn() as conn:
         unit = conn.execute("SELECT unit_id FROM cases WHERE case_id = ?", (cid,)).fetchone()[0]
         conn.execute("UPDATE cases SET status = 'CLOSED', closed_at = created_at WHERE unit_id = ? AND case_id != ? "
@@ -175,11 +175,9 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
         case, _ = ui_case(cid)
         assert case["status"] == "PENDING_SIGNOFF" and case["verificationGuide"]["intro"] == "Your ceiling leak was repaired."
 
-        # Developer signs, buyer says not fixed (photo required) -> reopened. The buyer checks only once SDP has
-        # approved every open defect in the unit, so C-0014 blocks until it is finished.
+        # Developer signs, buyer says not fixed (photo required) -> reopened. The buyer can check it as soon as SDP
+        # approves it, even with C-0014 still open in the unit.
         ok(tools.record_signoff(cid, "developer"))
-        refused(tools.record_verification(cid, "NOT_FIXED", "Still damp", PHOTO), "C-0014")
-        finish_other_defects(cid)
         refused(tools.record_verification(cid, "NOT_FIXED", "Still damp"), "photo")
         assert ok(tools.record_verification(cid, "NOT_FIXED", "Still damp", PHOTO))["status"] == "REOPENED"
 
@@ -216,11 +214,14 @@ def test_full_lifecycle_escalation_reuses_si002_and_reopen_grace():
 
         # The developer approves first; the buyer can't check before them. Fixed only verifies the defect:
         # it closes when the buyer signs off the unit; a buyer can't sign off one defect on its own
-        refused(tools.record_verification(cid, "FIXED", "Dry after shower test"), "approved every defect")
+        refused(tools.record_verification(cid, "FIXED", "Dry after shower test"), "once our team has approved it")
         assert ok(tools.record_signoff(cid, "developer"))["status"] == "PENDING_SIGNOFF"
-        refused(tools.sign_off_unit("A-12-08"), "check every repair")
+        refused(tools.sign_off_unit("A-12-08"), "C-0014")
+        # Approved, so the buyer can check it even with C-0014 still open; the unit waits for C-0014
         checked = ok(tools.record_verification(cid, "FIXED", "Dry after shower test"))
-        assert checked["status"] == "PENDING_SIGNOFF" and checked["unit"]["ready"]
+        assert checked["status"] == "PENDING_SIGNOFF" and not checked["unit"]["ready"]
+        refused(tools.sign_off_unit("A-12-08"), "C-0014")
+        finish_other_defects(cid)
         refused(tools.record_signoff(cid, "buyer"), "whole unit")
         assert ok(tools.sign_off_unit("A-12-08"))["closed"] == [cid]
         assert (await call("get_case", case_id=cid))["status"] == "CLOSED"

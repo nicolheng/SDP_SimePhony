@@ -251,7 +251,9 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
         "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect: \"{extra.get('note', '')}\". This case is now closed. If the problem gets worse or changes, please submit a new report."),
         "repair_booked": ("Repair booked", f"{ref}. A technician has been asked to do the repair (estimated {extra.get('duration')}). We will confirm the time once they accept."),
         "verify": ("Repair done", f"{ref}. The repair is done. The developer reviews it first; we'll let you know when you can check it and sign off."),
-        "ready_signoff": ("Please check your repairs and sign off",
+        "ready_signoff": ("Please check the repair", f"{ref}. Our team has approved the repair. You can check it now in "
+                          "the app with its short checklist. You can sign off your unit once our team has approved the "
+                          "other repairs in it.") if extra.get("partial") else ("Please check your repairs and sign off",
                           f"{ref}. Our team has approved {'all ' + str(extra['count']) + ' repairs' if extra.get('count', 1) > 1 else 'the repair'} "
                           f"in unit {extra.get('unit', case['unit_id'])}. Check each one in the app with its short checklist, "
                           f"then sign off the unit by {extra.get('deadline')}."),

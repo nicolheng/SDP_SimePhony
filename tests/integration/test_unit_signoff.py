@@ -47,17 +47,28 @@ def test_fixed_verifies_the_defect_without_closing_it():
     assert r["unit"]["ready"] and r["unit"]["waitingFor"] == []
 
 
-def test_buyer_cannot_check_while_another_defect_waits_for_sdp():
+def test_buyer_can_check_an_approved_defect_while_another_waits_for_sdp():
     import tools
     other = _second_defect()
     unit = _unit()
     assert not unit["canVerify"] and not unit["ready"]
     assert unit["waitingForDeveloper"] == [other] and unit["waitingForBuyer"] == ["C-0004"]
 
-    for outcome, photo in (("FIXED", None), ("NOT_FIXED", PHOTO), ("CANNOT_VERIFY", None)):
-        r = tools.record_verification("C-0004", outcome, "", photo)
-        assert r["ok"] is False and "approved every defect" in r["error"] and other in r["error"]
-    assert _case("C-0004")["verification_status"] == "pending"  # nothing was saved
+    # C-0004 is approved by SDP, so the buyer can check it now
+    r = tools.record_verification("C-0004", "FIXED", "")
+    assert r["ok"] is not False and _case("C-0004")["verification_status"] == "verified"
+    # ...but the unit still can't be signed off while the other defect waits for SDP
+    assert not r["unit"]["ready"] and r["unit"]["waitingFor"] == [other]
+    r = tools.sign_off_unit(UNIT, "")
+    assert r["ok"] is False and other in r["error"]
+    assert _case("C-0004")["closed_at"] is None
+
+
+def test_buyer_cannot_check_a_defect_sdp_has_not_approved():
+    import tools
+    other = _second_defect()
+    r = tools.record_verification(other, "FIXED", "")
+    assert r["ok"] is False
 
 
 def test_not_fixed_makes_the_unit_not_ready_again():

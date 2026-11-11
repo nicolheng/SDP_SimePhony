@@ -501,14 +501,15 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
 
 
 def developer_signoff(ctx: Ctx, case_id: str) -> None:
-    """SDP approves one repair. The buyer is told once SDP has approved every open defect in the unit, since only
-    then can they check the repairs and sign off the unit (#71); until then the earlier "Repair done" message
-    already says we'll let them know."""
+    """SDP approves one repair. The buyer can check it straight away; they sign off the unit (#71) once SDP has
+    approved every open defect in it, so the sign-off deadline is only given in the last approval's message."""
     _tool(ctx, tools.record_signoff, case_id, "developer")
     unit = tools.unit_signoff_state(ctx.conn, load_case(ctx, case_id)["unit_id"])
     if unit["canVerify"]:
         notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(unit["deadline"]), count=len(unit["caseIds"]),
                      unit=unit["unitId"])
+    else:  # the buyer can check this one now; the unit sign-off waits for the others
+        notify_buyer(ctx, case_id, "ready_signoff", partial=True, unit=unit["unitId"])
 
 
 def sign_off_unit(ctx: Ctx, unit_id: str, note: str) -> None:

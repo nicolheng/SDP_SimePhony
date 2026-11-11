@@ -19,6 +19,8 @@ NEW_CASE_REVIEW_NOTE = ("As this problem has been reported before in your unit, 
 REPAIR_DONE_NOTE = "The developer reviews the repair first. We will let you know when you can check it and sign off."
 REOPEN_RECEIVED_NOTE = "We will update you on the next step shortly."
 TIME_PENDING_NOTE = "We will confirm the time once the technician accepts."
+UNIT_WAIT_NOTE = ("You can check this repair now. You can sign off your unit once our team has approved "
+                  "the other repairs in it.")
 
 _FALLBACK = "Thank you for your report."
 
@@ -240,6 +242,7 @@ def message_for_kind(kind: str, case: dict, extra: dict | None = None) -> tuple[
         "repair_estimate": {"hours": f"{float(case['repair_hours']):g}"} if case.get("repair_hours") else {},
         "verification_result": {"protocol": extra.get("guide"), "steps": extra.get("guide_steps")},
         "signoff_deadline_local": extra.get("deadline"),
+        "signoff_partial": bool(extra.get("partial")),
         "booking_result": {"start_local": extra.get("slot"), "job": extra.get("job"), "same_time": extra.get("same_time"),
                            "duration": extra.get("duration"), "reassigned": kind == "reassigned"},
         "new_case_escalation": {"escalated": bool(extra.get("escalated"))},
@@ -385,6 +388,8 @@ def _draft(state: dict) -> str:
         deadline = state.get("signoff_deadline_local")
         if deadline:
             message = f"{message}\n\nPlease check the repair and sign off by {deadline} if it is fixed."
+        elif state.get("signoff_partial"):
+            message = f"{message}\n\n{UNIT_WAIT_NOTE}"
         steps = state["verification_result"].get("steps")
         if steps:
             # Just the checks, numbered: the stored guide's intro repeats the case title and the technician's note

@@ -167,7 +167,7 @@ export function CaseDetail() {
                     ? c.verificationStatus === "verified"
                       ? "You verified this repair. Sign off your unit from My Defects once every repair is verified."
                       : unitSignoff && !unitSignoff.canVerify
-                        ? "The developer has approved this repair and is still reviewing the other repairs in your unit. You can verify once all are approved."
+                        ? "The developer has approved this repair. Please verify it. You can sign off your unit once the other repairs are approved too."
                         : "The developer has approved the repair. Please verify it."
                     : (BUYER_EXPLAIN[c.status] ?? "We're working on your case.")}
                 </p>
@@ -193,7 +193,7 @@ export function CaseDetail() {
                 <FollowUpForm caseId={c.id} />
               </Section>
             )}
-            {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && c.signoff?.developer && (!unitSignoff || unitSignoff.canVerify || !!c.signoffOverdueAt) && (
+            {c.status === "PENDING_SIGNOFF" && !c.signoff?.buyer && c.signoff?.developer && (
               <div className="space-y-2">
                 <p
                   className={

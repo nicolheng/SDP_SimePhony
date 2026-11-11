@@ -8,7 +8,7 @@ import { DefectCard } from "@/components/defect-card";
 import { EmptyState, MobileHeader, SummaryStrip, UnderlineTabs } from "@/components/mobile";
 import { DEMO_BUYER } from "@/lib/constants";
 import { Overlay } from "@/components/overlay";
-import { UnitSignOffPanel, useSignoffOverdue, useUnitSignoff } from "@/components/unit-signoff";
+import { UnitSignOffPanel, useSignoffOverdue } from "@/components/unit-signoff";
 import { submitVerification } from "@/lib/api";
 import { useBuyerUnit } from "@/lib/session";
 import { awaitingBuyerVerify, BUYER_TABS, inPendingTab, isOpen } from "@/lib/status";
@@ -45,9 +45,9 @@ function MyDefects() {
   const shown = mine.filter((c) => inTab(c, tab));
 
   // Pending tab: tick defects and verify them together (the same "Fixed" as on each Verify Repair page).
-  const unit = useUnitSignoff(unitId);
   const overdue = useSignoffOverdue(unitId);
-  const canVerify = !!unit?.canVerify && !overdue;
+  // Each defect can be checked once SDP has approved it (verifiable below); the unit Sign Off still needs them all.
+  const canVerify = !overdue;
   const offline = useOffline();
   const [picked, setPicked] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
