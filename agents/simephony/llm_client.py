@@ -49,6 +49,29 @@ def extra_params() -> dict:
 MODEL_VL = os.getenv("MODEL_VL", "llava-llama3")   # For looking at photos
 MODEL_TEXT = os.getenv("MODEL_TEXT", "qwen2.5:7b")  # For reading text and reasoning
 
+def create_completion(client, **kwargs):
+    """One model call with a total time limit of twice its per-try timeout (#81). A stuck cloud call used to cost
+    the timeout on every retry (10 s x 4 tries); now the retries stop when the limit is used up, so in
+    USE_AI_AGENTS=true the rules take over sooner. Retries only network trouble, timeouts, 429s and 5xx."""
+    import time
+    from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
+    timeout = kwargs.pop("timeout", LLM_TIMEOUT_TEXT)
+    if not isinstance(client, OpenAI):  # test doubles
+        return client.chat.completions.create(timeout=timeout, **kwargs)
+    deadline = time.monotonic() + 2 * timeout
+    tries = (client.max_retries or 0) + 1
+    single = client.with_options(max_retries=0)
+    for attempt in range(tries):
+        left = deadline - time.monotonic()
+        try:
+            return single.chat.completions.create(timeout=max(0.1, min(timeout, left)), **kwargs)
+        except (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError):
+            left = deadline - time.monotonic()
+            if attempt == tries - 1 or left < 1:
+                raise
+            time.sleep(min(0.5 * 2 ** attempt, left - 1))
+
+
 def get_client():
     return client
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from agents.telemetry import record_llm_telemetry
 from . import privacy
-from .llm_client import LLM_MAX_TOKENS, LLM_TIMEOUT_TEXT, extra_params
+from .llm_client import LLM_MAX_TOKENS, LLM_TIMEOUT_TEXT, create_completion, extra_params
 
 class StructuredOutputError(RuntimeError):
     """The model failed to return valid structured output after its single retry."""
@@ -103,7 +103,8 @@ def chat_json(client, model: str, messages: list[dict], schema: dict, temperatur
             start = time.perf_counter()
             sent, redactor = privacy.protect(retry_messages)  # cloud model: no personal data leaves the machine
             try:
-                response = client.chat.completions.create(
+                response = create_completion(
+                    client,
                     model=model,
                     messages=sent,
                     temperature=temperature,

@@ -82,6 +82,12 @@ function WhyCard({ event }: { event: CaseEvent }) {
             <Bot className="size-4" aria-hidden="true" />
           </span>
           {event.agent ? agentLabel(event.agent) : "AI agent"}
+          {/* #81: who decided this step. Rules answer only when the AI call failed or gave a broken answer. */}
+          {event.fallbackUsed || telemetry.fallback_used ? (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Rules (backup)</span>
+          ) : (
+            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">AI</span>
+          )}
         </h3>
         <time dateTime={event.at} className="text-sm text-zinc-500">{fmtDateTime(event.at)}</time>
       </header>
