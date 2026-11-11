@@ -134,6 +134,7 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "category": category,
             "subCategory": _pretty(r["sub_category"]) or config.CATEGORY_LABEL[category],
             "location": _pretty(r["location_in_unit"]),
+            "pin": {"x": r.get("pin_x"), "y": r.get("pin_y"), "room": r.get("pin_room")} if r.get("pin_room") else None,
             "summary": r["summary"] or "",
             "description": r["description"] or "",
             "urgency": r["urgency"] if r["urgency"] in ("high", "low") else "normal",

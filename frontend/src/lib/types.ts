@@ -121,6 +121,12 @@ export interface InspectionBrief {
   checklist: string[];
 }
 
+export interface CasePin {
+  x: number | null;
+  y: number | null;
+  room: string;
+}
+
 export interface Case {
   id: string;
   unitId: string;
@@ -129,6 +135,8 @@ export interface Case {
   category: Category;
   subCategory: string;
   location: string;
+  /** The buyer's pin on the unit floor plan (fractions of its width and height); x and y are null for "Whole unit". */
+  pin?: CasePin | null;
   summary: string;
   description: string;
   urgency: Urgency;

@@ -15,6 +15,7 @@ export interface ReportInput {
   slot?: string | null;
   unitId: string;
   buyerId: string;
+  pin?: { x: number; y: number } | "whole_unit" | null;
 }
 
 export async function submitReport(input: ReportInput, onCreated?: (caseId: string) => void): Promise<{ caseId?: string; nonDefect?: string }> {
@@ -24,6 +25,7 @@ export async function submitReport(input: ReportInput, onCreated?: (caseId: stri
     description: input.description,
     photo: input.photoUrl,
     slot: input.slot ?? null,
+    pin: input.pin === "whole_unit" ? { whole_unit: true } : input.pin ?? null,
   });
   if (r.caseId) onCreated?.(r.caseId);
   return { caseId: r.caseId, nonDefect: r.nonDefect };

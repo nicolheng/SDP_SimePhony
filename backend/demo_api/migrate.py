@@ -28,6 +28,9 @@ CASE_COLUMNS = {
     "buyer_rating": "INTEGER",       # buyer satisfaction 1-5, asked after sign-off
     "buyer_rating_comment": "TEXT",
     "buyer_rated_at": "TEXT",
+    "pin_x": "REAL",                 # buyer's pin on the unit floor plan (fractions of its width / height)
+    "pin_y": "REAL",
+    "pin_room": "TEXT",              # room the pin falls in, or "Whole unit"
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 UNIT_COLUMNS = {"vp_date": "TEXT"}  # vacant possession date; the defect liability period runs from it

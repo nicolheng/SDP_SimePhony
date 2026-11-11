@@ -23,6 +23,7 @@ import {
 } from "@/components/case-views";
 import { CaseChat } from "@/components/case-chat";
 import { DefectRecordCard } from "@/components/defect-record";
+import { CasePinMap } from "@/components/floor-plan";
 import { buyerName, recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
 import {
@@ -407,6 +408,7 @@ export function JobDetail() {
                   <UrgencyBadge urgency={c.urgency} />
                 </Row>
               </dl>
+              <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-3" />
             </Section>
 
             {/* What the other agents worked out for this job */}

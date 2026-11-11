@@ -151,18 +151,26 @@ def repair_options(case_id: str):
 # ---------- buyer ----------
 
 
+class Pin(BaseModel):
+    """Where the buyer tapped the unit floor plan (fractions of its width and height), or "Whole unit"."""
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
+    whole_unit: bool = False
+
+
 class NewReport(BaseModel):
     unit_id: RecordId
     buyer_id: RecordId
     description: str = Field(min_length=1, max_length=500)
     photo: Photo | None = None
     slot: Timestamp | None = None  # optional (#79): with no time, the earliest free technician is booked
+    pin: Pin | None = None
 
 
 @router.post("/cases")
 def create_case(body: NewReport, request: Request, background_tasks: BackgroundTasks):
     return _run(request, workflow.submit_report, body.unit_id, body.buyer_id, body.description, body.photo, body.slot,
-                background_tasks=background_tasks)
+                body.pin.model_dump() if body.pin else None, background_tasks=background_tasks)
 
 
 class FollowUp(BaseModel):

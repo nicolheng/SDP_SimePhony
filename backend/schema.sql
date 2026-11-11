@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS cases (
     category             TEXT,                      -- water_leak, electrical, wall_crack, tiles, paint, etc.
     sub_category         TEXT,                      -- ceiling_leak, pipe_burst, tripping_breaker, etc.
     location_in_unit     TEXT,                      -- master bedroom ceiling, kitchen, etc.
+    pin_x                REAL,                      -- buyer's pin on the unit floor plan: fraction (0-1) of its width
+    pin_y                REAL,                      -- ... and of its height (both NULL for "Whole unit" or no pin)
+    pin_room             TEXT,                      -- room the pin falls in (floor_plan.py), or "Whole unit"
     summary              TEXT,                      -- short 1-line summary
     description          TEXT,                      -- original complaint description submitted by resident
     urgency              TEXT,                      -- high, normal, low

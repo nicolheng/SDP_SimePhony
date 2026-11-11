@@ -10,6 +10,7 @@ import logging
 import sqlite3
 
 import db
+import floor_plan
 import tools
 
 from . import agents, ai_agents, config
@@ -184,11 +185,19 @@ def _route_to_human_review(ctx: Ctx, case_id: str, decision: dict) -> None:
 # ---------- buyer ----------
 
 
-def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo: str | None, slot: str | None) -> dict:
+def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo: str | None, slot: str | None,
+                  pin: dict | None = None) -> dict:
+    """pin: where the buyer tapped the unit floor plan, {x, y} as fractions (0-1), or {whole_unit: True}.
+    With a pin the room comes from the floor plan and IntakeAgent never asks which room it is."""
     if not description.strip():
         raise WorkflowError("Please describe the problem.")
     if not ctx.conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
         raise WorkflowError("Unknown buyer or unit.")
+    try:
+        pinned = floor_plan.resolve_pin(unit_id, pin.get("x"), pin.get("y"), bool(pin.get("whole_unit"))) if pin else None
+    except ValueError as e:
+        raise WorkflowError(str(e)) from e
+    pin_room = pinned["room"] if pinned else None
     left = dlp_days_left(ctx.units[unit_id].get("vp_date"), ctx.now)
     if left is not None and left < 0:
         raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
@@ -199,13 +208,13 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
         non_defect = agents.intake(description, bool(photo)).get("non_defect")
         if non_defect:
             return {"nonDefect": non_defect}
-        case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
+        case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned)["case_id"]
         ctx.deferred_reports.append(case_id)
         return {"caseId": case_id}
-    result = ai_agents.intake(ctx, description, photo)
+    result = ai_agents.intake(ctx, description, photo, pin_room=pin_room)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
-    case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo)["case_id"]
+    case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned)["case_id"]
     ai_agents.record_pending_fallbacks(ctx, case_id)
     if _save_intake(ctx, case_id, result):
         _continue_new_case(ctx, case_id)
@@ -244,7 +253,7 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
             c = load_case(ctx, case_id)
             if c["status"] != "SUBMITTED":
                 return
-            result = ai_agents.intake(ctx, c["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id)
+            result = ai_agents.intake(ctx, c["description"] or "", None, bool(ctx.photo_kinds(case_id)), case_id, c.get("pin_room"))
             if answer is not None:
                 result = {**_accept_answer(result, answer), "needs_human_review": False}
             go_on = _save_intake(ctx, case_id, result)
@@ -345,7 +354,8 @@ def answer_follow_up(ctx: Ctx, case_id: str, answer: str, photo: str | None, slo
         ctx.deferred_answers.append((case_id, answer))
         return
     description = _tool(ctx, tools.answer_follow_up, case_id, answer, photo, slot)["description"]
-    result = _accept_answer(ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id), answer)
+    pin_room = load_case(ctx, case_id).get("pin_room")
+    result = _accept_answer(ai_agents.intake(ctx, description, None, bool(ctx.photo_kinds(case_id)), case_id, pin_room), answer)
     _tool(ctx, tools.save_intake_result, case_id, _intake_json(result))
     unsure = " (IntakeAgent unsure; the inspection visit will confirm)" if result.get("needs_human_review") else ""
     step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit'] or 'as described'}{unsure}")

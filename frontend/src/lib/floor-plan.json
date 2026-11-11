@@ -1,0 +1,28 @@
+{
+  "_comment": "Unit floor plans: drawn by components/floor-plan.tsx and used by backend/floor_plan.py to name the room a pin falls in. Coordinates are plan units (0..width, 0..height); pins are stored as fractions of width and height. Set 'image' to a picture in frontend/public to show it instead of the drawing (the rooms then only name the pinned room, so trace them to match the picture).",
+  "default": "type-a",
+  "units": {},
+  "layouts": {
+    "type-a": {
+      "name": "Type A · 3 bedrooms, 2 bathrooms",
+      "width": 100,
+      "height": 70,
+      "image": null,
+      "entrance": [53, 70],
+      "rooms": [
+        { "id": "master_bedroom", "label": "Master bedroom", "points": [[0, 0], [32, 0], [32, 34], [0, 34]] },
+        { "id": "master_bathroom", "label": "Master bathroom", "display": ["Master", "bath"], "wet": true, "points": [[32, 0], [46, 0], [46, 26], [32, 26]] },
+        { "id": "common_bathroom", "label": "Common bathroom", "display": ["Common", "bath"], "wet": true, "points": [[46, 0], [58, 0], [58, 26], [46, 26]] },
+        { "id": "bedroom_2", "label": "Bedroom 2", "points": [[58, 0], [79, 0], [79, 26], [58, 26]] },
+        { "id": "bedroom_3", "label": "Bedroom 3", "points": [[79, 0], [100, 0], [100, 34], [79, 34]] },
+        { "id": "corridor", "label": "Corridor", "points": [[32, 26], [79, 26], [79, 34], [32, 34]] },
+        { "id": "living_room", "label": "Living room", "points": [[0, 34], [44, 34], [44, 60], [0, 60]] },
+        { "id": "balcony", "label": "Balcony", "outdoor": true, "points": [[0, 60], [44, 60], [44, 70], [0, 70]] },
+        { "id": "dining_area", "label": "Dining area", "display": ["Dining", "area"], "points": [[44, 34], [70, 34], [70, 58], [44, 58]] },
+        { "id": "kitchen", "label": "Kitchen", "labelAt": [86, 44], "points": [[70, 34], [100, 34], [100, 54], [82, 54], [82, 70], [62, 70], [62, 58], [70, 58]] },
+        { "id": "foyer", "label": "Foyer", "points": [[44, 58], [62, 58], [62, 70], [44, 70]] },
+        { "id": "service_yard", "label": "Service yard", "display": ["Service", "yard"], "wet": true, "points": [[82, 54], [100, 54], [100, 70], [82, 70]] }
+      ]
+    }
+  }
+}
