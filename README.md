@@ -97,7 +97,7 @@ All settings live in `.env`, and [.env.example](.env.example) has the full list.
 | `LLM_TIMEOUT_TEXT`, `LLM_TIMEOUT_VISION` | Seconds to wait per attempt before trying again, then falling back to the rules (in `only` mode, showing an error). Raise these if a slow laptop falls back on normal runs. For Gemini, `LLM_TIMEOUT_TEXT=10` is a good value. |
 | `LLM_MAX_TOKENS` | Longest JSON answer a model may write, which stops runaway output. |
 | `LLM_REASONING_EFFORT`, `LLM_MAX_RETRIES` | For cloud models. How hard the model thinks before answering (`low` keeps it quick), and how many times a call is tried again, for example when a free tier says "too many requests". |
-| `EMAIL_ENABLED` | `true` sends real emails through Gmail. `false` only saves them to the `outbox` table. If it is not set, it counts as `true`, but nothing is sent until the Gmail details are filled in. See [Email setup](#email-setup). |
+| `EMAIL_ENABLED` | `true` sends real emails through Gmail. `false` only saves them to the `outbox` table. `.env.example` ships `false`. If it is not set at all, it counts as `true`, but nothing is sent until the Gmail details are filled in. See [Email setup](#email-setup). |
 | `EMBEDDINGS_ENABLED` | `false` skips the embedding model used to search for similar past cases. |
 
 ### Cloud model (no Ollama needed)
