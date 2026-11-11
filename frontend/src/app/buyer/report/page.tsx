@@ -1,5 +1,15 @@
 "use client";
-import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, MapPin, Plus, Sparkles, X } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  CircleAlert,
+  Lightbulb,
+  Loader2,
+  MapPin,
+  Plus,
+  Sparkles,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -10,13 +20,23 @@ import { useCase, useCaseEvents } from "@/components/case-views";
 import { FloorPlan, WHOLE_UNIT, type PlanPin } from "@/components/floor-plan";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { BuildingBanner } from "@/components/illustrations";
-import { MobileHeader, PrimaryButton, primaryButtonClass, Section } from "@/components/mobile";
+import {
+  MobileHeader,
+  PrimaryButton,
+  primaryButtonClass,
+  Section,
+} from "@/components/mobile";
 import { PhotoInput, PhotoThumb } from "@/components/photo";
 import { CaseMembers } from "@/components/case-members";
 import { StatusBadge } from "@/components/status-badge";
 import { UrgencyBadge } from "@/components/status-badge";
 import { submitReport } from "@/lib/api";
-import { DEMO_BUYER, getTechnician, getUnit, PROJECT_NAME } from "@/lib/constants";
+import {
+  DEMO_BUYER,
+  getTechnician,
+  getUnit,
+  PROJECT_NAME,
+} from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { setBuyerUnit, useBuyerUnit } from "@/lib/session";
 import { useDemo } from "@/lib/store";
@@ -34,18 +54,30 @@ const PRIORITY_NOTE: Record<Urgency, string> = {
 
 /** Interim care advice until the inspection visit. */
 const CARE_TIP: Record<Category, string> = {
-  water_leak: "Keep the area dry, move valuables and furniture away, and avoid using power points nearby.",
-  plumbing: "Turn off the nearest stop valve if water is leaking, and wipe up standing water.",
-  drainage: "Avoid pouring oil or debris into the drain; use another bathroom or sink if possible.",
-  sanitary_fittings: "Avoid forcing the fitting; turn off its water supply valve if it keeps running or leaking.",
-  electrical: "Do not use the affected socket or switch. If you smell burning or see sparks, switch off at the DB box.",
-  wall_crack: "Avoid hanging items on or drilling into the cracked area. Take a photo if the crack grows.",
-  structural_crack: "Keep clear of the affected area and avoid placing heavy loads near it. Contact us if it widens.",
-  tiles: "Avoid walking on or placing heavy items over loose or hollow tiles; mark the spot to prevent trips.",
-  ceiling: "Keep clear of the area below and move furniture away in case of falling debris.",
-  door_window: "Avoid forcing the door or window; keep it locked if it closes securely.",
-  paint: "Keep the area dry and avoid scraping or repainting it before the inspection.",
-  other: "Avoid using or disturbing the affected area until the technician has inspected it.",
+  water_leak:
+    "Keep the area dry, move valuables and furniture away, and avoid using power points nearby.",
+  plumbing:
+    "Turn off the nearest stop valve if water is leaking, and wipe up standing water.",
+  drainage:
+    "Avoid pouring oil or debris into the drain; use another bathroom or sink if possible.",
+  sanitary_fittings:
+    "Avoid forcing the fitting; turn off its water supply valve if it keeps running or leaking.",
+  electrical:
+    "Do not use the affected socket or switch. If you smell burning or see sparks, switch off at the DB box.",
+  wall_crack:
+    "Avoid hanging items on or drilling into the cracked area. Take a photo if the crack grows.",
+  structural_crack:
+    "Keep clear of the affected area and avoid placing heavy loads near it. Contact us if it widens.",
+  tiles:
+    "Avoid walking on or placing heavy items over loose or hollow tiles; mark the spot to prevent trips.",
+  ceiling:
+    "Keep clear of the area below and move furniture away in case of falling debris.",
+  door_window:
+    "Avoid forcing the door or window; keep it locked if it closes securely.",
+  paint:
+    "Keep the area dry and avoid scraping or repainting it before the inspection.",
+  other:
+    "Avoid using or disturbing the affected area until the technician has inspected it.",
 };
 
 /** Where a defect is: a spot on the unit floor plan (fractions 0-1) and its room, or the whole unit. */
@@ -78,19 +110,30 @@ export default function ReportDefect() {
   const [picking, setPicking] = useState(false);
   // Defects can be reported until the unit's defect liability period ends (the backend refuses after).
   const dlpEnd = getUnit(unitId).dlpExpiry;
-  const dlpOver = !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
+  const dlpOver =
+    !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
 
   const draftReady = !!photo && !!pin && !!text.trim();
   const draftStarted = !!photo || !!pin || !!text.trim();
   // Everything that will be submitted: the added defects, plus the current one when it is complete.
-  const toSubmit = draftReady ? [...items, { id: DRAFT_ID, photo: photo!, pin: pin!, text: text.trim() }] : items;
-  const canSubmit = toSubmit.length > 0 && (!draftStarted || draftReady) && !busy && !dlpOver;
-  const addedPins: PlanPin[] = items.flatMap((it, i) => (it.pin === "whole_unit" ? [] : [{ x: it.pin.x, y: it.pin.y, label: String(i + 1) }]));
+  const toSubmit = draftReady
+    ? [...items, { id: DRAFT_ID, photo: photo!, pin: pin!, text: text.trim() }]
+    : items;
+  const canSubmit =
+    toSubmit.length > 0 && (!draftStarted || draftReady) && !busy && !dlpOver;
+  const addedPins: PlanPin[] = items.flatMap((it, i) =>
+    it.pin === "whole_unit"
+      ? []
+      : [{ x: it.pin.x, y: it.pin.y, label: String(i + 1) }],
+  );
   const draftRoom = pin ? pinRoom(pin) : null;
 
   function addAnother() {
     if (!draftReady) return;
-    setItems((xs) => [...xs, { id: Date.now(), photo: photo!, pin: pin!, text: text.trim() }]);
+    setItems((xs) => [
+      ...xs,
+      { id: Date.now(), photo: photo!, pin: pin!, text: text.trim() },
+    ]);
     setPhoto(null);
     setPin(null);
     setText("");
@@ -99,7 +142,12 @@ export default function ReportDefect() {
   function movePin(x: number, y: number, room: string) {
     if (moving === null) return;
     if (moving === DRAFT_ID) setPin({ x, y, room });
-    else setItems((xs) => xs.map((it) => (it.id === moving ? { ...it, pin: { x, y, room } } : it)));
+    else
+      setItems((xs) =>
+        xs.map((it) =>
+          it.id === moving ? { ...it, pin: { x, y, room } } : it,
+        ),
+      );
     setMoving(null);
   }
 
@@ -111,21 +159,39 @@ export default function ReportDefect() {
     // One case per photo: the system files each defect separately, so each gets its own technician and record.
     for (const it of toSubmit) {
       try {
-        const where = it.pin === "whole_unit" ? "whole_unit" : { x: it.pin.x, y: it.pin.y };
-        const r = await submitReport({ description: it.text, photoUrl: it.photo, pin: where, unitId, buyerId: DEMO_BUYER.id }, (id) => {
-          created.push(id);
-          setCaseIds([...created]);
-        });
+        const where =
+          it.pin === "whole_unit" ? "whole_unit" : { x: it.pin.x, y: it.pin.y };
+        const r = await submitReport(
+          {
+            description: it.text,
+            photoUrl: it.photo,
+            pin: where,
+            unitId,
+            buyerId: DEMO_BUYER.id,
+          },
+          (id) => {
+            created.push(id);
+            setCaseIds([...created]);
+          },
+        );
         if (r.nonDefect) setNonDefect(r.nonDefect);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not submit. Please try again.");
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Could not submit. Please try again.",
+        );
       }
     }
     setBusy(false);
   }
 
-  if (caseIds.length === 1 && toSubmit.length <= 1) return <Processing caseId={caseIds[0]} done={!busy} />;
-  if (caseIds.length > 0) return <MultiSubmitted caseIds={caseIds} total={toSubmit.length} done={!busy} />;
+  if (caseIds.length === 1 && toSubmit.length <= 1)
+    return <Processing caseId={caseIds[0]} done={!busy} />;
+  if (caseIds.length > 0)
+    return (
+      <MultiSubmitted caseIds={caseIds} total={toSubmit.length} done={!busy} />
+    );
 
   return (
     <div>
@@ -136,7 +202,9 @@ export default function ReportDefect() {
       <div className="relative mx-4 -mt-10 rounded-2xl bg-white p-4 shadow-md ring-1 ring-zinc-200">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="whitespace-nowrap text-lg font-semibold">{PROJECT_NAME}</p>
+            <p className="whitespace-nowrap text-lg font-semibold">
+              {PROJECT_NAME}
+            </p>
             <p className="text-sm text-zinc-500">
               Unit {unitId} · {DEMO_BUYER.name}
             </p>
@@ -149,10 +217,18 @@ export default function ReportDefect() {
             Select Another Asset
           </button>
         </div>
-        {picking && <AssetPicker value={unitId} onPick={setBuyerUnit} onClose={() => setPicking(false)} />}
+        {picking && (
+          <AssetPicker
+            value={unitId}
+            onPick={setBuyerUnit}
+            onClose={() => setPicking(false)}
+          />
+        )}
         {dlpOver && (
           <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
-            Your Defect Liability Period ended on {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be reported in the app. Please contact the developer.
+            Your Defect Liability Period ended on{" "}
+            {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be
+            reported in the app. Please contact the developer.
           </p>
         )}
         <div className="mt-4 border-t border-zinc-100 pt-3">
@@ -161,20 +237,33 @@ export default function ReportDefect() {
       </div>
       <div className="space-y-4 p-4">
         <Section title="Defect Photos & Descriptions *">
-          <p className="-mt-1 mb-3 text-xs text-zinc-500">One photo per defect. Each photo is filed as its own defect case.</p>
-
           {items.length > 0 && (
             <ul className="mb-3 space-y-2">
               {items.map((it, i) => (
-                <li key={it.id} className="flex gap-3 rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={it.photo} alt={`Defect ${i + 1}`} className="size-16 shrink-0 rounded-lg object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Defect {i + 1}</p>
-                    <p className="flex items-center gap-1 text-xs font-medium text-zinc-600">
-                      <MapPin className="size-3 shrink-0 text-brand" /> {pinRoom(it.pin)}
+                <li
+                  key={it.id}
+                  className="flex items-stretch gap-3 rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200"
+                >
+                  {/* The photo spans the whole card height, from the defect number to the description. */}
+                  <div className="relative min-h-16 w-16 shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={it.photo}
+                      alt={`Defect ${i + 1}`}
+                      className="absolute inset-0 size-full rounded-lg object-cover"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
+                    <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-zinc-600">
+                      Defect {i + 1}
                     </p>
-                    <p className="line-clamp-2 text-sm text-zinc-800">{it.text}</p>
+                    <p className="flex items-center gap-1 text-xs font-medium leading-4 text-zinc-600">
+                      <MapPin className="size-3 shrink-0 text-brand" />{" "}
+                      <span className="truncate">{pinRoom(it.pin)}</span>
+                    </p>
+                    <p className="line-clamp-2 text-sm leading-5 text-zinc-800">
+                      {it.text}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -193,54 +282,101 @@ export default function ReportDefect() {
           )}
 
           <div className="rounded-xl ring-1 ring-zinc-200 p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Defect {items.length + 1}</p>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-zinc-600">
+              Defect {items.length + 1}
+            </p>
             <PhotoInput value={photo} onChange={setPhoto} />
             {photo && (
               <div className="mt-4">
-                <p className="text-sm font-semibold text-zinc-900">Where is it?</p>
-                <p className="mb-2 text-xs text-zinc-500">Tap the spot on your floor plan. Tap again to move the pin.</p>
+                <div className="flex min-h-7 items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-zinc-900">
+                    Where is it?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const whole = pin !== "whole_unit";
+                      setPin(whole ? "whole_unit" : null);
+                    }}
+                    aria-pressed={pin === "whole_unit"}
+                    className={cn(
+                      "shrink-0 rounded-full px-3 py-1 text-xs font-medium ring-1 transition",
+                      pin === "whole_unit"
+                        ? "bg-brand text-white ring-brand"
+                        : "text-zinc-700 ring-zinc-300 hover:bg-zinc-100",
+                    )}
+                  >
+                    Whole Unit
+                  </button>
+                </div>
+                {/* Tap the plan again to move the pin; Whole Unit stays available throughout. */}
+                <p className="mb-2 text-xs text-zinc-500">
+                  {"Tap a spot or choose ‘Whole Unit’."}
+                </p>
                 <div className="rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
                   <FloorPlan
                     unitId={unitId}
-                    pins={[...addedPins, ...(pin && pin !== "whole_unit" ? [{ x: pin.x, y: pin.y, label: String(items.length + 1), active: true }] : [])]}
-                    onPick={(x, y, room) => setPin({ x, y, room })}
+                    pins={[
+                      ...addedPins,
+                      ...(pin && pin !== "whole_unit"
+                        ? [
+                            {
+                              x: pin.x,
+                              y: pin.y,
+                              label: String(items.length + 1),
+                              active: true,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onPick={(x, y, room) => {
+                      setPin({ x, y, room });
+                    }}
                     className={pin === "whole_unit" ? "opacity-50" : undefined}
                     label={`Floor plan of unit ${unitId}: tap where defect ${items.length + 1} is`}
                   />
                 </div>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className={cn("flex items-center gap-1 text-sm", draftRoom ? "font-medium text-zinc-900" : "text-zinc-500")} aria-live="polite">
-                    <MapPin className={cn("size-4", draftRoom ? "text-brand" : "text-zinc-400")} />
-                    {draftRoom ?? "No spot marked yet"}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setPin(pin === "whole_unit" ? null : "whole_unit")}
-                    aria-pressed={pin === "whole_unit"}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition",
-                      pin === "whole_unit" ? "bg-brand text-white ring-brand" : "text-zinc-700 ring-zinc-300 hover:bg-zinc-100",
-                    )}
+                {pin && (
+                  <div
+                    className="mt-2 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 ring-1 ring-zinc-200"
+                    aria-live="polite"
                   >
-                    Whole unit / not one spot
-                  </button>
-                </div>
+                    <MapPin className="size-4 shrink-0 text-brand" />
+                    <span className="min-w-0 flex-1 text-sm font-medium text-zinc-900">
+                      {draftRoom}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
             {photo && pin && (
               <div className="mt-4">
+                <p className="mb-2 text-sm font-semibold text-zinc-900">
+                  Description
+                </p>
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   rows={3}
                   maxLength={500}
-                  placeholder={pin === "whole_unit" ? "Tell us what's wrong." : `Tell us what's wrong in the ${pinRoom(pin).toLowerCase()}.`}
+                  placeholder={
+                    pin === "whole_unit"
+                      ? "Tell us what's wrong."
+                      : `Tell us what's wrong in the ${pinRoom(pin).toLowerCase()}.`
+                  }
                   className="w-full resize-none rounded-xl border border-zinc-300 p-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                 />
-                <p className="-mt-1 text-right text-xs text-zinc-400">{text.length} / 500</p>
+                <p className="-mt-1 text-right text-xs text-zinc-400">
+                  {text.length} / 500
+                </p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {EXAMPLES.map((e) => (
-                    <button key={e} type="button" onClick={() => setText(e)} className="rounded-full bg-zinc-100 px-2.5 py-1 text-left text-[11px] text-zinc-600 hover:bg-zinc-200">
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => setText(e)}
+                      className="rounded-full bg-zinc-100 px-2.5 py-1 text-left text-[11px] text-zinc-600 hover:bg-zinc-200"
+                    >
                       {e}
                     </button>
                   ))}
@@ -257,49 +393,70 @@ export default function ReportDefect() {
           >
             <Plus className="size-4" /> Add Another Defect
           </button>
-          {draftStarted && !draftReady && (
-            <p className="mt-1.5 text-center text-[11px] text-zinc-500">Add a photo, mark where it is and describe it to finish this defect.</p>
-          )}
         </Section>
 
         {/* Review: every defect on one plan before submitting; tap a numbered pin, then the new spot, to move it. */}
-        {toSubmit.length > 1 && (!draftStarted || draftReady) && (
-          <Section title="Your Defects on the Floor Plan">
+        {toSubmit.length > 0 && (!draftStarted || draftReady) && (
+          <Section title="Check Defect Locations">
             <p className="-mt-1 mb-2 text-xs text-zinc-500">
               {moving === null
-                ? "Check each pin. To move one, tap it, then tap the new spot."
+                ? "Make sure each pin is in the right place. To move a pin, tap it, then tap its new spot."
                 : `Now tap the new spot for defect ${toSubmit.findIndex((it) => it.id === moving) + 1}.`}
             </p>
             <div className="rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
               <FloorPlan
                 unitId={unitId}
                 pins={toSubmit.flatMap((it, i) =>
-                  it.pin === "whole_unit" ? [] : [{ x: it.pin.x, y: it.pin.y, label: String(i + 1), active: it.id === moving }],
+                  it.pin === "whole_unit"
+                    ? []
+                    : [
+                        {
+                          x: it.pin.x,
+                          y: it.pin.y,
+                          label: String(i + 1),
+                          active: it.id === moving,
+                        },
+                      ],
                 )}
                 onPinClick={(i) => {
-                  const placed = toSubmit.filter((it) => it.pin !== "whole_unit");
+                  const placed = toSubmit.filter(
+                    (it) => it.pin !== "whole_unit",
+                  );
                   setMoving((m) => (m === placed[i].id ? null : placed[i].id));
                 }}
                 onPick={moving === null ? undefined : movePin}
                 label="Floor plan with every defect in this report"
               />
             </div>
-            <ol className="mt-2 space-y-1">
+            {/* Number and room only: each defect's description is already on its card above. */}
+            <ol className="mt-2 space-y-1.5">
               {toSubmit.map((it, i) => (
-                <li key={it.id} className="flex items-center gap-2 text-xs text-zinc-700">
-                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-zinc-500 text-[10px] font-bold text-white">{i + 1}</span>
+                <li
+                  key={it.id}
+                  className="flex items-center gap-2 text-sm text-zinc-700"
+                >
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-zinc-500 text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
                   <span className="font-medium">{pinRoom(it.pin)}</span>
-                  <span className="truncate text-zinc-500">{it.text}</span>
                 </li>
               ))}
             </ol>
           </Section>
         )}
 
-        {nonDefect && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{nonDefect}</p>}
+        {nonDefect && (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">
+            {nonDefect}
+          </p>
+        )}
 
         <PrimaryButton disabled={!canSubmit} onClick={submit}>
-          {busy ? "Submitting…" : toSubmit.length > 1 ? `Submit ${toSubmit.length} Defects` : "Submit Defect"}
+          {busy
+            ? "Submitting…"
+            : toSubmit.length > 1
+              ? `Submit ${toSubmit.length} Defects`
+              : "Submit Defect"}
         </PrimaryButton>
       </div>
     </div>
@@ -307,17 +464,34 @@ export default function ReportDefect() {
 }
 
 /** Several defects in one go: one card per new case, each opening its own case page. */
-function MultiSubmitted({ caseIds, total, done }: { caseIds: string[]; total: number; done: boolean }) {
+function MultiSubmitted({
+  caseIds,
+  total,
+  done,
+}: {
+  caseIds: string[];
+  total: number;
+  done: boolean;
+}) {
   return (
     <div>
       <MobileHeader title="Reports Submitted" back="/buyer" />
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-2 text-sm font-semibold">
-            {done ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-zinc-400" />}
-            {done ? `${caseIds.length} defect case${caseIds.length > 1 ? "s" : ""} created` : `Submitting ${caseIds.length} of ${total}…`}
+            {done ? (
+              <CheckCircle2 className="size-5 text-emerald-600" />
+            ) : (
+              <Loader2 className="size-5 animate-spin text-zinc-400" />
+            )}
+            {done
+              ? `${caseIds.length} defect case${caseIds.length > 1 ? "s" : ""} created`
+              : `Submitting ${caseIds.length} of ${total}…`}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">Each photo was filed as its own case, so each defect gets its own inspection and record.</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Each photo was filed as its own case, so each defect gets its own
+            inspection and record.
+          </p>
         </Section>
         <ul className="space-y-3">
           {caseIds.map((id) => (
@@ -340,13 +514,28 @@ function SubmittedCase({ id }: { id: string }) {
   const c = useCase(id);
   if (!c) return null;
   return (
-    <Link href={`/buyer/cases/${id}`} className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200">
-      <PhotoThumb photo={c.photos[0]} className="size-16 shrink-0" label={false} zoom={false} />
+    <Link
+      href={`/buyer/cases/${id}`}
+      className="flex gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200"
+    >
+      <PhotoThumb
+        photo={c.photos[0]}
+        className="size-16 shrink-0"
+        label={false}
+        zoom={false}
+      />
       <div className="min-w-0 flex-1">
         <p className="font-semibold">{id}</p>
-        <p className="truncate text-xs text-zinc-500">{c.summary || c.description}</p>
+        <p className="truncate text-xs text-zinc-500">
+          {c.summary || c.description}
+        </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <StatusBadge status={c.status} buyer of={c} className="px-1.5 text-[11px]" />
+          <StatusBadge
+            status={c.status}
+            buyer
+            of={c}
+            className="px-1.5 text-[11px]"
+          />
           {c.visitSlot && c.bookingStatus !== "pending" && (
             <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
               <CalendarClock className="size-3.5" /> {fmtDateTime(c.visitSlot)}
@@ -361,24 +550,39 @@ function SubmittedCase({ id }: { id: string }) {
 type Stage = { label: string; state: "done" | "active" | "attention" | "todo" };
 
 /** Buyer-facing progress only: no agent names, no related-case details. */
-function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnType<typeof useCaseEvents>): Stage[] {
+function stagesFor(
+  c: NonNullable<ReturnType<typeof useCase>>,
+  events: ReturnType<typeof useCaseEvents>,
+): Stage[] {
   // After the buyer answers a follow-up question the agents run again: only their steps since that answer count.
-  const since = Math.max(0, ...events.filter((e) => e.type === "case.answered").map((e) => e.id));
-  const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent && e.id > since);
+  const since = Math.max(
+    0,
+    ...events.filter((e) => e.type === "case.answered").map((e) => e.id),
+  );
+  const did = (agent: string) =>
+    events.some(
+      (e) => e.type === "agent.step" && e.agent === agent && e.id > since,
+    );
   const review = c.status === "PENDING_REVIEW";
   // With USE_AI_AGENTS=only the agents run after the report is saved: a case that has left SUBMITTED is past
   // this stage even without an IntakeAgent step (e.g. held for review when the AI failed).
   const understood = did("IntakeAgent") || c.status !== "SUBMITTED";
   return [
     { label: "Report received", state: "done" },
-    { label: "Understanding your report", state: understood ? "done" : "active" },
+    {
+      label: "Understanding your report",
+      state: understood ? "done" : "active",
+    },
     c.status === "INFO_NEEDED"
       ? { label: "Waiting for one more detail from you", state: "attention" }
       : review
         ? { label: "Our team is checking your report", state: "attention" }
-        // The screen doesn't wait for the booking (TriageAgent, then BookingAgent): the buyer only sees the
-        // technician once they accept, so the booking carries on in the background after "All set".
-        : { label: "Sent to arrange your visit", state: understood ? "done" : "todo" },
+        : // The screen doesn't wait for the booking (TriageAgent, then BookingAgent): the buyer only sees the
+          // technician once they accept, so the booking carries on in the background after "All set".
+          {
+            label: "Sent to arrange your visit",
+            state: understood ? "done" : "todo",
+          },
   ];
 }
 
@@ -405,16 +609,28 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
   }, [categorized, tipShown]);
   // Demo only: the buyer sees the technician once they accept, so say who BookingAgent picked as soon as the
   // booking lands (once per booking; a hand-over to someone else is announced again).
-  const booking = c?.status === "VISIT_SCHEDULED" && c.technicianId && c.visitSlot ? `${c.technicianId}@${c.visitSlot}` : null;
+  const booking =
+    c?.status === "VISIT_SCHEDULED" && c.technicianId && c.visitSlot
+      ? `${c.technicianId}@${c.visitSlot}`
+      : null;
   const announced = useRef<string | null>(null);
   useEffect(() => {
-    if (!booking || booking === announced.current || !c?.technicianId || !c.visitSlot) return;
+    if (
+      !booking ||
+      booking === announced.current ||
+      !c?.technicianId ||
+      !c.visitSlot
+    )
+      return;
     announced.current = booking;
     const who = getTechnician(c.technicianId);
-    toast(`Demo: ${who ? who.name : "a technician"} (${c.technicianId}) assigned`, {
-      description: `Booked for ${fmtDateTime(c.visitSlot)}. The buyer sees the name once the technician accepts.`,
-      duration: 8000,
-    });
+    toast(
+      `Demo: ${who ? who.name : "a technician"} (${c.technicianId}) assigned`,
+      {
+        description: `Booked for ${fmtDateTime(c.visitSlot)}. The buyer sees the name once the technician accepts.`,
+        duration: 8000,
+      },
+    );
   }, [booking, c?.technicianId, c?.visitSlot]);
   // Answering the follow-up question sends the report through the agents again: replay from "Understanding".
   const [waiting, setWaiting] = useState(false);
@@ -427,17 +643,28 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
   }
   if (!c) return null;
   // Also not settled while a stage is still running (e.g. re-processing after the buyer answers a question).
-  const settled = done && (revealed >= real.length || (real[revealed].state !== "done" && real[revealed].state !== "active"));
+  const settled =
+    done &&
+    (revealed >= real.length ||
+      (real[revealed].state !== "done" && real[revealed].state !== "active"));
   const stages = real.map((st, i) => ({
     label: st.label,
-    state: i < revealed ? st.state : i === revealed ? (st.state === "attention" || (settled && st.state === "todo") ? st.state : "active") : "todo",
+    state:
+      i < revealed
+        ? st.state
+        : i === revealed
+          ? st.state === "attention" || (settled && st.state === "todo")
+            ? st.state
+            : "active"
+          : "todo",
   }));
   const review = c.status === "PENDING_REVIEW";
   const understood = stages[1]?.state === "done";
   const tech = getTechnician(c.technicianId);
   // Booking still running in the background, or booked and waiting for the technician to accept
-  const arranging = c.status === "SUBMITTED" || (c.status === "VISIT_SCHEDULED" && c.bookingStatus === "pending");
-
+  const arranging =
+    c.status === "SUBMITTED" ||
+    (c.status === "VISIT_SCHEDULED" && c.bookingStatus === "pending");
 
   return (
     <div>
@@ -445,8 +672,18 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
       <div className="space-y-4 p-4">
         <Section>
           <p className="flex items-center gap-2 text-sm font-semibold">
-            {settled ? <CheckCircle2 className="size-5 text-emerald-600" /> : <Loader2 className="size-5 animate-spin text-zinc-400" />}
-            {settled ? (c.status === "INFO_NEEDED" ? "We need one more detail" : review ? "Received: our team is checking it" : "All set") : "Processing your report…"}
+            {settled ? (
+              <CheckCircle2 className="size-5 text-emerald-600" />
+            ) : (
+              <Loader2 className="size-5 animate-spin text-zinc-400" />
+            )}
+            {settled
+              ? c.status === "INFO_NEEDED"
+                ? "We need one more detail"
+                : review
+                  ? "Received: our team is checking it"
+                  : "All set"
+              : "Processing your report…"}
           </p>
           <ol className="mt-3 space-y-2.5">
             {stages.map((st) => (
@@ -460,7 +697,15 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
                 ) : (
                   <span className="size-4 shrink-0 rounded-full border-2 border-zinc-200" />
                 )}
-                <span className={st.state === "done" || st.state === "attention" ? "text-zinc-900" : "text-zinc-400"}>{st.label}</span>
+                <span
+                  className={
+                    st.state === "done" || st.state === "attention"
+                      ? "text-zinc-900"
+                      : "text-zinc-400"
+                  }
+                >
+                  {st.label}
+                </span>
               </li>
             ))}
           </ol>
@@ -479,7 +724,8 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           /* The AI's first look isn't shown while it is still missing details: it would only be a guess. */
           <Section title="Defect Assessment">
             <p className="text-sm text-zinc-700">
-              We need a little more information before we can assess your report. Please answer the question below.
+              We need a little more information before we can assess your
+              report. Please answer the question below.
             </p>
           </Section>
         )}
@@ -491,7 +737,9 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
               <span className="text-sm font-medium">{c.summary}</span>
               <UrgencyBadge urgency={c.urgency} />
             </div>
-            <p className="mt-1 text-xs text-zinc-500">{PRIORITY_NOTE[c.urgency] ?? PRIORITY_NOTE.normal}</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {PRIORITY_NOTE[c.urgency] ?? PRIORITY_NOTE.normal}
+            </p>
             {tipShown && (
               <div className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
                 <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
@@ -504,10 +752,11 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </Section>
         )}
 
-
         {settled && c.status === "INFO_NEEDED" && (
           <Section>
-            <p className="text-sm font-semibold text-amber-800">One more question</p>
+            <p className="text-sm font-semibold text-amber-800">
+              One more question
+            </p>
             <p className="mt-1 text-sm text-zinc-700">{c.followUpQuestion}</p>
             <FollowUpForm caseId={c.id} />
           </Section>
@@ -516,7 +765,8 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
         {understood && !settled && c.status !== "INFO_NEEDED" && !review && (
           <Section title="Scheduled Inspection">
             <p className="flex items-center gap-2 text-sm text-zinc-500">
-              <Loader2 className="size-4 shrink-0 animate-spin text-zinc-400" /> Finding a technician for your visit…
+              <Loader2 className="size-4 shrink-0 animate-spin text-zinc-400" />{" "}
+              Finding a technician for your visit…
             </p>
           </Section>
         )}
@@ -527,21 +777,31 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </Section>
         )}
 
-        {settled && c.status === "VISIT_SCHEDULED" && c.bookingStatus !== "pending" && tech && c.visitSlot && (
-          <Section title="Scheduled Inspection">
-            <div className="flex items-center gap-3">
-              <TechAvatar tech={tech} className="size-11 shrink-0 ring-1 ring-zinc-200" iconClassName="size-6" />
-              <div className="text-sm">
-                <p>
-                  <span className="font-medium">{tech.name}</span> will visit on
-                </p>
-                <p className="mt-0.5 flex items-center gap-1.5 font-medium">
-                  <CalendarClock className="size-4 text-brand" /> {fmtDateTime(c.visitSlot)}
-                </p>
+        {settled &&
+          c.status === "VISIT_SCHEDULED" &&
+          c.bookingStatus !== "pending" &&
+          tech &&
+          c.visitSlot && (
+            <Section title="Scheduled Inspection">
+              <div className="flex items-center gap-3">
+                <TechAvatar
+                  tech={tech}
+                  className="size-11 shrink-0 ring-1 ring-zinc-200"
+                  iconClassName="size-6"
+                />
+                <div className="text-sm">
+                  <p>
+                    <span className="font-medium">{tech.name}</span> will visit
+                    on
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1.5 font-medium">
+                    <CalendarClock className="size-4 text-brand" />{" "}
+                    {fmtDateTime(c.visitSlot)}
+                  </p>
+                </div>
               </div>
-            </div>
-          </Section>
-        )}
+            </Section>
+          )}
 
         {settled && c.status !== "INFO_NEEDED" && (
           <Link href={`/buyer/cases/${c.id}`} className={primaryButtonClass}>

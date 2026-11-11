@@ -16,7 +16,15 @@ const KIND_LABEL: Record<Photo["kind"], string> = {
 };
 
 /** Full-size photo over the page; tap anywhere or press Esc to close. */
-export function PhotoViewer({ src, caption, onClose }: { src: string; caption?: string; onClose: () => void }) {
+export function PhotoViewer({
+  src,
+  caption,
+  onClose,
+}: {
+  src: string;
+  caption?: string;
+  onClose: () => void;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -28,12 +36,25 @@ export function PhotoViewer({ src, caption, onClose }: { src: string; caption?: 
     };
   }, [onClose]);
   return (
-    <Overlay label="Photo" onClick={onClose} className="flex flex-col items-center justify-center bg-black/90 p-4">
-      <button type="button" onClick={onClose} className="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/15 text-white" aria-label="Close photo">
+    <Overlay
+      label="Photo"
+      onClick={onClose}
+      className="flex flex-col items-center justify-center bg-black/90 p-4"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/15 text-white"
+        aria-label="Close photo"
+      >
         <X className="size-5" />
       </button>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={caption ?? "Photo"} className="max-h-[85%] max-w-full rounded-lg object-contain" />
+      <img
+        src={src}
+        alt={caption ?? "Photo"}
+        className="max-h-[85%] max-w-full rounded-lg object-contain"
+      />
       {caption && <p className="mt-3 text-sm text-white/80">{caption}</p>}
     </Overlay>
   );
@@ -41,37 +62,71 @@ export function PhotoViewer({ src, caption, onClose }: { src: string; caption?: 
 
 /** A case photo; tapping it opens it full size (zoom={false} inside links, so the tap navigates instead).
  * A missing photo shows the placeholder rather than crashing. */
-export function PhotoThumb({ photo, className, label = true, zoom = true }: { photo?: Photo | null; className?: string; label?: boolean; zoom?: boolean }) {
+export function PhotoThumb({
+  photo,
+  className,
+  label = true,
+  zoom = true,
+}: {
+  photo?: Photo | null;
+  className?: string;
+  label?: boolean;
+  zoom?: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  const kind = photo ? KIND_LABEL[photo.kind] ?? "Photo" : null;
+  const kind = photo ? (KIND_LABEL[photo.kind] ?? "Photo") : null;
   const canZoom = zoom && !!photo?.url;
   const image = photo?.url ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={photo.url} alt={`${kind} photo`} className="size-full object-cover" />
+    <img
+      src={photo.url}
+      alt={`${kind} photo`}
+      className="size-full object-cover"
+    />
   ) : (
     <div className="grid size-full place-items-center bg-gradient-to-br from-zinc-200 to-zinc-300 text-zinc-500">
       <ImageIcon className="size-6" />
     </div>
   );
   return (
-    <figure className={cn("relative overflow-hidden rounded-lg bg-zinc-100", className)}>
+    <figure
+      className={cn(
+        "relative overflow-hidden rounded-lg bg-zinc-100",
+        className,
+      )}
+    >
       {canZoom ? (
-        <button type="button" onClick={() => setOpen(true)} className="block size-full cursor-zoom-in" aria-label={`View ${kind?.toLowerCase()} photo full size`}>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="block size-full cursor-zoom-in"
+          aria-label={`View ${kind?.toLowerCase()} photo full size`}
+        >
           {image}
         </button>
       ) : (
         image
       )}
       {label && kind && (
-        <figcaption className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{kind}</figcaption>
+        <figcaption className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+          {kind}
+        </figcaption>
       )}
-      {open && photo?.url && <PhotoViewer src={photo.url} caption={`${kind} photo${photo.at ? ` · ${fmtDateTime(photo.at)}` : ""}`} onClose={() => setOpen(false)} />}
+      {open && photo?.url && (
+        <PhotoViewer
+          src={photo.url}
+          caption={`${kind} photo${photo.at ? ` · ${fmtDateTime(photo.at)}` : ""}`}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </figure>
   );
 }
 
 /** Generated stand-in photo for demos run on a laptop (a stained ceiling). */
-export function samplePhoto(variant: "leak" | "leak-worse" | "repaired" = "leak"): string {
+export function samplePhoto(
+  variant: "leak" | "leak-worse" | "repaired" = "leak",
+): string {
   const c = document.createElement("canvas");
   c.width = 640;
   c.height = 480;
@@ -132,8 +187,10 @@ export function PhotoInput({
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
-    if (!FORMATS.includes(f.type)) return setError("Please choose a JPG or PNG photo.");
-    if (f.size > MAX_BYTES) return setError("That photo is too large (max 3MB).");
+    if (!FORMATS.includes(f.type))
+      return setError("Please choose a JPG or PNG photo.");
+    if (f.size > MAX_BYTES)
+      return setError("That photo is too large (max 3MB).");
     setBusy(true);
     setError(null);
     try {
@@ -146,12 +203,26 @@ export function PhotoInput({
   }
 
   // Live camera where the browser allows it; otherwise the phone's own camera app via capture.
-  const takePhoto = () => (canUseCamera() ? setCamera(true) : cameraRef.current?.click());
+  const takePhoto = () =>
+    canUseCamera() ? setCamera(true) : cameraRef.current?.click();
 
   return (
     <div>
-      <input ref={fileRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={fromFile} />
-      <input ref={cameraRef} type="file" accept="image/jpeg,image/png" capture="environment" className="hidden" onChange={fromFile} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        className="hidden"
+        onChange={fromFile}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        capture="environment"
+        className="hidden"
+        onChange={fromFile}
+      />
       {camera && (
         <CameraCapture
           onCapture={(url) => {
@@ -168,11 +239,26 @@ export function PhotoInput({
       )}
       {value ? (
         <div className="relative">
-          <button type="button" onClick={() => setViewing(true)} className="block w-full cursor-zoom-in" aria-label="View selected photo full size">
+          <button
+            type="button"
+            onClick={() => setViewing(true)}
+            className="block w-full cursor-zoom-in"
+            aria-label="View selected photo full size"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={value} alt="Selected" className="h-44 w-full rounded-xl object-cover" />
+            <img
+              src={value}
+              alt="Selected"
+              className="h-44 w-full rounded-xl object-cover"
+            />
           </button>
-          {viewing && <PhotoViewer src={value} caption="Selected photo" onClose={() => setViewing(false)} />}
+          {viewing && (
+            <PhotoViewer
+              src={value}
+              caption="Selected photo"
+              onClose={() => setViewing(false)}
+            />
+          )}
           <button
             type="button"
             onClick={() => onChange(null)}
@@ -181,7 +267,11 @@ export function PhotoInput({
           >
             <X className="size-4" />
           </button>
-          <button type="button" onClick={takePhoto} className="absolute bottom-2 right-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
+          <button
+            type="button"
+            onClick={takePhoto}
+            className="absolute bottom-2 right-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white"
+          >
             Retake
           </button>
         </div>
@@ -198,17 +288,21 @@ export function PhotoInput({
               onClick={() => fileRef.current?.click()}
               className="flex flex-1 items-center justify-center gap-1.5 bg-brand px-2 text-sm font-medium text-white transition hover:bg-brand-dark"
             >
-              <CloudUpload className="size-5 shrink-0" /> <span className="whitespace-nowrap">Upload a Photo</span>
+              <CloudUpload className="size-5 shrink-0" />{" "}
+              <span className="whitespace-nowrap">Upload a Photo</span>
             </button>
             <button
               type="button"
               onClick={takePhoto}
               className="flex flex-1 items-center justify-center gap-1.5 bg-zinc-100 px-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-200"
             >
-              <Camera className="size-5 shrink-0" /> <span className="whitespace-nowrap">Take Photo</span>
+              <Camera className="size-5 shrink-0" />{" "}
+              <span className="whitespace-nowrap">Take Photo</span>
             </button>
           </div>
-          <p className="mt-1.5 text-xs text-zinc-500">Format Support: JPG, PNG (Max 3MB)</p>
+          <p className="mt-1.5 text-xs text-zinc-400">
+            Format Support: JPG, PNG (Max 3MB)
+          </p>
         </div>
       )}
       {error && <p className="mt-1 text-xs text-brand">{error}</p>}
