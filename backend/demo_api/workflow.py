@@ -234,10 +234,13 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
     so the progress screen (3-second refresh) sees each step end. SimilarDefectAgent comes last because only the
     case page shows its links: the buyer's visit is booked about 7 s sooner. If intake or booking fails, the case
     is held for SDP review with the error as the reason, instead of being left at Submitted.
+    Buyer messages (CommsAgent) are written after each save, not inside it: one slow model call (40 s on a bad
+    Gemini moment) must not hide a follow-up question or a booking the screen could already show. A failed
+    message is noted in the case trace (run_after_click) and doesn't hold the case.
     answer: the buyer's answer to the follow-up question; it is taken as given (no second question)."""
     try:
         with db.get_conn() as conn:
-            ctx = Ctx(conn)
+            ctx = _messages_after_save(Ctx(conn))
             c = load_case(ctx, case_id)
             if c["status"] != "SUBMITTED":
                 return
@@ -247,13 +250,15 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
             go_on = _save_intake(ctx, case_id, result)
             if answer is not None:
                 step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit'] or 'as described'}")
+        run_after_click(list(ctx.after_click))  # intake is saved: e.g. "We need a little more information"
         if not go_on:
             return
         with db.get_conn() as conn:
-            ctx = Ctx(conn)
+            ctx = _messages_after_save(Ctx(conn))
             if load_case(ctx, case_id)["status"] != "SUBMITTED":
                 return  # someone acted on the case meanwhile
             _book_new_case(ctx, case_id)
+        run_after_click(list(ctx.after_click))  # the booking is saved: "We've received your report"
     except Exception as e:
         log.exception("AI agents could not finish new report %s", case_id)
         held = tools.flag_case_for_human_review(case_id, "AI agents", f"The AI agents could not finish this report: {e}", 0.0)
@@ -280,6 +285,12 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
         # The visit is already booked: a failed link must not hold the case and release it.
         log.exception("SimilarDefectAgent could not link related cases for report %s", case_id)
         tools.log_agent_step(case_id, "SimilarDefectAgent", f"Could not link related cases: {e}")
+
+
+def _messages_after_save(ctx: Ctx) -> Ctx:
+    """Queue buyer messages on ctx.after_click (as a web click does in only mode) for run_after_click."""
+    ctx.async_ai = True
+    return ctx
 
 
 def run_after_click(jobs: list[tuple]) -> None:

@@ -16,13 +16,13 @@ def _msg(fake_llm, kind, reply="Thank you.", case=None, **extra):
 
 
 @pytest.mark.parametrize("kind, case, extra, title, tail", [
-    ("received", {}, {"slot": SLOT}, "We've received your report", f"Visit time: {SLOT}."),
+    ("received", {}, {"slot": SLOT}, "We've received your report", "Thank you for your report."),
     ("info_needed", {"status": "INFO_NEEDED", "follow_up_question": "Which room is this in?"}, {},
      "We need a little more information", "Which room is this in?"),
     ("valid", {"status": "VALID", "repair_hours": 4}, {"note": "Joint leaking."}, "Defect confirmed: repair being arranged",
      "The repair will take about 4 hours. We're booking the repair with the first available technician and will send you the time."),
     ("repair_booked", {"status": "REPAIR_BOOKED"}, {"slot": SLOT, "duration": "4 hours"}, "Repair booked",
-     f"Repair time: {SLOT} (about 4 hours)."),
+     "We will confirm the time once the technician accepts."),
     ("confirmed", {}, {"job": "inspection visit", "slot": SLOT}, "Technician confirmed",
      f"Your inspection visit is confirmed for {SLOT}."),
     ("verify", {"status": "PENDING_SIGNOFF"}, {}, "Repair done",
@@ -31,9 +31,9 @@ def _msg(fake_llm, kind, reply="Thank you.", case=None, **extra):
      "Please check the repair and sign off", "Look.\nTouch."),
     ("closed", {"status": "CLOSED"}, {}, "Your case is closed", "Your case is now closed."),
     ("reopened", {"status": "REOPENED"}, {}, "Case reopened", "We will update you on the next step shortly."),
-    ("revisit", {}, {"slot": SLOT}, "Technician revisit booked", f"Revisit time: {SLOT}."),
+    ("revisit", {}, {"slot": SLOT}, "Technician revisit booked", "We will confirm the time once the technician accepts."),
     ("extra_inspection", {"status": "EXTRA_INSPECTION"}, {"slot": SLOT}, "Detailed inspection scheduled",
-     f"Inspection time: {SLOT}."),
+     "We will confirm the time once the technician accepts."),
     ("reassigned", {}, {"job": "repair", "slot": SLOT, "same_time": False}, "Your technician has changed",
      f"Your repair has moved to {SLOT}."),
 ])
@@ -64,7 +64,7 @@ def test_guardrail_still_applies(fake_llm):
     fake_llm.responses = ["We admit fault and will refund you.", "We are sorry for our mistake."]
     title, body = message_for_kind("received", CASE, {"slot": SLOT})
     assert "refund" not in body.lower() and "mistake" not in body.lower()
-    assert body.endswith(f"Visit time: {SLOT}.")
+    assert "Visit time" not in body and body.endswith("once the technician accepts.")
 
 
 def test_no_names_or_ids_reach_the_model(fake_llm):
@@ -84,18 +84,18 @@ def test_hours_from_the_db_read_naturally(fake_llm):
     _, valid = _msg(fake_llm, "valid", case={"status": "VALID", "repair_hours": 2.0})
     assert valid.endswith("The repair will take about 2 hours. We're booking the repair with the first available technician and will send you the time.")
     _, booked = _msg(fake_llm, "repair_booked", case={"status": "REPAIR_BOOKED"}, slot=SLOT, duration="about 2 hours")
-    assert booked.endswith(f"Repair time: {SLOT} (about 2 hours).")
+    assert booked.endswith("We will confirm the time once the technician accepts.") and "Repair time" not in booked
 
 
 def test_repair_booked_is_fixed_text_only(fake_llm):
     # Live qwen wrote "We'll be in touch with the exact time soon" right above the fixed repair time.
     _, body = _msg(fake_llm, "repair_booked", case={"status": "REPAIR_BOOKED"}, slot=SLOT, duration="2 hours")
-    assert body == f"Your repair is booked.\n\nRepair time: {SLOT} (about 2 hours)."
+    assert body == "Your repair is booked.\n\nWe will confirm the time once the technician accepts."
     assert fake_llm.calls == []
 
 
 def test_detailed_inspection_is_fixed_text_only(fake_llm):
     # Live qwen wrote "Your team has scheduled…" (it is our team).
     _, body = _msg(fake_llm, "extra_inspection", case={"status": "EXTRA_INSPECTION"}, slot=SLOT)
-    assert body == f"Our team has arranged a detailed inspection of your case.\n\nInspection time: {SLOT}."
+    assert body == "Our team has arranged a detailed inspection of your case.\n\nWe will confirm the time once the technician accepts."
     assert fake_llm.calls == []
