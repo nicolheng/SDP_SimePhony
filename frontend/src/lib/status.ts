@@ -117,7 +117,7 @@ export const TECH_EXPLAIN: Record<CaseStatus, string> = {
   INFO_NEEDED: "Waiting for the buyer to answer a follow-up question.",
   PENDING_REVIEW: "SDP staff are checking this case. You'll be notified if a job is booked for you.",
   VISIT_SCHEDULED: "Inspect on site, then mark the defect Valid or Invalid.",
-  VALID: "You confirmed the defect. Waiting for the buyer to book a repair slot.",
+  VALID: "You confirmed the defect. The repair is being booked at the first free time.",
   INVALID: "You marked this as not a defect. The case is closed.",
   REPAIR_BOOKED: "Repair booked. Fix the defect, then Mark Repaired with a note and photo.",
   REPAIRED: "Repair recorded. The Verification Agent is preparing the buyer's checklist.",

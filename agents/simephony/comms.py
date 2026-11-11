@@ -18,6 +18,9 @@ NEW_CASE_REVIEW_NOTE = ("As this problem has been reported before in your unit, 
                         "more detailed inspection is needed.")
 REPAIR_DONE_NOTE = "The developer reviews the repair first. We will let you know when you can check it and sign off."
 REOPEN_RECEIVED_NOTE = "We will update you on the next step shortly."
+TIME_PENDING_NOTE = "We will confirm the time once the technician accepts."
+UNIT_WAIT_NOTE = ("You can check this repair now. You can sign off your unit once our team has approved "
+                  "the other repairs in it.")
 
 _FALLBACK = "Thank you for your report."
 
@@ -27,12 +30,12 @@ NEUTRAL_TEMPLATES = {
     "INVALID": "Our technician has reviewed your report and found that it is not covered as a developer defect.",
     "VISIT_SCHEDULED": "We have received your report and requested a technician visit. We will confirm the time once the technician accepts.",
     "INFO_NEEDED": "We need a little more information to look into your report.",  # the question is appended
-    "REPAIR_BOOKED": "Your repair is booked.",  # fixed opening; the time is appended
+    "REPAIR_BOOKED": "Your repair is booked.",  # fixed opening; TIME_PENDING_NOTE is appended
     "CONFIRMED": "Your technician has confirmed the booking.",  # the job and time are appended
     "REOPEN_RECEIVED": "Your case has been reopened with the new photo you provided.",  # REOPEN_RECEIVED_NOTE appended
-    "REVISIT": "Your case has been reopened and a technician revisit has been booked.",  # the time is appended
+    "REVISIT": "Your case has been reopened and a technician revisit has been booked.",  # TIME_PENDING_NOTE is appended
     "REASSIGNED": "The technician for your case has changed.",  # the job's time is appended
-    "EXTRA_INSPECTION": "Our team has arranged a detailed inspection of your case.",  # fixed opening; the time is appended
+    "EXTRA_INSPECTION": "Our team has arranged a detailed inspection of your case.",  # fixed opening; TIME_PENDING_NOTE is appended
     "REPAIR_DONE": "The technician has reported that the repair is complete.",  # REPAIR_DONE_NOTE is appended
     "PENDING_SIGNOFF": (
         "The developer has approved the repair. "
@@ -239,6 +242,7 @@ def message_for_kind(kind: str, case: dict, extra: dict | None = None) -> tuple[
         "repair_estimate": {"hours": f"{float(case['repair_hours']):g}"} if case.get("repair_hours") else {},
         "verification_result": {"protocol": extra.get("guide"), "steps": extra.get("guide_steps")},
         "signoff_deadline_local": extra.get("deadline"),
+        "signoff_partial": bool(extra.get("partial")),
         "booking_result": {"start_local": extra.get("slot"), "job": extra.get("job"), "same_time": extra.get("same_time"),
                            "duration": extra.get("duration"), "reassigned": kind == "reassigned"},
         "new_case_escalation": {"escalated": bool(extra.get("escalated"))},
@@ -366,28 +370,26 @@ def _draft(state: dict) -> str:
         message = f"{message}\n\nYour {job} {when}."
     if template_key == "REPAIR_DONE":
         message = f"{message}\n\n{REPAIR_DONE_NOTE}"
-    if template_key == "VISIT_SCHEDULED" and state.get("comms_key") and booking.get("start_local"):
-        message = f"{message}\n\nVisit time: {booking['start_local']}."
     if template_key == "INFO_NEEDED" and state.get("follow_up_question"):
         message = f"{message}\n\n{state['follow_up_question']}"
-    if template_key == "REPAIR_BOOKED" and booking.get("start_local"):
-        duration = str(booking.get("duration") or "").strip()
-        duration = f" (about {duration.removeprefix('about ').strip()})" if duration else ""
-        message = f"{message}\n\nRepair time: {booking['start_local']}{duration}."
+    if template_key == "REPAIR_BOOKED":
+        message = f"{message}\n\n{TIME_PENDING_NOTE}"
     if template_key == "CONFIRMED" and booking.get("start_local"):
         message = f"{message}\n\nYour {booking.get('job') or 'visit'} is confirmed for {booking['start_local']}."
     if template_key == "REOPEN_RECEIVED":
         message = f"{message}\n\n{REOPEN_RECEIVED_NOTE}"
-    if template_key == "REVISIT" and booking.get("start_local"):
-        message = f"{message}\n\nRevisit time: {booking['start_local']}."
+    if template_key == "REVISIT":
+        message = f"{message}\n\n{TIME_PENDING_NOTE}"
     if state.get("event") in (None, "", "case.created") and (state.get("new_case_escalation") or {}).get("escalated"):
         message = f"{message}\n\n{NEW_CASE_REVIEW_NOTE}"
-    if template_key == "EXTRA_INSPECTION" and (state.get("booking_result") or {}).get("start_local"):
-        message = f"{message}\n\nInspection time: {state['booking_result']['start_local']}."
+    if template_key == "EXTRA_INSPECTION":
+        message = f"{message}\n\n{TIME_PENDING_NOTE}"
     if template_key == "PENDING_SIGNOFF":
         deadline = state.get("signoff_deadline_local")
         if deadline:
             message = f"{message}\n\nPlease check the repair and sign off by {deadline} if it is fixed."
+        elif state.get("signoff_partial"):
+            message = f"{message}\n\n{UNIT_WAIT_NOTE}"
         steps = state["verification_result"].get("steps")
         if steps:
             # Just the checks, numbered: the stored guide's intro repeats the case title and the technician's note

@@ -441,7 +441,7 @@ def test_inspection_approved_attaches_brief_books_and_tells_buyer(fake_llm, no_s
     assert attached and attached[0][0] == "C-1" and len(attached[0][1]["checklist"]) == 3
     assert booking_db.assigned and final["current_status"] == "EXTRA_INSPECTION"
     assert final["comms_result"]["title"] == "Detailed inspection scheduled"
-    assert final["comms_result"]["message"].endswith("Inspection time: Thu 22 Oct, 9:00 am.")
+    assert final["comms_result"]["message"].endswith("We will confirm the time once the technician accepts.")
 
 
 def test_brief_refused_ends_without_booking_or_email(fake_llm, no_side_effects, booking_db, monkeypatch):

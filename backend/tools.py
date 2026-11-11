@@ -1930,7 +1930,8 @@ def reject_repair(case_id: str, note: str, decided_by: Optional[str] = None) -> 
 
 @_returns_errors
 def record_verification(case_id: str, outcome: str, note: str = "", photo: Optional[str] = None) -> dict:
-    """Buyer's check of one repaired defect, once the developer has approved every open defect in the unit.
+    """Buyer's check of one repaired defect, as soon as the developer has approved it (other defects in the unit may
+    still be open; the unit is signed off only once all are approved and checked).
     FIXED -> the defect is verified (verification_status "verified") and stays PENDING_SIGNOFF: it closes when
     the buyer signs off the whole unit. NOT_FIXED (photo required) -> REOPENED; RecurrenceAgent runs next.
     CANNOT_VERIFY -> stays PENDING_SIGNOFF. Returns {ok, outcome, status, reopen_count?, unit} (unit: unit_signoff_state)."""
@@ -1941,10 +1942,8 @@ def record_verification(case_id: str, outcome: str, note: str = "", photo: Optio
             raise ToolError("Unknown result.")
         if outcome == "NOT_FIXED" and not photo:
             raise ToolError("Please add a new photo showing the problem.")
-        unit = unit_signoff_state(conn, case["unit_id"])
-        if not unit["canVerify"]:
-            raise ToolError("You can check the repairs once our team has approved every defect in your unit. "
-                            f"Still waiting: {', '.join(unit['waitingForDeveloper'])}.")
+        if not case["developer_signed_at"]:
+            raise ToolError("You can check this repair once our team has approved it.")
         now = _now(conn)
         saved = _save_photo(conn, case_id, photo, "reopen" if outcome == "NOT_FIXED" else "verification")
         v = conn.execute(

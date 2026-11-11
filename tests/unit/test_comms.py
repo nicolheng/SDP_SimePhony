@@ -605,7 +605,7 @@ def test_detailed_inspection_booked_message(fake_llm):
                        "intake_result": {"category": "water_leak"},
                        "booking_result": {"booking_status": "PENDING", "start_local": "Thu, 22 Oct, 9:00 am"}})
     assert out["comms_result"]["title"] == "Detailed inspection scheduled"
-    assert body.endswith("Inspection time: Thu, 22 Oct, 9:00 am.")
+    assert body.endswith("We will confirm the time once the technician accepts.")
 
 
 def test_signoff_message_lists_just_the_checks(fake_llm):

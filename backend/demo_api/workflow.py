@@ -41,7 +41,7 @@ class Ctx:
         self.deferred_answers: list[tuple[str, str]] = []  # (case_id, answer): agents run after the request (only mode)
         # USE_AI_AGENTS=only and a web click: buyer messages (CommsAgent) and the repair estimate run after the click
         # is saved, so the button doesn't wait for the model. Jobs: ("message", case_id, kind, extra) | ("estimate", case_id)
-        # | ("extra_inspection", case_id, approval_id).
+        # | ("extra_inspection", case_id, approval_id) | ("verification", case_id).
         self.after_click: list[tuple] = []
         from agents.simephony.llm_client import ai_only
         self.async_ai = defer_agents and ai_only() and ai_agents.enabled("comms")
@@ -234,10 +234,13 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
     so the progress screen (3-second refresh) sees each step end. SimilarDefectAgent comes last because only the
     case page shows its links: the buyer's visit is booked about 7 s sooner. If intake or booking fails, the case
     is held for SDP review with the error as the reason, instead of being left at Submitted.
+    Buyer messages (CommsAgent) are written after each save, not inside it: one slow model call (40 s on a bad
+    Gemini moment) must not hide a follow-up question or a booking the screen could already show. A failed
+    message is noted in the case trace (run_after_click) and doesn't hold the case.
     answer: the buyer's answer to the follow-up question; it is taken as given (no second question)."""
     try:
         with db.get_conn() as conn:
-            ctx = Ctx(conn)
+            ctx = _messages_after_save(Ctx(conn))
             c = load_case(ctx, case_id)
             if c["status"] != "SUBMITTED":
                 return
@@ -247,13 +250,15 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
             go_on = _save_intake(ctx, case_id, result)
             if answer is not None:
                 step(ctx, case_id, "IntakeAgent", f"Follow-up answered: location {load_case(ctx, case_id)['location_in_unit'] or 'as described'}")
+        run_after_click(list(ctx.after_click))  # intake is saved: e.g. "We need a little more information"
         if not go_on:
             return
         with db.get_conn() as conn:
-            ctx = Ctx(conn)
+            ctx = _messages_after_save(Ctx(conn))
             if load_case(ctx, case_id)["status"] != "SUBMITTED":
                 return  # someone acted on the case meanwhile
             _book_new_case(ctx, case_id)
+        run_after_click(list(ctx.after_click))  # the booking is saved: "We've received your report"
     except Exception as e:
         log.exception("AI agents could not finish new report %s", case_id)
         held = tools.flag_case_for_human_review(case_id, "AI agents", f"The AI agents could not finish this report: {e}", 0.0)
@@ -282,6 +287,12 @@ def process_new_report(case_id: str, answer: str | None = None) -> None:
         tools.log_agent_step(case_id, "SimilarDefectAgent", f"Could not link related cases: {e}")
 
 
+def _messages_after_save(ctx: Ctx) -> Ctx:
+    """Queue buyer messages on ctx.after_click (as a web click does in only mode) for run_after_click."""
+    ctx.async_ai = True
+    return ctx
+
+
 def run_after_click(jobs: list[tuple]) -> None:
     """The AI work a click queued (Ctx.after_click), in order, each committed on its own so the buyer's inbox fills
     in as it goes. A failure is logged and shown in the case trace; it never undoes the click."""
@@ -296,6 +307,8 @@ def run_after_click(jobs: list[tuple]) -> None:
                     start_extra_inspection(ctx, case_id, job[2])
                 elif job[0] == "repair_booking":
                     book_repair_now(ctx, case_id)
+                elif job[0] == "verification":
+                    start_buyer_check(ctx, case_id)
                 else:
                     notify_buyer(ctx, case_id, job[2], **job[3])
         except Exception as e:
@@ -304,6 +317,7 @@ def run_after_click(jobs: list[tuple]) -> None:
                 with db.get_conn() as conn:
                     agent, what = {"estimate": ("RepairEstimateAgent", "repair estimate"),
                                    "repair_booking": ("TriageAgent", "repair booking"),
+                                   "verification": ("VerificationAgent", "repair photo check"),
                                    "extra_inspection": ("InitialInspectionAgent", "inspection brief and booking")
                                    }.get(job[0], ("CommsAgent", f"buyer message ({job[2]})"))
                     step(Ctx(conn), case_id, agent, f"Could not finish the {what}: {type(e).__name__}: {str(e)[:200]}")
@@ -490,14 +504,15 @@ def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
 
 
 def developer_signoff(ctx: Ctx, case_id: str) -> None:
-    """SDP approves one repair. The buyer is told once SDP has approved every open defect in the unit, since only
-    then can they check the repairs and sign off the unit (#71); until then the earlier "Repair done" message
-    already says we'll let them know."""
+    """SDP approves one repair. The buyer can check it straight away; they sign off the unit (#71) once SDP has
+    approved every open defect in it, so the sign-off deadline is only given in the last approval's message."""
     _tool(ctx, tools.record_signoff, case_id, "developer")
     unit = tools.unit_signoff_state(ctx.conn, load_case(ctx, case_id)["unit_id"])
     if unit["canVerify"]:
         notify_buyer(ctx, case_id, "ready_signoff", deadline=fmt_date(unit["deadline"]), count=len(unit["caseIds"]),
                      unit=unit["unitId"])
+    else:  # the buyer can check this one now; the unit sign-off waits for the others
+        notify_buyer(ctx, case_id, "ready_signoff", partial=True, unit=unit["unitId"])
 
 
 def sign_off_unit(ctx: Ctx, unit_id: str, note: str) -> None:
@@ -583,6 +598,15 @@ def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str |
 
 def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:
     _tool(ctx, tools.mark_repaired, case_id, note, photo)
+    if ctx.async_ai:  # the photo check (vision model, 9-18 s) runs right after the click, so the button doesn't freeze
+        ctx.after_click.append(("verification", case_id))
+        return
+    start_buyer_check(ctx, case_id)
+
+
+def start_buyer_check(ctx: Ctx, case_id: str) -> None:
+    """VerificationAgent after a repair: check the repair photo against the original, then give the buyer the
+    checklist (REPAIRED -> PENDING_SIGNOFF)."""
     c = load_case(ctx, case_id)
     guide, photo_note, review = ai_agents.verification_guide(ctx, c)
     if review and review.get("needs_human_review"):

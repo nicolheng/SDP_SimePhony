@@ -49,6 +49,11 @@ _VISION_SYSTEM = (
     '{"assessment": "looks_resolved" | "unclear" | "not_resolved", '
     '"observations": "one or two short sentences describing what you see", '
     '"matches_location": true | false, "confidence_score": 0.9}. '
+    "First, when two photos are given, check whether they show the same object and place (for example the "
+    "same door, the same ceiling corner, the same socket). If the repair photo shows a totally different "
+    "object or place (e.g. the original is a door and the repair photo is a ceiling), set matches_location "
+    "to false, use not_resolved, and start observations with \"The repair photo shows a different place:\" "
+    "followed by what each photo shows. "
     "matches_location is true only if the repair photo shows the location and defect type described. "
     "Judge only what the repair photo itself shows. Use looks_resolved only when the repair photo clearly "
     "shows the reported fault is gone; if it looks the same as the original defect photo, use not_resolved. "
@@ -117,10 +122,15 @@ def assess_repair_photo(state: dict) -> dict:
     category = intake.get("category", "other")
     location = _location(state)
 
+    # Each photo gets its own label right before it: with one note after both, the model mixed them up and
+    # described the original door as the repair photo (C-0016).
     content = []
     original = state.get("image_path")
     if original and os.path.exists(original):
+        content.append({"type": "text", "text": "Photo 1: the ORIGINAL defect photo from the buyer's report."})
         content.append(_image_part(original))
+    content.append({"type": "text", "text": "Photo 2: the technician's REPAIR photo." if original and os.path.exists(original)
+                    else "The technician's REPAIR photo (no original photo was given)."})
     content.append(_image_part(state["repair_photo_path"]))
     content.append({
         "type": "text",
@@ -130,7 +140,8 @@ def assess_repair_photo(state: dict) -> dict:
             f"Location: {location}\n"
             # The technician's note is left out on purpose: llava copied it into its verdict ("the door
             # now closes fully") even for an unchanged photo, so the photo is judged on its own.
-            "The first image (if two are given) is the original defect; the last image is the repair photo."
+            "Compare Photo 2 (repair) against Photo 1 (original). If they show different objects or places, "
+            "say so."
         ),
     })
     messages = [

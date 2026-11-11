@@ -1,7 +1,7 @@
 "use client";
 import { CalendarClock, CheckCircle2, CircleAlert, Lightbulb, Loader2, Plus, Sparkles, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrangingSoon } from "@/components/arranging-soon";
 import { AssetPicker } from "@/components/asset-picker";
@@ -271,18 +271,19 @@ function stagesFor(c: NonNullable<ReturnType<typeof useCase>>, events: ReturnTyp
   const since = Math.max(0, ...events.filter((e) => e.type === "case.answered").map((e) => e.id));
   const did = (agent: string) => events.some((e) => e.type === "agent.step" && e.agent === agent && e.id > since);
   const review = c.status === "PENDING_REVIEW";
-  const booked = c.status === "VISIT_SCHEDULED" && !!c.visitSlot;
+  // With USE_AI_AGENTS=only the agents run after the report is saved: a case that has left SUBMITTED is past
+  // this stage even without an IntakeAgent step (e.g. held for review when the AI failed).
+  const understood = did("IntakeAgent") || c.status !== "SUBMITTED";
   return [
     { label: "Report received", state: "done" },
-    // With USE_AI_AGENTS=only the agents run after the report is saved: a case that has left SUBMITTED is past
-    // this stage even without an IntakeAgent step (e.g. held for review when the AI failed).
-    { label: "Understanding your report", state: did("IntakeAgent") || c.status !== "SUBMITTED" ? "done" : "active" },
+    { label: "Understanding your report", state: understood ? "done" : "active" },
     c.status === "INFO_NEEDED"
       ? { label: "Waiting for one more detail from you", state: "attention" }
       : review
         ? { label: "Our team is checking your report", state: "attention" }
-        : { label: "Finding a technician", state: did("TriageAgent") ? "done" : did("IntakeAgent") ? "active" : "todo" },
-    ...(c.status === "INFO_NEEDED" ? [] : [{ label: "Arranging your inspection", state: booked ? ("done" as const) : ("todo" as const) }]),
+        // The screen doesn't wait for the booking (TriageAgent, then BookingAgent): the buyer only sees the
+        // technician once they accept, so the booking carries on in the background after "All set".
+        : { label: "Sent to arrange your visit", state: understood ? "done" : "todo" },
   ];
 }
 
@@ -307,6 +308,19 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
     const t = setTimeout(() => setTipShown(true), 700);
     return () => clearTimeout(t);
   }, [categorized, tipShown]);
+  // Demo only: the buyer sees the technician once they accept, so say who BookingAgent picked as soon as the
+  // booking lands (once per booking; a hand-over to someone else is announced again).
+  const booking = c?.status === "VISIT_SCHEDULED" && c.technicianId && c.visitSlot ? `${c.technicianId}@${c.visitSlot}` : null;
+  const announced = useRef<string | null>(null);
+  useEffect(() => {
+    if (!booking || booking === announced.current || !c?.technicianId || !c.visitSlot) return;
+    announced.current = booking;
+    const who = getTechnician(c.technicianId);
+    toast(`Demo: ${who ? who.name : "a technician"} (${c.technicianId}) assigned`, {
+      description: `Booked for ${fmtDateTime(c.visitSlot)}. The buyer sees the name once the technician accepts.`,
+      duration: 8000,
+    });
+  }, [booking, c?.technicianId, c?.visitSlot]);
   // Answering the follow-up question sends the report through the agents again: replay from "Understanding".
   const [waiting, setWaiting] = useState(false);
   if (c && (c.status === "INFO_NEEDED") !== waiting) {
@@ -326,6 +340,8 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
   const review = c.status === "PENDING_REVIEW";
   const understood = stages[1]?.state === "done";
   const tech = getTechnician(c.technicianId);
+  // Booking still running in the background, or booked and waiting for the technician to accept
+  const arranging = c.status === "SUBMITTED" || (c.status === "VISIT_SCHEDULED" && c.bookingStatus === "pending");
 
 
   return (
@@ -410,7 +426,7 @@ function Processing({ caseId, done }: { caseId: string; done: boolean }) {
           </Section>
         )}
 
-        {settled && c.status === "VISIT_SCHEDULED" && c.bookingStatus === "pending" && (
+        {settled && arranging && (
           <Section title="Scheduled Inspection">
             <ArrangingSoon />
           </Section>

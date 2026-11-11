@@ -52,11 +52,14 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
     c = _case(case_id)
     assert c["status"] == "VISIT_SCHEDULED" and c["category"] == "water_leak"
     first = _messages(case_id)[-1]
-    assert first["title"] == "We've received your report" and "Visit time:" in first["body"]  # CommsAgent
+    assert first["title"] == "We've received your report" and "Visit time:" not in first["body"]  # CommsAgent
     assert any(t.get("agent") == "TriageAgent" and t["message"].startswith("Triage:") for t in _trace(case_id))
     assert not any((t.get("data") or {}).get("fallback_used") for t in _trace(case_id))
 
     _web(workflow.accept_job, case_id, c["technician_id"])
+    # The time goes out only once the technician accepts
+    m = _messages(case_id)[-1]
+    assert m["title"] == "Technician confirmed" and "is confirmed for" in m["body"]
     _web(workflow.record_verdict, case_id, "VALID", "Pipe joint leaking above the wardrobe; ceiling board soaked.", None)
     c = _case(case_id)
     assert c["repair_hours"] in (2, 4, 8)  # RepairEstimateAgent
@@ -68,6 +71,8 @@ def test_full_flow_with_ai_agents(fake_llm, ai_on):
 
     import tools
     _web(workflow.accept_job, case_id, _case(case_id)["technician_id"])
+    m = _messages(case_id)[-1]
+    assert m["title"] == "Technician confirmed" and "repair is confirmed for" in m["body"]
     _web(workflow.mark_repaired, case_id, "Resealed the joint and replaced the board.", None)
     assert _case(case_id)["status"] == "PENDING_SIGNOFF"
     assert _messages(case_id)[-1]["title"] == "Repair done"
@@ -155,7 +160,7 @@ def test_llm_down_falls_back_to_the_stand_ins(fake_llm, ai_on):
                for t in _trace(case_id))
     m = _messages(case_id)[-1]
     # CommsAgent has its own fallback: the fixed safe template, still with the visit time
-    assert m["body"].startswith(NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]) and "Visit time:" in m["body"]
+    assert m["body"].startswith(NEUTRAL_TEMPLATES["VISIT_SCHEDULED"]) and "Visit time:" not in m["body"]
 
 
 def test_intake_deletes_temporary_browser_photo_after_vision_call(monkeypatch):
@@ -844,6 +849,59 @@ def test_only_mode_failed_brief_can_be_tried_again(fake_llm, monkeypatch):
     assert _brief(case_id) is not None and _case(case_id)["status"] == "EXTRA_INSPECTION"
     with pytest.raises(Exception):  # nothing left to retry
         routes.retry_brief(approval_id, _request("/retry-brief"), BackgroundTasks())
+
+
+def test_only_mode_question_and_booking_are_saved_before_the_buyer_message(fake_llm, monkeypatch):
+    """A slow CommsAgent call (40 s on a bad Gemini moment) must not hide what the progress screen can already
+    show: when each buyer message is written, the case's new status is already saved and visible."""
+    import db
+    from demo_api import ai_agents, workflow
+    monkeypatch.setenv("USE_AI_AGENTS", "only")
+    seen = []
+    real_comms = ai_agents.comms
+
+    def comms(ctx, kind, case, extra=None):
+        with db.get_conn() as other:  # what the screen's next refresh reads
+            seen.append((kind, other.execute("SELECT status FROM cases WHERE case_id = ?", (case["case_id"],)).fetchone()[0]))
+        return real_comms(ctx, kind, case, extra)
+
+    monkeypatch.setattr(ai_agents, "comms", comms)
+    response, tasks = _api_report(text="Water keeps dripping from the ceiling.")  # names no room: IntakeAgent asks
+    case_id = response["caseId"]
+    _run_task(tasks, workflow.process_new_report)
+    assert seen[-1] == ("info_needed", "INFO_NEEDED")
+    assert _messages(case_id)[-1]["title"] == "We need a little more information"
+
+    tasks = __import__("fastapi").BackgroundTasks()
+    from demo_api import routes
+    routes.follow_up(case_id, routes.FollowUp(answer="In the master bedroom, above the wardrobe."), _request("/follow-up"), tasks)
+    _run_task(tasks, workflow.process_new_report)
+    assert seen[-1] == ("received", "VISIT_SCHEDULED")
+    assert _messages(case_id)[-1]["title"] == "We've received your report"
+
+
+def test_only_mode_mark_repaired_returns_before_the_photo_check(fake_llm, ai_on, photo_check_resolved, monkeypatch):
+    # The photo check (vision model, 9-18 s live) froze the Mark Repaired button: it now runs after the click.
+    import db
+    from demo_api import workflow
+    case_id = _repaired("tests/data/test_cases/images/ceiling_repaired.jpg")  # sync path: reaches PENDING_SIGNOFF
+    assert _case(case_id)["status"] == "PENDING_SIGNOFF"
+
+    other = _web(workflow.submit_report, "A-1-01", "B-0001",
+                 "Water dripping from the master bedroom ceiling above the wardrobe.", _LEAK_PHOTO, None)["caseId"]
+    _web(workflow.accept_job, other, _case(other)["technician_id"])
+    _web(workflow.record_verdict, other, "VALID", "Pipe joint leaking above the wardrobe.", None)
+    _web(workflow.accept_job, other, _case(other)["technician_id"])
+    monkeypatch.setenv("USE_AI_AGENTS", "only")  # only the Mark Repaired click runs in only mode
+    with db.get_conn() as conn:
+        ctx = workflow.Ctx(conn, defer_agents=True)
+        calls = len(fake_llm.calls)
+        workflow.mark_repaired(ctx, other, "Resealed the joint.", "tests/data/test_cases/images/ceiling_repaired.jpg")
+        jobs = list(ctx.after_click)
+    assert len(fake_llm.calls) == calls  # the click returned before any model call
+    assert _case(other)["status"] == "REPAIRED" and ("verification", other) in jobs
+    workflow.run_after_click(jobs)
+    assert _case(other)["status"] == "PENDING_SIGNOFF"
 
 
 def test_only_mode_follow_up_answer_returns_before_the_agents_run(fake_llm, monkeypatch):

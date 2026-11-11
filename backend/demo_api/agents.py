@@ -245,21 +245,23 @@ def comms(ctx, kind: str, case: dict, extra: dict | None = None) -> tuple[str, s
     ref = f"Case {case['case_id']} ({case['summary']})"
     g = config.GRACE_PERIOD_DAYS
     messages = {
-        "received": ("We've received your report", f"{ref}. Inspection visit: {tech_name} on {extra.get('slot')}."),
+        "received": ("We've received your report", f"{ref}. We've asked a technician to inspect it and will confirm the visit time once they accept."),
         "info_needed": ("We need a little more information", f"{ref}. {case.get('follow_up_question') or ''}"),
         "valid": ("Defect confirmed: repair being arranged", f"{ref}. The technician confirmed the defect: \"{extra.get('note', '')}\". We're booking the repair with the first available technician and will send you the time."),
         "invalid": ("Inspection result", f"{ref}. After inspection, the technician assessed this as not a defect: \"{extra.get('note', '')}\". This case is now closed. If the problem gets worse or changes, please submit a new report."),
-        "repair_booked": ("Repair booked", f"{ref}. Repair on {extra.get('slot')} by {tech_name}, estimated {extra.get('duration')}."),
+        "repair_booked": ("Repair booked", f"{ref}. A technician has been asked to do the repair (estimated {extra.get('duration')}). We will confirm the time once they accept."),
         "verify": ("Repair done", f"{ref}. The repair is done. The developer reviews it first; we'll let you know when you can check it and sign off."),
-        "ready_signoff": ("Please check your repairs and sign off",
+        "ready_signoff": ("Please check the repair", f"{ref}. Our team has approved the repair. You can check it now in "
+                          "the app with its short checklist. You can sign off your unit once our team has approved the "
+                          "other repairs in it.") if extra.get("partial") else ("Please check your repairs and sign off",
                           f"{ref}. Our team has approved {'all ' + str(extra['count']) + ' repairs' if extra.get('count', 1) > 1 else 'the repair'} "
                           f"in unit {extra.get('unit', case['unit_id'])}. Check each one in the app with its short checklist, "
                           f"then sign off the unit by {extra.get('deadline')}."),
         "closed": ("Case closed", f"{ref}. You and the developer have both signed off. You can reopen this case within {g} days if the problem returns."),
         "reopened": ("Case reopened", f"{ref}. We've reopened your case with the new photo you provided. We'll update you on the next step shortly."),
         "escalated": ("Your case is being reviewed", f"{ref}. Because this problem has come back, we've asked our team to arrange a more detailed inspection. We'll confirm the visit soon."),
-        "extra_inspection": ("Detailed inspection scheduled", f"{ref}. A detailed inspection is booked for {extra.get('slot')} with {tech_name}."),
-        "revisit": ("Technician revisit booked", f"{ref}. {tech_name} will revisit on {extra.get('slot')}."),
+        "extra_inspection": ("Detailed inspection scheduled", f"{ref}. A detailed inspection has been arranged. We will confirm the time once the technician accepts."),
+        "revisit": ("Technician revisit booked", f"{ref}. A technician revisit has been arranged. We will confirm the time once the technician accepts."),
         "confirmed": ("Technician confirmed", f"{ref}. {tech_name} confirmed your {extra.get('job')} on {extra.get('slot')}."),
         "reassigned": ("Your technician has changed",
                        f"{ref}. {extra.get('previous')} is no longer available, so {tech_name} will handle your {extra.get('job')} "
