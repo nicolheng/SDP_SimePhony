@@ -129,7 +129,7 @@ def test_delivered_email_has_sender_name_clean_subject_and_html(monkeypatch):
     assert "multipart/alternative" in parts and "text/plain" in parts
     html = parts["text/html"].get_payload(decode=True).decode("utf-8")
     assert f"Hi {case['name'].split()[0]}," in html and f"/buyer/cases/{case['case_id']}" in html
-    assert f"originally addressed to {case['email']}" in html
+    assert f"Originally addressed to {case['email']}" in html
 
 
 def test_agents_outside_a_request_send_at_once(smtp):

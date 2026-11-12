@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Check } from "lucide-react";
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { fmtDate } from "@/lib/dates";
 import type { Case } from "@/lib/types";
@@ -15,12 +15,8 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
 
   return (
     <div className="space-y-4 text-sm">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium text-violet-700">
-        <Bot className="size-3.5" /> Initial Inspection Agent · generated {fmtDate(b.generatedAt)}
-      </p>
-
       <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Timeline</h3>
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-900">Timeline</h3>
         <ol className="space-y-1 border-l border-zinc-200 pl-3">
           {b.timeline.map((t, i) => (
             <li key={i} className="text-xs">
@@ -31,7 +27,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
       </div>
 
       <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Photo Comparison</h3>
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-900">Photo Comparison</h3>
         <div className="grid grid-cols-2 gap-2">
           {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
           {reopen && <PhotoThumb photo={reopen} className="aspect-[4/3]" />}
@@ -41,7 +37,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
 
       {b.neighbouringUnits.length > 0 && (
         <div>
-          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Neighbouring Units with the Same Problem</h3>
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-900">Neighbouring Units with the Same Problem</h3>
           <ul className="flex flex-wrap gap-1.5">
             {b.neighbouringUnits.map((u) => (
               <li key={u.unitId} className="rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-900 ring-1 ring-amber-200">
@@ -53,7 +49,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
       )}
 
       <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Likely Components</h3>
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-900">Likely Components</h3>
         <ul className="list-disc space-y-0.5 pl-4 text-xs text-zinc-700">
           {b.likelyComponents.map((x) => (
             <li key={x}>{x}</li>
@@ -62,7 +58,7 @@ export function InspectionBriefView({ c, interactive }: { c: Case; interactive?:
       </div>
 
       <div>
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Checklist</h3>
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-900">Checklist</h3>
         <ol className="space-y-1.5">
           {b.checklist.map((x, i) => {
             const on = done.includes(i);

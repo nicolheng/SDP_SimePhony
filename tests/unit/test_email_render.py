@@ -54,6 +54,6 @@ def test_body_is_escaped_and_links_are_clickable():
 
 def test_demo_footer_only_when_redirected():
     _, text, _ = _render()
-    assert "originally addressed" not in text
+    assert "Originally addressed" not in text
     _, text, html = _render(redirected=True)
-    assert "Demo copy: originally addressed to aisyah.demo@example.com" in text and "aisyah.demo@example.com" in html
+    assert "Originally addressed to aisyah.demo@example.com" in text and "aisyah.demo@example.com" in html

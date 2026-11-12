@@ -62,7 +62,7 @@ def render(subject: str, body: str, *, to: str, name: Optional[str] = None, role
             link = (label, app_url.rstrip("/") + path.format(case["case_id"]))
     footer = ["Automated message from SimePhony: please do not reply to this email."]
     if redirected:
-        footer.append(f"Demo copy: originally addressed to {to}")
+        footer.append(f"Originally addressed to {to}")
 
     text = "\n\n".join(filter(None, [
         greeting,

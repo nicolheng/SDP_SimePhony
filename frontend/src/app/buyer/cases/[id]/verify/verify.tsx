@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { PhotoCheckSummary } from "@/components/developer-signoff";
 import { MobileHeader, Section } from "@/components/mobile";
-import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
+import { PhotoInput, PhotoThumb } from "@/components/photo";
 import { signoffDeadline, submitVerification } from "@/lib/api";
 import { fmtDate } from "@/lib/dates";
 import { useOffline } from "@/lib/store";
@@ -117,12 +117,6 @@ export function VerifyRepair() {
 
         <Section title="2. Supporting Photo (Required if the Defect Persists)">
           <PhotoInput value={photo} onChange={setPhoto} />
-          {!photo && (
-            <div className="mt-2 flex gap-3 text-xs font-medium text-brand">
-              <button type="button" onClick={() => setPhoto(samplePhoto("repaired"))}>Sample: looks fixed</button>
-              <button type="button" onClick={() => setPhoto(samplePhoto("leak"))}>Sample: still leaking</button>
-            </div>
-          )}
         </Section>
 
         <Section title="3. Additional Remarks (Optional)">

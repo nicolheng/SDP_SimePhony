@@ -43,7 +43,10 @@ import { useDemo } from "@/lib/store";
 import type { Category, Urgency } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const EXAMPLES = ["Water stain on the ceiling, seems to be leaking", "Bocor"];
+const EXAMPLES = [
+  "Water stain on the ceiling, seems to be leaking",
+  "Paint on the wall below the window is bubbling. The wall feels damp after heavy rain.",
+];
 
 /** What the priority badge means for the buyer (high urgency books the earliest technician and is watched by SDP staff). */
 const PRIORITY_NOTE: Record<Urgency, string> = {
