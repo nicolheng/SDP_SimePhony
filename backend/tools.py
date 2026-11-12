@@ -107,7 +107,7 @@ def _connect():
     if shared is not None:
         yield shared
         return
-    key = str(db.DB_PATH)
+    key = str(db.current_db_path())
     if key not in _ready_dbs:
         db.ensure_db()
         with db.get_conn() as conn:
@@ -502,7 +502,8 @@ def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], ki
     else:
         src = Path(photo)
         if not src.is_absolute():
-            src = UPLOADS_DIR / src if (UPLOADS_DIR / src).is_file() else ROOT / src
+            up = db.scoped_dir(UPLOADS_DIR)
+            src = up / src if (up / src).is_file() else ROOT / src
         if not src.is_file():
             raise ToolError(f"Photo not found: {photo}")
         ext = src.suffix.lstrip(".").lower().replace("jpeg", "jpg")
@@ -513,13 +514,14 @@ def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], ki
         raise ToolError("That photo is too large (max 15 MB).")
     photo_id = db.next_record_id(conn, "case_photos")
     name = f"{case_id}_{photo_id}_{kind}.{ext}"
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    (UPLOADS_DIR / name).write_bytes(raw)
+    up = db.scoped_dir(UPLOADS_DIR)
+    up.mkdir(parents=True, exist_ok=True)
+    (up / name).write_bytes(raw)
     conn.execute(
         "INSERT INTO case_photos (photo_id, case_id, path, kind, created_at) VALUES (?, ?, ?, ?, ?)",
         (photo_id, case_id, name, kind, _now(conn)),
     )
-    return {"photo_id": photo_id, "path": name, "url": f"/uploads/{name}"}
+    return {"photo_id": photo_id, "path": name, "url": db.scoped_url("/uploads", name)}
 
 
 # ---------- case lifecycle helpers ----------
@@ -748,7 +750,7 @@ def get_case(case_id: str) -> dict:
             w = _worker(conn, case.get(key))
             case[key.replace("_id", "")] = {k: w[k] for k in ("technician_id", "name", "email", "skills", "kind", "company")} if w else None
         case["photos"] = [
-            {"photo_id": r["photo_id"], "kind": r["kind"], "url": f"/uploads/{r['path']}", "created_at": r["created_at"]}
+            {"photo_id": r["photo_id"], "kind": r["kind"], "url": db.scoped_url("/uploads", r["path"]), "created_at": r["created_at"]}
             for r in conn.execute("SELECT * FROM case_photos WHERE case_id = ? ORDER BY created_at, photo_id", (case_id,))
         ]
         case["bookings"] = [
@@ -1498,6 +1500,8 @@ def attach_inspection_brief(case_id: str, brief: dict | str) -> dict:
 
 def _email_disabled_reason() -> Optional[str]:
     """Why emails are only logged (EMAIL_ENABLED=false or no Gmail login), or None when they can be sent."""
+    if db.SESSIONS_ENABLED:  # the public demo never sends real email, whatever .env says
+        return "email is off in the hosted demo"
     if os.getenv("EMAIL_ENABLED", "true").lower() != "true":
         return "EMAIL_ENABLED is false"
     if not os.getenv("GMAIL_ADDRESS") or not os.getenv("GMAIL_APP_PASSWORD"):

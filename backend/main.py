@@ -47,24 +47,44 @@ def sweep_visit_reminders_now() -> list[dict]:
     return reminders
 
 
+def _in_session(sid: str | None, func):
+    """Run func against one visitor's database (None = the shared one)."""
+    token = db.set_session(sid)
+    try:
+        return func()
+    finally:
+        db.reset_session(token)
+
+
+def _sweep_targets() -> list[str | None]:
+    return db.list_sessions() if db.SESSIONS_ENABLED else [None]
+
+
 async def _sweep_loop() -> None:
     """Deadlines pass with real time even when nobody clicks, and GET /api/state no longer applies them."""
     while True:
-        try:
-            await asyncio.to_thread(sweep_signoffs_now)
-        except Exception as exc:  # log and keep looping: one failed sweep must not stop the next
-            if db.is_busy(exc):
-                log.warning("Sign-off sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
-            else:
-                log.exception("Sign-off sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
-        try:
-            await asyncio.to_thread(sweep_visit_reminders_now)
-        except Exception as exc:  # a failed reminder pass must not stop later periodic sweeps
-            if db.is_busy(exc):
-                log.warning("Visit reminder sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
-            else:
-                log.exception("Visit reminder sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
+        for sid in _sweep_targets():
+            await _sweep_once(sid)
+        if db.SESSIONS_ENABLED:
+            await asyncio.to_thread(db.cleanup_sessions)
         await asyncio.sleep(SWEEP_INTERVAL_S)
+
+
+async def _sweep_once(sid: str | None) -> None:
+    try:
+        await asyncio.to_thread(_in_session, sid, sweep_signoffs_now)
+    except Exception as exc:  # log and keep looping: one failed sweep must not stop the next
+        if db.is_busy(exc):
+            log.warning("Sign-off sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
+        else:
+            log.exception("Sign-off sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
+    try:
+        await asyncio.to_thread(_in_session, sid, sweep_visit_reminders_now)
+    except Exception as exc:  # a failed reminder pass must not stop later periodic sweeps
+        if db.is_busy(exc):
+            log.warning("Visit reminder sweep skipped, database busy; retrying in %d s", SWEEP_INTERVAL_S)
+        else:
+            log.exception("Visit reminder sweep failed; retrying in %d s", SWEEP_INTERVAL_S)
 
 
 class BodySizeLimit:
@@ -98,18 +118,67 @@ class BodySizeLimit:
         await self.app(scope, limited_receive, send)
 
 
+class DemoSession:
+    """Hosted demo: pick the visitor's own database from the X-Demo-Session header, creating it from seed.db on
+    first use. Also a small per-IP limit on writes, so one visitor cannot use up the shared AI quota."""
+
+    WRITES_PER_MINUTE = int(os.getenv("RATE_LIMIT_WRITES_PER_MIN", "40"))
+    _hits: dict[str, list[float]] = {}
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/api") or not db.SESSIONS_ENABLED:
+            return await self.app(scope, receive, send)
+        headers = dict(scope["headers"])
+        sid = headers.get(b"x-demo-session", b"").decode("latin-1") or "public-shared-demo"
+        if not db.SESSION_ID_RE.match(sid):
+            return await JSONResponse(status_code=400, content={"detail": "Invalid demo session id."})(scope, receive, send)
+        if scope["method"] not in ("GET", "HEAD", "OPTIONS") and self._limited(headers, scope):
+            return await JSONResponse(status_code=429, headers={"Retry-After": "30"},
+                                      content={"detail": "Too many actions in a minute. Please slow down."})(scope, receive, send)
+        token = db.set_session(sid)
+        try:
+            await asyncio.to_thread(self._prepare, sid)
+            await self.app(scope, receive, send)
+        finally:
+            db.reset_session(token)
+
+    def _limited(self, headers: dict, scope) -> bool:
+        forwarded = headers.get(b"x-forwarded-for", b"").decode("latin-1").split(",")[0].strip()
+        ip = forwarded or (scope["client"][0] if scope.get("client") else "?")
+        now = time.monotonic()
+        hits = [t for t in self._hits.get(ip, []) if now - t < 60]
+        hits.append(now)
+        self._hits[ip] = hits
+        if len(self._hits) > 5000:  # forget idle addresses
+            self._hits = {k: v for k, v in self._hits.items() if v and now - v[-1] < 60}
+        return len(hits) > self.WRITES_PER_MINUTE
+
+    @staticmethod
+    def _prepare(sid: str) -> None:
+        if db.session_ready(sid):
+            return
+        db.ensure_db()
+        with db.get_conn() as conn:
+            migrate(conn)
+        db.mark_session_ready(sid)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if config.write_rules_snapshot():
         print(f"Updated {config.RULES_SNAPSHOT_PATH.relative_to(config.ROOT)} from rules.yaml")
-    db.ensure_db()
-    # An existing but empty live DB (schema only) is refilled from seed.db.
-    with db.get_conn() as conn:
-        empty = conn.execute("SELECT COUNT(*) FROM units").fetchone()[0] == 0
-    if empty:
-        db.reset_db()
-    with db.get_conn() as conn:
-        migrate(conn)
+    if not db.SESSIONS_ENABLED:  # the hosted demo makes each visitor's database on their first request
+        db.ensure_db()
+        # An existing but empty live DB (schema only) is refilled from seed.db.
+        with db.get_conn() as conn:
+            empty = conn.execute("SELECT COUNT(*) FROM units").fetchone()[0] == 0
+        if empty:
+            db.reset_db()
+        with db.get_conn() as conn:
+            migrate(conn)
     UPLOADS_DIR.mkdir(exist_ok=True)
     # The models load in the background (about 10 s for the embedder), so the server answers straight away.
     # A request that needs a model before then waits for it, as on a cold start.
@@ -139,12 +208,18 @@ def warmup_models() -> None:
                  elapsed, embedder_ready, ollama_ready)
 
 
-app = FastAPI(title="SimePhony API", lifespan=lifespan)
+# The hosted demo hides the interactive API docs.
+app = FastAPI(title="SimePhony API", lifespan=lifespan,
+              **({"docs_url": None, "redoc_url": None, "openapi_url": None} if db.SESSIONS_ENABLED else {}))
 # Added before CORS so it runs inside it: the 413 still carries CORS headers and the browser can show its message.
 app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+app.add_middleware(DemoSession)  # inside CORS, so its 400/429 answers still carry the CORS headers
+# CORS_ORIGINS: comma-separated extra web app addresses (the hosted demo's frontend URL).
+EXTRA_ORIGINS = [o.strip().rstrip("/") for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", *EXTRA_ORIGINS],
+    max_age=600,  # browsers reuse the preflight, so the 3 s poll (with X-Demo-Session) is one request, not two
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -170,9 +245,16 @@ async def database_busy(request: Request, exc: sqlite3.OperationalError):
 def health():
     checks = {}
     try:
-        with db.get_conn() as conn:
-            conn.execute("SELECT 1").fetchone()
-            conn.execute("SELECT 1 FROM cases LIMIT 1").fetchone()
+        if db.SESSIONS_ENABLED:  # no shared DB in the hosted demo: check the seed every visitor's copy is made from
+            conn = sqlite3.connect(f"file:{db.SEED_DB_PATH.as_posix()}?mode=ro", uri=True)
+            try:
+                conn.execute("SELECT 1 FROM cases LIMIT 1").fetchone()
+            finally:
+                conn.close()
+        else:
+            with db.get_conn() as conn:
+                conn.execute("SELECT 1").fetchone()
+                conn.execute("SELECT 1 FROM cases LIMIT 1").fetchone()
         checks["database"] = {"status": "ok", "message": "Connected; schema available"}
     except Exception as exc:
         checks["database"] = {"status": "error", "message": str(exc)}
