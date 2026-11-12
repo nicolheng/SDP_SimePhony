@@ -148,10 +148,10 @@ def _spread_seed_repair_times(conn: sqlite3.Connection) -> None:
 def reset_demo() -> None:
     """Reset demo: copy seed.db over the live DB, delete uploaded photos, and re-apply this migration."""
     db.reset_db()
-    uploads = db.ROOT / "uploads"
+    uploads = db.scoped_dir(db.ROOT / "uploads")
     if uploads.is_dir():
         shutil.rmtree(uploads)
-    uploads.mkdir(exist_ok=True)
+    uploads.mkdir(parents=True, exist_ok=True)
     with db.get_conn() as conn:
         migrate(conn)
 

@@ -47,3 +47,5 @@ Thumbs.db
 *.log
 
 docs/
+# Hosted demo: one database per visitor
+data/sessions/

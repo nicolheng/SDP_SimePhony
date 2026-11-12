@@ -3,6 +3,7 @@ import json
 import re
 from pathlib import Path
 
+import db
 import tools
 
 from . import agents, config
@@ -104,8 +105,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
     def photo_url(path: str) -> str | None:
         if not path:
             return None
-        if (UPLOADS_DIR / path).is_file():
-            return f"{base_url}/uploads/{path}"
+        if (db.scoped_dir(UPLOADS_DIR) / path).is_file():
+            return f"{base_url}{db.scoped_url('/uploads', path)}"
         # A real sample photo (.jpg) if there is one, else the drawn stand-in (.svg).
         for sample in (Path(path).name, Path(path).with_suffix(".svg").name):
             if (SAMPLE_PHOTOS_DIR / sample).is_file():

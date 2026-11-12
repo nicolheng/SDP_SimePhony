@@ -37,11 +37,34 @@ export function setState(next: DemoState) {
   emit();
 }
 
+// Hosted demo: each browser gets its own copy of the demo database. The backend picks it by this id (ignored when
+// the backend runs without DEMO_SESSIONS, as on a laptop). All tabs of one browser share it, so the buyer,
+// technician and SDP views still see each other's changes.
+const SESSION_KEY = "simephony-demo-session";
+let sessionId: string | null = null;
+function demoSession(): string {
+  if (sessionId) return sessionId;
+  try {
+    sessionId = localStorage.getItem(SESSION_KEY);
+  } catch {}
+  if (!sessionId || !/^[A-Za-z0-9_-]{16,64}$/.test(sessionId)) {
+    sessionId = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}xxxxxxxx`).replace(/[^A-Za-z0-9_-]/g, "");
+    try {
+      localStorage.setItem(SESSION_KEY, sessionId);
+    } catch {}
+  }
+  return sessionId;
+}
+
 /** Call the API; JSON errors come back as Error(detail). */
 export async function apiFetch<T = { state: DemoState }>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
+    res = await fetch(`${API_URL}${path}`, {
+      cache: "no-store",
+      ...init,
+      headers: { "Content-Type": "application/json", "X-Demo-Session": demoSession(), ...init?.headers },
+    });
   } catch {
     throw new Error(`Can't reach the backend at ${API_URL}. Start it with: cd backend; uvicorn main:app --port 8001`);
   }

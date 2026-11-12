@@ -194,6 +194,11 @@ Set `EMAIL_ENABLED=false` in `.env` and restart the backend. Emails are then onl
 table and shown in the app. This is the safe choice when you are not testing email. Leaving the Gmail
 variables empty has the same effect.
 
+## Hosted demo
+
+To put the demo online for free (Render + Vercel), with a separate copy of the demo data for each visitor, see
+[DEPLOY.md](DEPLOY.md).
+
 ## Tests
 
 ```bash
