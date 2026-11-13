@@ -1,5 +1,5 @@
 "use client";
-import { Activity, ClipboardList, LayoutDashboard, Layers, ShieldCheck } from "lucide-react";
+import { Activity, ClipboardList, LayoutDashboard, Layers, PlayCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -8,6 +8,9 @@ import { DemoControls } from "@/components/demo-controls";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { API_URL, useDemo } from "@/lib/store";
 import { cn } from "@/lib/utils";
+
+// Recorded walkthrough of the app, hosted on Google Drive.
+const DEMO_VIDEO_URL = "https://drive.google.com/file/d/1yw08ubFgleheTDTspUgY0PlwS9rbe5GR/view?usp=drive_link";
 
 type HealthStatus = "checking" | "healthy" | "degraded" | "offline";
 type HealthResponse = {
@@ -119,6 +122,15 @@ export function SdpSidebar() {
           ))}
         </nav>
         <div className="mt-auto space-y-3">
+          <a
+            href={DEMO_VIDEO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-base hover:bg-white/10 hover:text-white"
+          >
+            <PlayCircle className="size-4" />
+            Watch demo video
+          </a>
           <div className="px-3"><HealthIndicator /></div>
           <DemoControls />
         </div>
@@ -139,6 +151,14 @@ export function SdpSidebar() {
             {!!i.badge && ` (${i.badge})`}
           </Link>
         ))}
+        <a
+          href={DEMO_VIDEO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-zinc-300"
+        >
+          <PlayCircle className="size-3.5" /> Demo video
+        </a>
       </div>
     </>
   );
