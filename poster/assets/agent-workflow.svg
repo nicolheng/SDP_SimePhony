@@ -1,0 +1,273 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" font-family="'Segoe UI', Inter, Arial, sans-serif">
+  <defs>
+    <marker id="aBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2F6BED"/></marker>
+    <marker id="aOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#D9622B"/></marker>
+    <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#DC2626"/></marker>
+    <marker id="aGrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#64748B"/></marker>
+    <marker id="aBig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/></marker>
+    <style>
+      .t  { font-size: 19px; font-weight: 700; text-anchor: middle; }
+      .s  { font-size: 14px; fill: #475569; text-anchor: middle; }
+      .ai rect, rect.ai { fill: #EEF4FF; stroke: #2F6BED; stroke-width: 2; }
+      .ai .t { fill: #1E3A8A; }
+      .hu rect, rect.hu { fill: #FFF3EA; stroke: #D9622B; stroke-width: 2; }
+      .hu .t { fill: #9A3412; }
+      .pill { font-size: 12px; font-weight: 700; text-anchor: middle; letter-spacing: 0.3px; }
+      .note { font-size: 12.5px; fill: #475569; text-anchor: middle; }
+      .lbl { font-size: 13px; font-weight: 600; fill: #475569; }
+      .ev { font-size: 11.5px; fill: #0F766E; font-family: Consolas, 'Courier New', monospace; text-anchor: middle; }
+      .msg { font-size: 14px; fill: #134E4A; text-anchor: middle; }
+      .lane { font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+      .lanesub { font-size: 12px; fill: #64748B; }
+      .ph { font-size: 17px; font-weight: 700; fill: #0F172A; }
+      .fh { font-size: 20px; font-weight: 800; }
+      .fs { font-size: 14px; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#FFFFFF"/>
+
+  <!-- Title -->
+  <text x="40" y="62" font-size="36" font-weight="800" fill="#0F172A">Simephony — Agent Workflow</text>
+  <text x="42" y="93" font-size="17" fill="#475569">A new-case pipeline, then event-driven: each event wakes the agent that owns it. AI recommends, SDP decides, the system executes.</text>
+
+  <!-- Legend -->
+  <g transform="translate(1385,40)">
+    <rect x="0" y="0" width="22" height="16" rx="4" class="ai"/><text x="30" y="13" font-size="14" fill="#334155">AI agent</text>
+    <rect x="110" y="0" width="22" height="16" rx="4" class="hu"/><text x="140" y="13" font-size="14" fill="#334155">Person / SDP</text>
+    <rect x="252" y="0" width="22" height="16" rx="8" fill="#E2E8F0" stroke="#94A3B8"/><text x="282" y="13" font-size="14" fill="#334155">Case status</text>
+    <rect x="378" y="0" width="22" height="16" rx="4" fill="#FFFFFF" stroke="#14A38B" stroke-width="2"/><text x="408" y="13" font-size="14" fill="#334155">Message</text>
+  </g>
+
+  <!-- AI framework -->
+  <rect x="1130" y="66" width="760" height="42" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="1144" y="83" font-size="12.5" fill="#334155"><tspan font-weight="800" fill="#1E3A8A">AI framework:</tspan> LangGraph state graph · OpenAI-compatible API → local Ollama (qwen2.5:7b + llava-llama3) or Gemini</text>
+  <text x="1144" y="100" font-size="12.5" fill="#475569">Schema-checked JSON, 1 retry, rule fallback · MiniLM embeddings find similar cases · personal data masked for cloud</text>
+
+  <!-- Phase headers -->
+  <g>
+    <circle cx="186" cy="128" r="14" fill="#0F172A"/><text x="186" y="133" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+    <text x="208" y="134" class="ph">Report &amp; triage</text>
+    <circle cx="686" cy="128" r="14" fill="#0F172A"/><text x="686" y="133" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+    <text x="708" y="134" class="ph">Inspect &amp; repair</text>
+    <circle cx="1106" cy="128" r="14" fill="#0F172A"/><text x="1106" y="133" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+    <text x="1128" y="134" class="ph">Verify &amp; sign off</text>
+    <circle cx="1486" cy="128" r="14" fill="#0F172A"/><text x="1486" y="133" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+    <text x="1508" y="134" class="ph">Reopen &amp; recurrence</text>
+  </g>
+
+  <!-- Lanes -->
+  <rect x="40" y="155" width="1850" height="180" rx="14" fill="#FFF9F4"/>
+  <rect x="40" y="350" width="1850" height="290" rx="14" fill="#F5F8FF"/>
+  <rect x="40" y="655" width="1850" height="60" rx="14" fill="#F6F7F9"/>
+  <rect x="40" y="730" width="1850" height="170" rx="14" fill="#F0FAF7"/>
+
+  <text x="58" y="238" class="lane" fill="#9A3412">PEOPLE</text>
+  <text x="58" y="258" class="lanesub">Resident</text><text x="58" y="274" class="lanesub">Technician · SDP</text>
+  <text x="58" y="488" class="lane" fill="#1E3A8A">AI AGENTS</text>
+  <text x="58" y="508" class="lanesub">LangGraph</text>
+  <text x="58" y="683" class="lane" fill="#334155">STATUS</text>
+  <text x="58" y="700" class="lanesub">system-owned</text>
+  <text x="58" y="808" class="lane" fill="#0F766E">COMMS</text>
+  <text x="58" y="826" class="lanesub">agent, on</text><text x="58" y="842" class="lanesub">every event</text>
+
+  <!-- Phase separators -->
+  <g stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6 6">
+    <line x1="665" y1="112" x2="665" y2="900"/>
+    <line x1="1085" y1="112" x2="1085" y2="900"/>
+    <line x1="1465" y1="112" x2="1465" y2="900"/>
+  </g>
+
+  <!-- ============ PHASE 1 ============ -->
+  <g class="hu"><rect x="185" y="190" width="180" height="80" rx="12"/>
+    <text x="275" y="223" class="t">Resident reports</text><text x="275" y="246" class="s">photo + description</text></g>
+
+  <g class="ai"><rect x="185" y="380" width="135" height="92" rx="12"/>
+    <text x="252" y="410" class="t">Intake</text><text x="252" y="433" class="s">category · location</text><text x="252" y="452" class="s">missing info</text></g>
+  <g class="ai"><rect x="340" y="380" width="135" height="92" rx="12"/>
+    <text x="407" y="410" class="t">Triage</text><text x="407" y="433" class="s">urgency · skill</text><text x="407" y="452" class="s">rules.yaml</text></g>
+  <g class="ai"><rect x="495" y="380" width="135" height="92" rx="12"/>
+    <text x="562" y="410" class="t">Booking</text><text x="562" y="433" class="s">first free</text><text x="562" y="452" class="s">technician</text></g>
+  <text x="562" y="368" class="note">↻ hand-over → reassign / SDP</text>
+
+  <rect x="185" y="508" width="135" height="80" rx="12" fill="#FFFBEB" stroke="#D97706" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="252" y="535" font-size="16" font-weight="700" fill="#92400E" text-anchor="middle">Unsure?</text>
+  <text x="252" y="556" class="s">confidence &lt; 0.7</text><text x="252" y="574" class="s">→ SDP review</text>
+  <path d="M252 472 V506" stroke="#D97706" stroke-width="2" stroke-dasharray="4 3" fill="none" marker-end="url(#aOrange)"/>
+  <text x="252" y="607" class="note">also Triage &amp;</text>
+  <text x="252" y="623" class="note">Verification</text>
+
+  <g class="ai"><rect x="340" y="508" width="135" height="80" rx="12"/>
+    <text x="407" y="540" class="t">Escalation</text><text x="407" y="563" class="s">3rd time / cluster?</text></g>
+  <text x="407" y="603" class="note" font-weight="700" style="fill:#6D28D9">yes → SDP approves →</text>
+  <text x="407" y="618" class="note" font-weight="700" style="fill:#6D28D9">Initial Inspection (4)</text>
+  <text x="407" y="633" class="note">visit stays booked</text>
+
+  <g class="ai"><rect x="495" y="508" width="135" height="80" rx="12"/>
+    <text x="562" y="540" class="t">Similar Defect</text><text x="562" y="563" class="s">links related cases</text></g>
+  <text x="562" y="607" class="note">runs last: the visit</text>
+  <text x="562" y="623" class="note">is booked sooner</text>
+
+  <g stroke="#2F6BED" stroke-width="2.2" fill="none" marker-end="url(#aBlue)">
+    <path d="M252 270 V378"/>
+    <path d="M320 426 H338"/>
+    <path d="M475 426 H493"/>
+    <path d="M520 472 L455 506"/>
+    <path d="M585 472 V506"/>
+  </g>
+
+  <!-- Booking -> technician visit -->
+  <path d="M630 426 H648 V230 H688" stroke="#64748B" stroke-width="2.2" fill="none" marker-end="url(#aGrey)"/>
+
+  <!-- ============ PHASE 2 ============ -->
+  <g class="hu"><rect x="690" y="190" width="190" height="80" rx="12"/>
+    <text x="785" y="223" class="t" font-size="18">Technician inspects</text><text x="785" y="246" class="s">verdict + evidence</text></g>
+  <rect x="690" y="292" width="122" height="28" rx="14" fill="#E2E8F0" stroke="#94A3B8"/>
+  <text x="751" y="311" class="pill" fill="#334155">INVALID → SDP</text>
+  <path d="M720 270 V290" stroke="#64748B" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+
+  <g class="ai"><rect x="690" y="400" width="170" height="92" rx="12"/>
+    <text x="775" y="430" class="t">Repair Estimate</text><text x="775" y="453" class="s">2 · 4 · 8 hours</text><text x="775" y="472" class="s">unless tech sets it</text></g>
+  <path d="M830 270 V398" stroke="#2F6BED" stroke-width="2.2" fill="none" marker-end="url(#aBlue)"/>
+  <text x="838" y="345" class="lbl" fill="#1E3A8A">VALID</text>
+
+  <g class="hu"><rect x="905" y="190" width="165" height="80" rx="12"/>
+    <text x="987" y="223" class="t">Repair done</text><text x="987" y="246" class="s">marked by technician</text></g>
+  <path d="M860 446 H987 V272" stroke="#D9622B" stroke-width="2.2" fill="none" marker-end="url(#aOrange)"/>
+  <text x="997" y="345" class="lbl">auto-booked:</text>
+  <text x="997" y="362" class="lbl">first free</text>
+  <text x="997" y="379" class="lbl">worker</text>
+
+  <!-- ============ PHASE 3 ============ -->
+  <path d="M1052 270 L1128 378" stroke="#2F6BED" stroke-width="2.2" fill="none" marker-end="url(#aBlue)"/>
+
+  <g class="ai"><rect x="1105" y="380" width="165" height="92" rx="12"/>
+    <text x="1187" y="410" class="t">Verification</text><text x="1187" y="433" class="s">repair photo check</text><text x="1187" y="452" class="s">safe check guide</text></g>
+  <g class="hu"><rect x="1105" y="190" width="165" height="80" rx="12"/>
+    <text x="1187" y="223" class="t">SDP signs off</text><text x="1187" y="246" class="s">approve or reject</text></g>
+  <path d="M1187 380 V272" stroke="#D9622B" stroke-width="2.2" fill="none" marker-end="url(#aOrange)"/>
+
+  <g class="ai"><rect x="1285" y="380" width="165" height="92" rx="12"/>
+    <text x="1367" y="410" class="t">Sign-off Ready</text><text x="1367" y="433" class="s">once every defect</text><text x="1367" y="452" class="s">in the unit is approved</text></g>
+  <text x="1187" y="494" class="note">reject → repair rebooked (2)</text>
+  <path d="M1250 270 L1310 378" stroke="#2F6BED" stroke-width="2.2" fill="none" marker-end="url(#aBlue)"/>
+
+  <g class="hu"><rect x="1285" y="190" width="165" height="80" rx="12"/>
+    <text x="1367" y="223" class="t">Resident checks</text><text x="1367" y="246" class="s">checks each defect</text></g>
+  <path d="M1367 380 V272" stroke="#D9622B" stroke-width="2.2" fill="none" marker-end="url(#aOrange)"/>
+  <text x="1376" y="300" font-size="13" font-weight="700" fill="#047857">all FIXED ✓</text><text x="1376" y="317" font-size="13" font-weight="700" fill="#047857">sign off unit</text>
+
+  <!-- NOT FIXED -> recurrence -->
+  <path d="M1450 250 H1476 V426 H1488" stroke="#DC2626" stroke-width="2.2" fill="none" marker-end="url(#aRed)"/>
+  <text x="1505" y="300" class="lbl" fill="#B91C1C">NOT FIXED, or</text>
+  <text x="1505" y="317" class="lbl" fill="#B91C1C">reopen ≤ 30 days</text>
+
+  <!-- ============ PHASE 4 ============ -->
+  <g class="hu"><rect x="1490" y="190" width="170" height="80" rx="12"/>
+    <text x="1575" y="223" class="t">SDP approves</text><text x="1575" y="246" class="s">extra inspection</text></g>
+  <g class="ai"><rect x="1490" y="380" width="170" height="92" rx="12"/>
+    <text x="1575" y="410" class="t">Recurrence</text><text x="1575" y="433" class="s">counts repeats</text><text x="1575" y="452" class="s">stack clusters</text></g>
+  <path d="M1640 380 V272" stroke="#D9622B" stroke-width="2.2" fill="none" marker-end="url(#aOrange)"/>
+  <text x="1650" y="318" class="lbl">3rd time /</text>
+  <text x="1650" y="335" class="lbl">cluster</text>
+  <text x="1665" y="180" class="note" text-anchor="start" font-weight="700" style="fill:#6D28D9;text-anchor:start">also from new reports (1)</text>
+
+  <rect x="1490" y="500" width="170" height="44" rx="10" fill="#FFFFFF" stroke="#93B4F5" stroke-width="1.5"/>
+  <text x="1575" y="518" class="note" font-weight="600" fill="#1E3A8A">below threshold</text>
+  <text x="1575" y="535" class="note">→ revisit via Triage (1)</text>
+  <rect x="1490" y="552" width="170" height="44" rx="10" fill="#FFFFFF" stroke="#93B4F5" stroke-width="1.5"/>
+  <text x="1575" y="570" class="note" font-weight="600" fill="#1E3A8A">past grace period</text>
+  <text x="1575" y="587" class="note">→ new case via Intake (1)</text>
+  <path d="M1515 472 V498" stroke="#2F6BED" stroke-width="2" fill="none" marker-end="url(#aBlue)"/>
+
+  <g class="ai"><rect x="1705" y="380" width="170" height="126" rx="12" stroke-width="3"/>
+    <text x="1790" y="408" class="t">Initial Inspection</text><text x="1790" y="429" class="s" font-weight="600" fill="#1E3A8A">brief for the technician</text>
+    <text x="1790" y="450" class="s">case timeline</text><text x="1790" y="469" class="s">photo comparison</text><text x="1790" y="488" class="s">nearby units · checklist</text></g>
+  <path d="M1660 230 H1790 V378" stroke="#D9622B" stroke-width="2.2" fill="none" marker-end="url(#aOrange)"/>
+  <text x="1725" y="222" class="lbl" text-anchor="middle">approved</text>
+
+  <g class="ai"><rect x="1705" y="526" width="170" height="70" rx="12"/>
+    <text x="1790" y="554" class="t">Booking</text><text x="1790" y="576" class="s">detailed inspection</text></g>
+  <path d="M1790 506 V524" stroke="#2F6BED" stroke-width="2.2" fill="none" marker-end="url(#aBlue)"/>
+  <text x="1790" y="616" class="note">→ technician inspects (2)</text>
+
+  <!-- ============ STATUS LANE ============ -->
+  <g>
+    <rect x="185" y="670" width="90" height="30" rx="15" fill="#E2E8F0" stroke="#94A3B8"/><text x="230" y="690" class="pill" fill="#334155">SUBMITTED</text>
+    <text x="287" y="690" font-size="16" fill="#94A3B8" text-anchor="middle">›</text>
+    <rect x="300" y="670" width="136" height="30" rx="15" fill="#E0F2FE" stroke="#7DD3FC"/><text x="368" y="690" class="pill" fill="#0369A1">VISIT_SCHEDULED</text>
+    <rect x="460" y="670" width="125" height="30" rx="15" fill="#FFFBEB" stroke="#D97706" stroke-dasharray="4 3"/><text x="522" y="690" class="pill" fill="#92400E">PENDING_REVIEW</text>
+    <text x="593" y="690" font-size="12" fill="#64748B">if held</text>
+
+    <rect x="690" y="670" width="60" height="30" rx="15" fill="#FEF3C7" stroke="#FCD34D"/><text x="720" y="690" class="pill" fill="#92400E">VALID</text>
+    <text x="762" y="690" font-size="16" fill="#94A3B8" text-anchor="middle">›</text>
+    <rect x="775" y="670" width="121" height="30" rx="15" fill="#E0F2FE" stroke="#7DD3FC"/><text x="835" y="690" class="pill" fill="#0369A1">REPAIR_BOOKED</text>
+    <text x="908" y="690" font-size="16" fill="#94A3B8" text-anchor="middle">›</text>
+    <rect x="921" y="670" width="85" height="30" rx="15" fill="#E0F2FE" stroke="#7DD3FC"/><text x="963" y="690" class="pill" fill="#0369A1">REPAIRED</text>
+
+    <rect x="1105" y="670" width="136" height="30" rx="15" fill="#FEF3C7" stroke="#FCD34D"/><text x="1173" y="690" class="pill" fill="#92400E">PENDING_SIGNOFF</text>
+    <text x="1253" y="690" font-size="16" fill="#94A3B8" text-anchor="middle">›</text>
+    <rect x="1266" y="670" width="72" height="30" rx="15" fill="#D1FAE5" stroke="#6EE7B7"/><text x="1302" y="690" class="pill" fill="#047857">CLOSED</text>
+    <text x="1346" y="690" font-size="12" fill="#64748B">whole unit</text>
+
+    <rect x="1478" y="670" width="86" height="30" rx="15" fill="#FEE2E2" stroke="#FCA5A5"/><text x="1521" y="690" class="pill" fill="#B91C1C">REOPENED</text>
+    <text x="1571" y="690" font-size="16" fill="#94A3B8" text-anchor="middle">›</text>
+    <rect x="1578" y="670" width="158" height="30" rx="15" fill="#EDE9FE" stroke="#C4B5FD"/><text x="1657" y="690" class="pill" fill="#6D28D9">ESCALATION_PENDING</text>
+    <text x="1743" y="690" font-size="16" fill="#94A3B8" text-anchor="middle">›</text>
+    <rect x="1750" y="670" width="138" height="30" rx="15" fill="#EDE9FE" stroke="#C4B5FD"/><text x="1819" y="690" class="pill" fill="#6D28D9">EXTRA_INSPECTION</text>
+  </g>
+
+  <!-- ============ COMMS LANE ============ -->
+  <text x="185" y="758" font-size="15" fill="#134E4A"><tspan font-weight="800" fill="#0F766E">Comms Agent</tspan> tells the resident in the app / by email. Times, steps, estimates and “case closed” are fixed text; no technician names or IDs.</text>
+  <line x1="200" y1="776" x2="1860" y2="776" stroke="#14A38B" stroke-width="2"/>
+  <g fill="#14A38B">
+    <circle cx="292" cy="776" r="5"/><circle cx="530" cy="776" r="5"/><circle cx="777" cy="776" r="5"/><circle cx="975" cy="776" r="5"/>
+    <circle cx="1187" cy="776" r="5"/><circle cx="1367" cy="776" r="5"/><circle cx="1575" cy="776" r="5"/><circle cx="1790" cy="776" r="5"/>
+  </g>
+  <g fill="#FFFFFF" stroke="#14A38B" stroke-width="2">
+    <rect x="185" y="788" width="215" height="80" rx="10"/>
+    <rect x="415" y="788" width="230" height="80" rx="10"/>
+    <rect x="690" y="788" width="175" height="80" rx="10"/>
+    <rect x="880" y="788" width="190" height="80" rx="10"/>
+    <rect x="1105" y="788" width="165" height="80" rx="10"/>
+    <rect x="1285" y="788" width="165" height="80" rx="10"/>
+    <rect x="1490" y="788" width="170" height="80" rx="10"/>
+    <rect x="1705" y="788" width="170" height="80" rx="10"/>
+  </g>
+  <text x="292" y="808" class="ev">case.created</text>
+  <text x="292" y="830" class="msg">“Report received,</text><text x="292" y="850" class="msg">inspection visit booked”</text>
+  <text x="530" y="808" class="ev">booking.rejected</text>
+  <text x="530" y="830" class="msg">“Your technician has changed”</text><text x="530" y="850" class="msg">or “We’re arranging your visit”</text>
+  <text x="777" y="808" class="ev">verdict.recorded</text>
+  <text x="777" y="830" class="msg">“About N hours —</text><text x="777" y="850" class="msg">repair being booked”</text>
+  <text x="975" y="808" class="ev">repair.done</text>
+  <text x="975" y="830" class="msg">“Repair done — the</text><text x="975" y="850" class="msg">developer reviews it first”</text>
+  <text x="1187" y="808" class="ev">signoff.completed</text>
+  <text x="1187" y="830" class="msg">“Your checklist —</text><text x="1187" y="850" class="msg">sign off by …”</text>
+  <text x="1367" y="808" class="ev">unit signed off</text>
+  <text x="1367" y="830" class="msg">“Unit signed off —</text><text x="1367" y="850" class="msg">repairs closed”</text>
+  <text x="1575" y="808" class="ev">case.reopened</text>
+  <text x="1575" y="830" class="msg">“Case reopened —</text><text x="1575" y="850" class="msg">revisit / under review”</text>
+  <text x="1790" y="808" class="ev">inspection.approved</text>
+  <text x="1790" y="830" class="msg">“Detailed inspection</text><text x="1790" y="850" class="msg">scheduled” + time</text>
+
+  <!-- ============ CONTROL BOUNDARY ============ -->
+  <rect x="40" y="925" width="576" height="115" rx="14" fill="#EEF4FF" stroke="#2F6BED" stroke-width="2"/>
+  <text x="64" y="960" class="fh" fill="#1E3A8A">AI investigates + recommends</text>
+  <text x="64" y="988" class="fs">Reads the report · similar cases · urgency · technician · photo check</text>
+  <text x="64" y="1010" class="fs">repair estimate · check guide · repeats &amp; clusters · drafts messages · holds when unsure</text>
+
+  <path d="M624 982 H670" stroke="#94A3B8" stroke-width="3" fill="none" marker-end="url(#aBig)"/>
+
+  <rect x="678" y="925" width="576" height="115" rx="14" fill="#FFF3EA" stroke="#D9622B" stroke-width="2"/>
+  <text x="702" y="960" class="fh" fill="#9A3412">People / SDP decide</text>
+  <text x="702" y="988" class="fs">Physical inspection &amp; verdict · the repair · repair and unit sign-off</text>
+  <text x="702" y="1010" class="fs">review AI-held cases · approve extra inspection · high-impact calls</text>
+
+  <path d="M1262 982 H1308" stroke="#94A3B8" stroke-width="3" fill="none" marker-end="url(#aBig)"/>
+
+  <rect x="1316" y="925" width="574" height="115" rx="14" fill="#F1F5F9" stroke="#64748B" stroke-width="2"/>
+  <text x="1340" y="960" class="fh" fill="#334155">System executes</text>
+  <text x="1340" y="988" class="fs">Case status · event triggers · permissions · bookings</text>
+  <text x="1340" y="1010" class="fs">guardrails on agent output · event log · notifications</text>
+</svg>
