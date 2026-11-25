@@ -23,6 +23,7 @@ import db  # noqa: E402  (after load_dotenv so env paths apply)
 from demo_api import config  # noqa: E402
 import tools  # noqa: E402
 from demo_api import ai_agents  # noqa: E402
+from agents.simephony import kb  # noqa: E402
 from demo_api.migrate import migrate  # noqa: E402
 from demo_api.routes import MAX_BODY_BYTES, router as app_router  # noqa: E402
 
@@ -168,6 +169,9 @@ class DemoSession:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    loaded = kb.init()  # a broken kb/ file stops start-up here with the list of problems
+    print(f"Knowledge base loaded: {len(loaded['sources'])} sources, {len(loaded['rules'])} rules, "
+          f"{len(loaded['methods'])} repair methods")
     if config.write_rules_snapshot():
         print(f"Updated {config.RULES_SNAPSHOT_PATH.relative_to(config.ROOT)} from rules.yaml")
     if not db.SESSIONS_ENABLED:  # the hosted demo makes each visitor's database on their first request
@@ -316,6 +320,6 @@ if __name__ == "__main__":
         port=8001,
         reload=True,
         reload_dirs=[str(config.ROOT)],
-        reload_includes=["rules.yaml"],
+        reload_includes=["rules.yaml", "kb/*.yaml"],
         reload_excludes=[str(config.ROOT / d) for d in ("frontend", ".venv", "data", "uploads", "tests")],
     )
