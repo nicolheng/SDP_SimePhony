@@ -1,0 +1,159 @@
+# Defect limit rules: "how much is too much". Python compares the technician's reading with these (0 AI tokens).
+# Every rule names a source id from sources.yaml. Its authority (law / benchmark / overseas) comes from there.
+# Changes need a PR, like rules.yaml.
+#
+# check:
+#   measure  the technician enters a number; it is a likely defect when  reading <op> threshold
+#   yes_no   the technician answers yes or no; "yes" is a likely defect
+# A rule never decides the verdict. It only gives a suggestion; the technician always makes the final call.
+#
+# photo_can_decide: false means a photo is not enough (nobody can read 1 mm from a photo), so the answer
+# stays "measure first" until the technician enters a reading.
+#
+# verified: false until #121 checks the number against the source (with a page reference).
+# A number that can't be confirmed is marked "SDP to confirm" in its note.
+
+version: 1
+
+rules:
+  - id: TOL-TILE-LIPPAGE
+    category: tiles
+    element: floor or wall tiles
+    condition: The edges of neighbouring tiles are not level
+    check: measure
+    metric: lippage
+    unit: mm
+    op: ">"
+    threshold: 1.0
+    tool: Straightedge and a tapered gauge (or steel wedge)
+    how_to_measure: Lay the straightedge across the joint and measure the step between the two tiles at its highest point.
+    photo_can_decide: false
+    source: {id: CIS7-2021, clause: "Annex A, floor and internal wall finishes, alignment and evenness"}
+    see_also:
+      - {id: VIC-BPC-2026, clause: "Tiling: 1.0 / 1.5 / 2.0 mm depending on joint width"}
+    repair_method_id: REP-TILE-RELAY
+    verified: false
+
+  - id: TOL-TILE-HOLLOW
+    category: tiles
+    element: floor or wall tiles
+    condition: The tile sounds hollow or feels loose
+    check: yes_no
+    question: Does the tile sound hollow when tapped?
+    tool: Tapping rod (or the handle of a screwdriver)
+    how_to_measure: Tap across the whole tile and its corners. A dull, hollow sound means it is not fully bonded.
+    photo_can_decide: false
+    source: {id: CIS7-2021, clause: "Definitions, hollowness"}
+    see_also:
+      - {id: NZ-MBIE-2015, clause: "Tiling: hollow area over 10% of a tile is not acceptable"}
+    repair_method_id: REP-TILE-RELAY
+    verified: false
+    note: CIS 7 counts any hollow sound. MBIE allows a small hollow area; SDP to confirm which to use.
+
+  - id: TOL-CRACK-WALL
+    category: wall_crack
+    element: plastered wall or ceiling
+    condition: A crack in the wall or ceiling
+    check: measure
+    metric: crack width
+    unit: mm
+    op: ">"
+    threshold: 1.0
+    escalate_over: 5.0
+    tool: Crack width gauge (crack card)
+    how_to_measure: Hold the gauge against the widest part of the crack and match the line that just covers it.
+    photo_can_decide: false
+    source: {id: VIC-BPC-2026, clause: "Plaster: cracks over 1 mm within 24 months of completion"}
+    see_also:
+      - {id: BRE-DG251, clause: "Category 3 and above: over 5 mm, serviceability or stability"}
+    repair_method_id: REP-CRACK-FILL
+    verified: false
+    note: >-
+      Over 5 mm, or diagonal from a door or window corner, or getting wider: needs an engineer, not a filler.
+      CIS 7 has no crack-width number, so this uses an overseas reference.
+
+  - id: TOL-LEAK-ANY
+    category: water_leak
+    element: ceiling, wall, floor or fittings
+    condition: Water is coming through or dripping
+    check: yes_no
+    question: Is there water coming from somewhere it shouldn't (not condensation)?
+    tool: Moisture meter, torch
+    how_to_measure: Find the wet area and trace it to a source. Rule out condensation (water beads on cold pipes or aircond ducts only).
+    photo_can_decide: true
+    source: {id: CIS7-2021, clause: "Definitions, leakage: any uncontrolled water other than condensation"}
+    repair_method_id: REP-WET-AREA-LEAK
+    verified: false
+    note: The technician must rule out condensation from use before calling it a leak.
+
+  - id: TOL-WET-PONDING
+    category: drainage
+    element: bathroom floor, balcony, wet kitchen
+    condition: Water stays on the floor and does not flow to the drain
+    check: yes_no
+    question: After the floor is wetted and left to drain, is there still standing water away from the drain?
+    tool: Bucket of water, timer
+    how_to_measure: Pour water over the floor, wait for it to drain, then check for pools. A thin film held by surface tension does not count.
+    photo_can_decide: true
+    source: {id: CIS7-2021, clause: "Floor finishes, falls in the right direction, no ponding"}
+    see_also:
+      - {id: VIC-BPC-2026, clause: "Ponding on balconies and wet areas; water held by surface tension is not ponding"}
+    repair_method_id: null
+    verified: false
+    note: No Malaysian number for floor fall or ponding time was found; SDP to confirm. Repair is by the tiler (re-screed the fall).
+
+  - id: TOL-DOOR-GAP
+    category: door_window
+    element: door leaf and frame
+    condition: The gap around the door is too big or uneven
+    check: measure
+    metric: gap between door and frame
+    unit: mm
+    op: ">"
+    threshold: 5.0
+    tool: Feeler gauge or steel rule
+    how_to_measure: Close the door and measure the widest gap between the door and the frame along the top and both sides.
+    photo_can_decide: false
+    source: {id: CIS7-2021, clause: "Annex A, doors, gap (or the project's own value)"}
+    see_also:
+      - {id: VIC-BPC-2026, clause: "Doors: gaps between 2 and 5 mm"}
+    repair_method_id: null
+    verified: false
+    note: CIS 7 lets the project set its own value; SDP to confirm. Repair is by the carpenter.
+
+  - id: TOL-DOOR-WINDOW-OPERATION
+    category: door_window
+    element: doors and windows
+    condition: The door or window sticks, won't close or won't lock
+    check: measure
+    metric: failed tries out of 3
+    unit: tries
+    op: ">"
+    threshold: 1
+    tool: None (open, close and lock it 3 times)
+    how_to_measure: Open, close and lock it 3 times. Count the tries where it sticks, won't latch or won't lock.
+    photo_can_decide: false
+    source: {id: CIS7-2021, clause: "Doors and windows: tested 3 times, must pass at least 2"}
+    repair_method_id: null
+    verified: false
+    note: Repair is by the carpenter or glazier.
+
+  - id: TOL-FLOOR-EVENNESS
+    category: flooring
+    element: floor finish
+    condition: The floor is uneven or has dips
+    check: measure
+    metric: gap under the straightedge
+    unit: mm
+    op: ">"
+    threshold: 3.0
+    over_length_mm: 1200
+    tool: 1.2 m straightedge and a tapered gauge
+    how_to_measure: Lay the 1.2 m straightedge on the floor in several directions and measure the biggest gap underneath.
+    photo_can_decide: false
+    source: {id: CIS7-2021, clause: "Annex A, floor finishes, evenness: 3 mm over 1.2 m"}
+    see_also:
+      - {id: VIC-BPC-2026, clause: "Floors: 4 mm over 2 m"}
+    repair_method_id: null
+    verified: false
+    note: Repair depends on the finish (tiles, timber, screed); refer to the trade.

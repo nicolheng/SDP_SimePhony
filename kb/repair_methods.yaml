@@ -1,0 +1,133 @@
+# Repair methods: short guides shown to TECHNICIANS ONLY, after a defect is confirmed as real (#134).
+# Never send these steps to buyers: they might try the repair themselves, and it can read as admitting
+# liability. The test in #136 checks this stays true.
+#
+# Every method names its sources (ids from sources.yaml). Where no source gives a step or a number, the
+# method says "follow the product label" or "refer to the trade" instead of inventing one.
+# Changes need a PR, like rules.yaml.
+#
+# needs_drying_or_curing: same name as the fact in agents/simephony/repair_estimate.py, so the repair
+#   estimate can add drying time for this method (#135).
+# for_rules: the tolerance rules (tolerances.yaml) whose defect this method repairs.
+# verified: false until #121 checks the steps and numbers against the sources.
+
+version: 1
+
+methods:
+  - id: REP-TILE-RELAY
+    title: Re-lay hollow or uneven tiles
+    categories: [tiles]
+    for_rules: [TOL-TILE-HOLLOW, TOL-TILE-LIPPAGE]
+    steps:
+      - Tap-test around the problem and mark every hollow or uneven tile.
+      - Remove the marked tiles and scrape off the old adhesive.
+      - Check the screed underneath is sound and dry. New screed or render needs at least 7 days to cure.
+      - Re-fix the tiles with full adhesive cover (notched trowel; also butter the back of large tiles).
+      - Grout once the adhesive has set, then check the joint step with a straightedge.
+      - If several tiles across the room have lifted, check the floor has movement joints and tell your supervisor.
+    materials: [tile adhesive, grout, notched trowel, spare tiles from the same batch, straightedge]
+    needs_drying_or_curing: true
+    drying_time: Adhesive and grout set per the product label; new screed at least 7 days.
+    call_specialist_if:
+      - Many tiles have popped up across a large floor (likely a movement-joint or screed problem).
+    specialist_trade: tiler
+    sources: [BCA-TILING-GIP]
+    verified: false
+
+  - id: REP-WET-AREA-LEAK
+    title: Find and fix a bathroom or wet-area leak
+    categories: [water_leak, waterproofing, plumbing]
+    for_rules: [TOL-LEAK-ANY]
+    steps:
+      - Find the source first. Test the supply pipes separately (taps off, watch the meter).
+      - Flood-test the floor with the drain plugged, water at least 25 mm deep, for at least 24 hours, and check below for leaks.
+      - If only the grout or sealant has failed, rake it out, re-grout and reseal.
+      - If the waterproofing membrane has failed, remove the tiles and screed, lay a new membrane turned up the walls, let it cure, flood-test again, then re-tile.
+      - Grout and tiles alone cannot waterproof a wet area. Never just re-grout a membrane failure.
+    materials: [moisture meter, drain plug, waterproofing membrane, epoxy grout, sealant]
+    needs_drying_or_curing: true
+    drying_time: New membrane at least 48 hours before the flood test; the flood test itself at least 24 hours.
+    call_specialist_if:
+      - The membrane has failed over a wide area.
+      - The leak can't be found, or it comes back after a repair.
+    specialist_trade: waterproofing contractor
+    sources: [BCA-TILING-GIP, ARDEX-TB266, HDB-HOMECARE]
+    verified: false
+
+  - id: REP-CRACK-FILL
+    title: Fill a fine crack in plaster
+    categories: [wall_crack, ceiling]
+    for_rules: [TOL-CRACK-WALL]
+    steps:
+      - Measure the crack width. Only fill cracks up to 5 mm that are not getting wider.
+      - Rake the crack open slightly and brush out the dust.
+      - Fill with a flexible crack filler and smooth it flush.
+      - Once the filler is dry, sand it and repaint the whole wall panel so the patch doesn't show.
+    materials: [crack width gauge, flexible crack filler, filling knife, sandpaper, matching paint]
+    needs_drying_or_curing: true
+    drying_time: Filler dry before painting, per the product label.
+    call_specialist_if:
+      - The crack is wider than 5 mm.
+      - It runs diagonally from the corner of a door or window.
+      - It is getting wider, or a door or window has started to stick.
+      - The crack is in a beam, column or slab (concrete, not plaster). Dry cracks there need epoxy injection, wet ones polyurethane injection.
+    specialist_trade: structural engineer
+    sources: [BRE-DG251, SIKA-MY-INJECTION, NIPPON-MY-PAINT]
+    verified: false
+
+  - id: REP-CONCRETE-SPALL
+    title: Repair spalled concrete (concrete flaking off, rusty steel showing)
+    categories: [ceiling, structural_crack]
+    for_rules: []
+    steps:
+      - Make the area safe. Keep people away from loose pieces that could fall.
+      - Hack off all loose and cracked concrete around the damage.
+      - Clean the rust off the exposed steel bars and coat them with a rust-protection primer.
+      - Apply a bonding agent, then rebuild the surface with polymer-modified repair mortar.
+      - Once the mortar has cured, repaint.
+    materials: [hammer and chisel, wire brush, rust-protection primer, bonding agent, polymer-modified repair mortar, paint]
+    needs_drying_or_curing: true
+    drying_time: Repair mortar cured per the product label before painting.
+    call_specialist_if:
+      - The steel bars are badly rusted or thinner than normal.
+      - The damage is on a beam or column, or over a large area.
+    specialist_trade: structural engineer
+    sources: [HDB-HOMECARE]
+    verified: false
+
+  - id: REP-REPAINT
+    title: Repaint peeling, blistering or powdery (efflorescence) paint
+    categories: [paint]
+    for_rules: []
+    steps:
+      - Find and stop the moisture first. Repainting a damp wall will fail again.
+      - Scrape off loose paint and brush off the white powder (efflorescence).
+      - Let the wall dry out fully.
+      - Apply an alkali-resisting sealer, then 2 top coats.
+    materials: [scraper, stiff brush, alkali-resisting sealer, top-coat paint]
+    needs_drying_or_curing: true
+    drying_time: Wall dry before sealing; sealer and each coat dry per the product label.
+    call_specialist_if:
+      - The damp comes back. Treat it as a leak (REP-WET-AREA-LEAK).
+    specialist_trade: painter
+    sources: [NIPPON-MY-PAINT]
+    verified: false
+
+  - id: REP-ELECTRICAL
+    title: Electrical faults (licensed electrician only)
+    categories: [electrical]
+    for_rules: []
+    steps:
+      - Only a licensed or registered electrician may do this work. If you are not one, stop here and refer it.
+      - Switch off and isolate the circuit before inspecting.
+      - Do not keep resetting a breaker that trips; find the cause.
+      - Test the circuit before switching it back on.
+    materials: []
+    needs_drying_or_curing: false
+    drying_time: null
+    call_specialist_if:
+      - Always. Electrical work is for licensed electricians only.
+    specialist_trade: licensed electrician (Suruhanjaya Tenaga)
+    licensed_only: true
+    sources: [ST-ESR-2024]
+    verified: false
