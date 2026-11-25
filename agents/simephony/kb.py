@@ -185,3 +185,49 @@ def dlp_status(unit: dict, now: str) -> dict:
     # floor, so the last day shows 0 days left and any time after the end shows a negative number
     return {"status": "in" if left >= 0 else "after", "dlp_end": dlp_expiry(vp_date),
             "days_left": math.floor(left)}
+
+
+# The three answers a rule can give (#124). A suggestion only: the technician always makes the final call.
+WITHIN_LIMIT = "within_limit"
+LIKELY_DEFECT = "likely_defect"
+MEASURE_FIRST = "measure_first"
+
+
+def check_measurement(rule_id: str, reading) -> dict:
+    """Compare the technician's reading with a limit rule from tolerances.yaml. 0 AI tokens.
+
+    reading: a number for a "measure" rule (in the rule's unit), True / False for a "yes_no" rule,
+    or None when nothing has been entered yet.
+    A reading exactly at the limit is within it (a rule says it is a defect when reading > threshold).
+    Returns {answer, rule_id, check, reading, limit, unit, escalate, source} for the suggestion banner (#130).
+    Raises ValueError for an unknown rule or a reading of the wrong kind, so a bad input never turns into
+    a wrong suggestion.
+    """
+    kb = get()
+    rule = kb["rules"].get(rule_id)
+    if rule is None:
+        raise ValueError(f"Unknown rule {rule_id!r}")
+    src = kb["sources"][rule["source"]["id"]]
+    result = {
+        "rule_id": rule_id, "check": rule["check"], "reading": reading,
+        "limit": rule.get("threshold"), "unit": rule.get("unit"), "escalate": False,
+        "source": {"id": src["id"], "title": src["title"], "authority": src["authority"],
+                   "clause": rule["source"].get("clause")},
+    }
+    if reading is None:
+        return {**result, "answer": MEASURE_FIRST}
+
+    if rule["check"] == "yes_no":
+        if not isinstance(reading, bool):
+            raise ValueError(f"{rule_id} is a yes/no check, so the reading must be True or False, got {reading!r}")
+        return {**result, "answer": LIKELY_DEFECT if reading else WITHIN_LIMIT}
+
+    if not _is_number(reading):
+        raise ValueError(f"{rule_id} needs a number in {rule['unit']}, got {reading!r}")
+    if reading < 0:
+        raise ValueError(f"{rule_id}: a reading can't be negative, got {reading}")
+    threshold = rule["threshold"]
+    exceeds = reading > threshold if rule["op"] == ">" else reading < threshold
+    escalate_over = rule.get("escalate_over")
+    return {**result, "answer": LIKELY_DEFECT if exceeds else WITHIN_LIMIT,
+            "escalate": escalate_over is not None and reading > escalate_over}
