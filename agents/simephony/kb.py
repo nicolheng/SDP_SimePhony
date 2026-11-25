@@ -3,6 +3,8 @@
 Plain Python, 0 AI tokens. The backend loads it at start-up, so a typo in a kb/ file stops the server with a
 clear list of problems instead of failing quietly later. Other KB functions (#123-#125) read from get().
 """
+import math
+import sys
 from pathlib import Path
 
 import yaml
@@ -10,6 +12,10 @@ import yaml
 from agents.simephony.rules import load_rules
 
 KB_DIR = Path(__file__).resolve().parent.parent.parent / "kb"
+
+# The DLP dates are worked out in the backend (one rule for the dashboard and the KB).
+sys.path.append(str(Path(__file__).resolve().parents[2] / "backend"))
+from demo_api.analytics import dlp_days_left, dlp_expiry  # noqa: E402
 
 AUTHORITIES = {"law", "industry_standard", "intl_reference", "manufacturer_guide"}
 LICENCES = {"public_law", "free_public", "cc_by_3.0", "copyright_paraphrase_only"}
@@ -161,3 +167,21 @@ def init(kb_dir: Path = KB_DIR) -> dict:
 def get() -> dict:
     """The loaded KB (loads it on first use, e.g. in scripts and tests that skip start-up)."""
     return _kb if _kb is not None else init()
+
+
+def dlp_status(unit: dict, now: str) -> dict:
+    """Is the unit still inside its defect liability period (DLP, 24 months from vacant possession)?
+
+    `now` is the demo clock (demo_now / ctx.now), not the real time, so "Skip days" moves the DLP too.
+    Returns {status, dlp_end, days_left}. status is:
+      "in"       inside the DLP, including its last day: the developer must repair
+      "after"    the DLP has ended. Never reject the report automatically: send it to SDP to decide (#142)
+      "unknown"  no vacant possession date recorded: can't tell, so treat it like "after" and let SDP decide
+    """
+    vp_date = unit.get("vp_date")
+    left = dlp_days_left(vp_date, now)
+    if left is None:
+        return {"status": "unknown", "dlp_end": None, "days_left": None}
+    # floor, so the last day shows 0 days left and any time after the end shows a negative number
+    return {"status": "in" if left >= 0 else "after", "dlp_end": dlp_expiry(vp_date),
+            "days_left": math.floor(left)}
