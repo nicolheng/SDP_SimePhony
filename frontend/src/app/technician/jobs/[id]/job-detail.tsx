@@ -34,7 +34,8 @@ import {
   Section,
   UnderlineTabs,
 } from "@/components/mobile";
-import { PhotoInput, PhotoThumb } from "@/components/photo";
+import { PhotoInput, PhotoRounds, PhotoThumb } from "@/components/photo";
+import { REPORT_PHOTO_KINDS, WORK_PHOTO_KINDS } from "@/lib/photos";
 import { RepairClockBadge } from "@/components/repair-clock";
 import { SimilarDefects } from "@/components/similar-defects";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
@@ -169,12 +170,6 @@ export function JobDetail() {
     !attending &&
     accepted;
   const repairing = c.status === "REPAIR_BOOKED" && accepted;
-  const reported = c.photos.filter(
-    (p) => p.kind === "original" || p.kind === "reopen",
-  );
-  const evidence = c.photos.filter(
-    (p) => p.kind !== "original" && p.kind !== "reopen",
-  );
   const sameStack = c.similar.some((s) => s.unitId !== c.unitId);
 
   async function run(fn: () => Promise<void>, msg: string) {
@@ -388,11 +383,7 @@ export function JobDetail() {
                     </li>
                   ))}
               </ul>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {reported.map((p, i) => (
-                  <PhotoThumb key={i} photo={p} className="aspect-square" />
-                ))}
-              </div>
+              <PhotoRounds photos={c.photos} kinds={REPORT_PHOTO_KINDS} className="mt-3" />
             </Section>
 
             {/* Intake Agent's assessment: same layout as the buyer's Defect Assessment */}
@@ -463,13 +454,7 @@ export function JobDetail() {
                     Repair: {c.repairNote}
                   </p>
                 )}
-                {evidence.length > 0 && (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {evidence.map((p, i) => (
-                      <PhotoThumb key={i} photo={p} className="aspect-square" />
-                    ))}
-                  </div>
-                )}
+                <PhotoRounds photos={c.photos} kinds={WORK_PHOTO_KINDS} className="mt-3" />
               </Section>
             )}
 
