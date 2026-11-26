@@ -118,6 +118,37 @@ def test_no_new_reports_after_the_dlp_ends(client):
     assert r.status_code == 400 and "defect liability period" in r.json()["detail"]
 
 
+@pytest.mark.parametrize("use_ai_agents", ["false", "true"])
+def test_same_repaired_category_and_room_can_be_reported_after_dlp(client, monkeypatch, use_ai_agents):
+    import db
+    import tools
+
+    monkeypatch.setenv("USE_AI_AGENTS", use_ai_agents)
+    unit_id, buyer_id = "C-1-01", "B-0301"
+    with db.get_conn() as conn:
+        conn.execute("UPDATE units SET vp_date = '2026-01-01' WHERE unit_id = ?", (unit_id,))
+    previous = tools.create_case(unit_id, buyer_id, "Previous bedroom water leak")
+    assert previous["ok"] is True
+    with db.get_conn() as conn:
+        conn.execute(
+            """UPDATE cases
+               SET category = 'water_leak', pin_room = 'Master bedroom',
+                   location_in_unit = 'Master bedroom ceiling', status = 'REPAIRED'
+               WHERE case_id = ?""",
+            (previous["case_id"],),
+        )
+        conn.execute("UPDATE units SET vp_date = '2020-01-01' WHERE unit_id = ?", (unit_id,))
+
+    response = client.post(
+        "/api/cases",
+        json={"unit_id": unit_id, "buyer_id": buyer_id, "description": "Water leak in the master bedroom"},
+    )
+    assert response.status_code == 200, response.text
+    case_id = response.json()["caseId"]
+    with db.get_conn() as conn:
+        assert conn.execute("SELECT 1 FROM cases WHERE case_id = ?", (case_id,)).fetchone()
+
+
 def test_unsure_intake_after_a_follow_up_still_books_the_visit(client, monkeypatch):
     from demo_api import ai_agents, agents
     unsure = lambda ctx, description, *a, **k: {**agents.intake(description, True), "needs_human_review": True,  # noqa: E731
