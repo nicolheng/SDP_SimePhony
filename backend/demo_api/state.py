@@ -26,6 +26,12 @@ def _json(v, fallback):
         return fallback
 
 
+def _measurement(r: dict) -> dict | None:
+    """The technician's optional verdict measurement: {ruleId, reading, unit}."""
+    m = tools.verdict_measurement(r)
+    return {"ruleId": m["rule_id"], "reading": m["reading"], "unit": m["unit"]} if m else None
+
+
 def _photo_check(v) -> dict | None:
     """The saved photo check in the shape the web app reads: {assessment, observations, confidence, flagged, source, model, at}."""
     c = _json(v, None)
@@ -165,7 +171,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "similar": [{"caseId": l["related_case_id"], "unitId": unit_of.get(l["related_case_id"], ""), "reason": l["reason"], "at": norm(l["created_at"])} for l in links.get(cid, [])],
             "missingInfo": _json(r["missing_info"], []),
             "followUpQuestion": r["follow_up_question"],
-            "verdict": {"outcome": verdict, "note": r["verdict_note"] or "", "at": norm(r["verdict_at"])} if verdict and r["verdict_at"] else None,
+            "verdict": {"outcome": verdict, "note": r["verdict_note"] or "", "at": norm(r["verdict_at"]),
+                        "measurement": _measurement(r), "reasonCode": r.get("verdict_reason_code")} if verdict and r["verdict_at"] else None,
             "repairNote": r["repair_note"],
             "repairedAt": norm(r["repaired_at"]),
             # VerificationAgent's repair photo check, for SDP's developer sign-off (null when the AI did not run)

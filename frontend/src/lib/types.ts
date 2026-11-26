@@ -166,7 +166,13 @@ export interface Case {
   similar: SimilarRef[];
   missingInfo: string[];
   followUpQuestion?: string;
-  verdict?: { outcome: "VALID" | "INVALID"; note: string; at: string };
+  verdict?: {
+    outcome: "VALID" | "INVALID";
+    note: string;
+    at: string;
+    measurement?: { ruleId: string; reading: number | boolean; unit: string | null } | null;
+    reasonCode?: string | null;
+  };
   repairNote?: string;
   /** VerificationAgent's check of the repair photo, for SDP's developer sign-off (null when the AI did not run). */
   photoCheck?: PhotoCheck | null;

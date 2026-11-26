@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS cases (
     triage_reason        TEXT,                      -- why TriageAgent picked this technician and slot
     verdict_note         TEXT,                      -- technician's reason for VALID / INVALID
     verdict_at           TEXT,                      -- ISO 8601 time of verdict
+    verdict_rule_id      TEXT,                      -- optional measurement: limit rule in kb/tolerances.yaml, e.g. TOL-TILE-LIPPAGE
+    verdict_reading      REAL,                      -- ... the reading: a number for a measure rule, 1 / 0 for a yes_no rule
+    verdict_unit         TEXT,                      -- ... the rule's unit when saved (mm, tries); NULL for a yes_no rule
+    verdict_reason_code  TEXT,                      -- optional, INVALID only: code in kb/invalid_defect_reasons.yaml
     repair_note          TEXT,                      -- what technician fixed
     repaired_at          TEXT,                      -- ISO 8601 time marked REPAIRED
     technician_id        TEXT REFERENCES technicians(technician_id),

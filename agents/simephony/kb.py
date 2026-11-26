@@ -1,4 +1,4 @@
-"""Defect knowledge base: loads and checks the kb/ files (sources, limit rules, repair methods).
+"""Defect knowledge base: loads and checks the kb/ files (sources, limit rules, repair methods, invalid reasons).
 
 Plain Python, 0 AI tokens. The backend loads it at start-up, so a typo in a kb/ file stops the server with a
 clear list of problems instead of failing quietly later. Other KB functions (#123-#125) read from get().
@@ -26,6 +26,7 @@ SOURCE_FIELDS = ("id", "title", "edition", "publisher", "url", "authority", "lic
 RULE_FIELDS = ("id", "category", "condition", "check", "tool", "how_to_measure", "photo_can_decide", "source",
                "repair_method_id", "verified")
 METHOD_FIELDS = ("id", "title", "categories", "for_rules", "steps", "needs_drying_or_curing", "sources", "verified")
+REASON_FIELDS = ("code", "label", "description", "source_ids")
 
 _kb: dict | None = None
 
@@ -48,15 +49,15 @@ def _read(path: Path, key: str) -> list:
     return items
 
 
-def _index(items: list, file: str, errors: list) -> dict:
+def _index(items: list, file: str, errors: list, key: str = "id") -> dict:
     """{id: item}, noting items without an id and duplicate ids."""
     out = {}
     for n, item in enumerate(items, 1):
-        item_id = item.get("id") if isinstance(item, dict) else None
+        item_id = item.get(key) if isinstance(item, dict) else None
         if not item_id:
-            errors.append(f"{file}: item {n} has no id")
+            errors.append(f"{file}: item {n} has no {key}")
         elif item_id in out:
-            errors.append(f"{file}: id {item_id} is used twice")
+            errors.append(f"{file}: {key} {item_id} is used twice")
         else:
             out[item_id] = item
     return out
@@ -83,7 +84,7 @@ def _check_source_ref(ref, where: str, sources: dict, withdrawn: dict, errors: l
 
 
 def load(kb_dir: Path = KB_DIR) -> dict:
-    """Read and check the kb/ files. Returns {sources, withdrawn, rules, methods}, each {id: item}.
+    """Read and check the kb/ files. Returns {sources, withdrawn, rules, methods, reasons}, each {id: item}.
 
     Raises KBError listing every problem, so one run shows everything that needs fixing.
     """
@@ -93,6 +94,8 @@ def load(kb_dir: Path = KB_DIR) -> dict:
     withdrawn = _index(_read(sources_path, "withdrawn"), "sources.yaml (withdrawn)", errors)
     rules = _index(_read(kb_dir / "tolerances.yaml", "rules"), "tolerances.yaml", errors)
     methods = _index(_read(kb_dir / "repair_methods.yaml", "methods"), "repair_methods.yaml", errors)
+    reasons = _index(_read(kb_dir / "invalid_defect_reasons.yaml", "invalid_defect_reasons"),
+                     "invalid_defect_reasons.yaml", errors, key="code")
     categories = set(load_rules().get("category_to_skill", {}))
 
     for sid, src in sources.items():
@@ -152,9 +155,15 @@ def load(kb_dir: Path = KB_DIR) -> dict:
             elif rules[rid].get("repair_method_id") != mid:
                 errors.append(f"{where}: lists {rid}, but {rid} points to {rules[rid].get('repair_method_id')}")
 
+    for code, reason in reasons.items():
+        where = f"invalid_defect_reasons.yaml: {code}"
+        _missing(reason, REASON_FIELDS, where, errors)
+        for ref in reason.get("source_ids") or []:  # an empty list is allowed: an internal rule such as DUPLICATE_REPORT
+            _check_source_ref(ref, where, sources, withdrawn, errors)
+
     if errors:
         raise KBError(f"Knowledge base has {len(errors)} problem(s):\n  - " + "\n  - ".join(errors))
-    return {"sources": sources, "withdrawn": withdrawn, "rules": rules, "methods": methods}
+    return {"sources": sources, "withdrawn": withdrawn, "rules": rules, "methods": methods, "reasons": reasons}
 
 
 def init(kb_dir: Path = KB_DIR) -> dict:
@@ -167,6 +176,30 @@ def init(kb_dir: Path = KB_DIR) -> dict:
 def get() -> dict:
     """The loaded KB (loads it on first use, e.g. in scripts and tests that skip start-up)."""
     return _kb if _kb is not None else init()
+
+
+def public_view() -> dict:
+    """The KB for the web app (GET /api/kb), camelCase like the rest of the API: the limit rules the technician
+    measures against and the reasons a defect can be invalid. 0 AI tokens."""
+    kb = get()
+
+    def rule(r: dict) -> dict:
+        src = kb["sources"][r["source"]["id"]]
+        return {
+            "id": r["id"], "category": r["category"], "condition": r["condition"], "check": r["check"],
+            "metric": r.get("metric"), "question": r.get("question"), "unit": r.get("unit"),
+            "op": r.get("op"), "threshold": r.get("threshold"), "escalateOver": r.get("escalate_over"),
+            "tool": r["tool"], "howToMeasure": r["how_to_measure"], "photoCanDecide": r["photo_can_decide"],
+            "source": {"id": src["id"], "title": src["title"], "authority": src["authority"],
+                       "clause": r["source"].get("clause")},
+            "verified": r["verified"],
+        }
+
+    return {
+        "rules": [rule(r) for r in kb["rules"].values()],
+        "reasons": [{"code": x["code"], "label": x["label"], "description": x["description"]}
+                    for x in kb["reasons"].values()],
+    }
 
 
 def dlp_status(unit: dict, now: str) -> dict:

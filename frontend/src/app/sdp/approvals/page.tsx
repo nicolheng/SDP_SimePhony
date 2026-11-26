@@ -85,7 +85,7 @@ export default function Approvals() {
       {tab === "review" &&
         (held.length ? (
           <>
-            <p className="mb-3 text-base text-zinc-600">An AI agent was not confident enough to continue, so it paused these cases. Open one to approve or reject it.</p>
+            <p className="mb-3 text-base text-zinc-600">An AI agent was not confident enough to continue, or a technician marked the defect invalid, so these cases wait for SDP. Open one to decide it.</p>
             <ul className="space-y-2">
               {held.map((c) => (
                 <QueueRow
