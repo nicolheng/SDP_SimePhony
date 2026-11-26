@@ -305,10 +305,11 @@ export function CaseDetail() {
             {/* Inspection + repair */}
             {/* Technician notes are internal (SDP and technician only): written for colleagues, they can say things
                 the developer must not tell a buyer ("we admit…"). The buyer's explanation is CommsAgent's message. */}
-            {(c.verdict || c.repairedAt) && (
+            {/* A technician's Invalid verdict waits for SDP (PENDING_REVIEW): the buyer sees the result once SDP decides. */}
+            {((c.verdict && c.status !== "PENDING_REVIEW") || c.repairedAt) && (
               <Section title="Inspection & Repair">
                 <dl>
-                  {c.verdict && (
+                  {c.verdict && c.status !== "PENDING_REVIEW" && (
                     <>
                       <Row label="Inspection result">{c.verdict.outcome === "VALID" ? "Defect confirmed" : "Not a defect"}</Row>
                       <Row label="Inspected on">{fmtDate(c.verdict.at)}</Row>

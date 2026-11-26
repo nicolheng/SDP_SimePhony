@@ -3,7 +3,7 @@
 ## 1. Case statuses
 
 ```
-SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / INVALID
+SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / (Invalid → PENDING_REVIEW → INVALID or VALID)
 → REPAIR_BOOKED → REPAIRED → PENDING_SIGNOFF → CLOSED → REOPENED
 → ESCALATION_PENDING → EXTRA_INSPECTION
 ```
@@ -12,9 +12,9 @@ SUBMITTED → INFO_NEEDED → VISIT_SCHEDULED → VALID / INVALID
 |---|---|
 | `SUBMITTED` | Buyer sent photo and description (a preferred visit time is optional; without one the earliest free technician is booked) |
 | `INFO_NEEDED` | IntakeAgent asked the buyer for more detail (one round: the answer is taken as given and the case is booked, never held for review) |
-| `PENDING_REVIEW` | An AI agent was unsure (confidence below 0.7, or the AI and the rules disagree on the category) and paused the case for SDP. Technician and bookings are released. SDP approves (the case resumes from the held step with the rule-based agents) or rejects (new report → `INVALID`, reopen → `CLOSED`, repair → `VALID`) via `POST /api/cases/{id}/review-decision` |
+| `PENDING_REVIEW` | An AI agent was unsure (confidence below 0.7, or the AI and the rules disagree on the category) and paused the case for SDP. Technician and bookings are released. SDP approves (the case resumes from the held step with the rule-based agents) or rejects (new report → `INVALID`, reopen → `CLOSED`, repair → `VALID`) via `POST /api/cases/{id}/review-decision`. Also every technician **Invalid** verdict (`review.previousStatus` = `INVALID`): rejecting a defect is the developer's decision, so SDP approves (confirms → `INVALID`, closed, buyer told with the reason label) or rejects (overturns → `VALID`, repair booked). The buyer only gets "Inspection done, our team is reviewing" until then |
 | `VISIT_SCHEDULED` | Inspection visit booked with a technician |
-| `VALID` / `INVALID` | Technician's verdict. `INVALID` is terminal |
+| `VALID` / `INVALID` | `VALID`: technician's verdict, the repair is booked. `INVALID`: not a defect, confirmed by SDP after a technician's Invalid verdict (or an SDP review rejection). `INVALID` is terminal |
 | `REPAIR_BOOKED` | Repair booked automatically at the first time a qualified worker is free (also after SDP sends a repair back). Nobody free in 2 weeks: stays `VALID` with `booking_status` `NEEDS_STAFF` for SDP to book |
 | `REPAIRED` | Repair done; VerificationAgent sends the buyer's check guide |
 | `PENDING_SIGNOFF` | Repaired; waiting for sign-off. SDP approves first, then the buyer checks it (Fixed sets `verification_status` to `verified`, and the case **stays here**), then the buyer signs off the whole unit. See [Buyer sign-off](#buyer-sign-off-per-unit). 14 days, else auto-close |
@@ -117,6 +117,38 @@ defect stays `PENDING_SIGNOFF` with `verification_status = verified` until the u
 
 A unit with no open defects has `canVerify` and `ready` both `false`, so no Sign off button is shown. Each case in
 `/api/state` also has `verificationStatus`, and its `signoffDeadline` is the unit's deadline once the buyer can check.
+
+### Verdict: measurement and reason code
+
+`POST /api/cases/{case_id}/verdict` (`record_verdict`) takes two optional fields besides `outcome`, `note`, `photo`
+and `repair_hours`:
+
+```jsonc
+{
+  "outcome": "INVALID",
+  "note": "Step between tiles is within the limit.",
+  "measurement": {"rule_id": "TOL-TILE-LIPPAGE", "reading": 0.5},  // optional, VALID or INVALID
+  "reason_code": "WITHIN_TOLERANCE"                                // optional, INVALID only
+}
+```
+
+- **`measurement`**: `rule_id` is a rule in [`kb/tolerances.yaml`](kb/tolerances.yaml). `reading` is a number in the
+  rule's unit for a `measure` rule, or `true` / `false` for a `yes_no` rule. There is no `unit` field: the unit is
+  copied from the rule, and a request that sends one is refused (422). An unknown rule, the wrong kind of reading or
+  a negative number is refused (400).
+- **`reason_code`**: a `code` in [`kb/invalid_defect_reasons.yaml`](kb/invalid_defect_reasons.yaml), e.g.
+  `WEAR_AND_TEAR`. Refused on a VALID verdict or for an unknown code. Optional for now; the web app does not send it yet.
+- An Invalid verdict holds the case in `PENDING_REVIEW` (see the status table); the response's `status` is `PENDING_REVIEW`.
+  SDP's review card shows the note, the reason label and the reading. If SDP overturns it, the reason code is cleared
+  and the reading is kept.
+- Saved in `cases.verdict_rule_id`, `verdict_reading` (yes/no as 1 / 0), `verdict_unit` (NULL for yes/no) and
+  `verdict_reason_code`. A new inspection clears them with the rest of the verdict.
+- Shown on the case: `/api/state` → `verdict.measurement` (`{ruleId, reading, unit}` or `null`) and
+  `verdict.reasonCode`; `get_case` → `verdict_measurement` (`{rule_id, reading, unit}`) and `verdict_reason_code`.
+  The `verdict.recorded` event carries `measurement` and `reason_code` when given.
+- `GET /api/kb`: the knowledge base for the technician's forms (0 AI tokens), from `kb.public_view()`:
+  `{rules: [{id, category, condition, check, metric, question, unit, op, threshold, escalateOver, tool, howToMeasure,
+  photoCanDecide, source: {id, title, authority, clause}, verified}], reasons: [{code, label, description}]}`.
 
 ## 5. Database (SQLite)
 

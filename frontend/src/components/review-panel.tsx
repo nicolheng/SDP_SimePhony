@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 
 /** What Approve and Reject do, by the step the agent held (matches tools.resolve_review). */
 function outcomes(previous: string): { approve: string; reject: string } {
+  if (previous === "INVALID")
+    return { approve: "Confirm not a defect: the case closes and the buyer is told", reject: "Overturn: it is a defect, and the repair is booked" };
   if (["REOPENED", "EXTRA_INSPECTION", "ESCALATION_PENDING"].includes(previous))
     return { approve: "Book a revisit (or an extra inspection if it keeps recurring)", reject: "Keep the case closed: the reopen is not accepted" };
   if (previous === "REPAIRED") return { approve: "Accept the repair and sign off as the developer: the buyer is asked to check it and sign off", reject: "Repair needs more work: the buyer books a new repair" };
@@ -19,13 +21,15 @@ function outcomes(previous: string): { approve: string; reject: string } {
   return { approve: "Accept the report as it is and book the inspection visit", reject: "Close as not a defect (the buyer is told why)" };
 }
 
-/** A case an AI agent held for a person (PENDING_REVIEW): why, how sure it was, and the SDP decision. */
+/** A case held for a person (PENDING_REVIEW): by an AI agent that was unsure, or by a technician's Invalid
+ *  verdict (rejecting a defect is SDP's decision). Why, how sure it was, and the SDP decision. */
 export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
   const r = c.review;
   const o = outcomes(r?.previousStatus ?? "SUBMITTED");
+  const invalid = r?.previousStatus === "INVALID";
   const score = typeof r?.confidence === "number" ? Math.round(r.confidence * 100) : null;
   // A held repair check: show the before and after photos side by side, so SDP can compare them here.
   const before = r?.previousStatus === "REPAIRED" ? c.photos.find((p) => p.kind === "original") : undefined;
@@ -39,7 +43,11 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
     setBusy(true);
     try {
       await decideReview(c.id, approve, note.trim());
-      toast.success(approve ? "Approved: the case continues" : "Rejected: the buyer has been told");
+      toast.success(
+        invalid
+          ? approve ? "Confirmed: not a defect, the buyer has been told" : "Overturned: the repair is being booked"
+          : approve ? "Approved: the case continues" : "Rejected: the buyer has been told",
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setBusy(false);
@@ -59,7 +67,8 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
       <h2 className="text-lg font-semibold">Held for Human Review</h2>
       <div className="mt-3 rounded-xl bg-violet-50 p-4">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-violet-800">
-          <Bot className="size-4" /> {r?.agent ?? "An AI agent"} was not sure{r?.at ? ` · ${fmtDateTime(r.at)}` : ""}
+          <Bot className="size-4" /> {invalid ? "Technician marked this not a defect" : `${r?.agent ?? "An AI agent"} was not sure`}
+          {r?.at ? ` · ${fmtDateTime(r.at)}` : ""}
         </p>
         <p className="mt-1.5 text-base text-violet-950">{r?.reason ?? "An AI agent asked a person to check this case."}</p>
         {score !== null && (
@@ -100,7 +109,7 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
           onClick={() => decide(true)}
           className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          <Check className="size-4" /> Approve &amp; continue
+          <Check className="size-4" /> {invalid ? "Confirm not a defect" : "Approve & continue"}
         </button>
         <button
           type="button"
@@ -108,7 +117,7 @@ export function ReviewPanel({ c, showCase }: { c: Case; showCase?: boolean }) {
           onClick={() => decide(false)}
           className="inline-flex h-11 items-center gap-2 rounded-xl border border-zinc-300 bg-white px-5 text-base font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
-          <X className="size-4" /> Reject
+          <X className="size-4" /> {invalid ? "Overturn: valid defect" : "Reject"}
         </button>
       </div>
     </section>

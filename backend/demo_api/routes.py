@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import Response
 
 import db
@@ -115,6 +115,14 @@ def get_state(request: Request):
 def get_rules():
     """Business rules from rules.yaml, the single source the web app reads them from."""
     return config.public_rules()
+
+
+@router.get("/kb")
+def get_kb():
+    """Defect knowledge base for the technician's forms: limit rules (kb/tolerances.yaml) and the reasons a
+    defect can be invalid (kb/invalid_defect_reasons.yaml). Plain data, 0 AI tokens."""
+    from agents.simephony import kb
+    return kb.public_view()
 
 
 @router.get("/analytics/weekly-digest")
@@ -239,17 +247,27 @@ def reopen(case_id: str, body: Reopen, request: Request, background_tasks: Backg
 # ---------- technician / subcontractor ----------
 
 
+class VerdictMeasurement(BaseModel):
+    # No unit field: the unit comes from the rule in kb/tolerances.yaml, so a sent unit is refused, not ignored.
+    model_config = ConfigDict(extra="forbid")
+    rule_id: str = Field(min_length=1, max_length=64)  # e.g. TOL-TILE-LIPPAGE
+    reading: bool | float
+
+
 class Verdict(BaseModel):
     outcome: Literal["VALID", "INVALID"]
     note: str = Field(min_length=1, max_length=500)
     photo: Photo | None = None
     repair_hours: Literal[2, 4, 8] | None = None  # technician's expected repair duration (VALID only)
+    measurement: VerdictMeasurement | None = None
+    reason_code: str | None = Field(None, min_length=1, max_length=64)
 
 
 @router.post("/cases/{case_id}/verdict")
 def verdict(case_id: str, body: Verdict, request: Request, background_tasks: BackgroundTasks):
+    measurement = body.measurement.model_dump() if body.measurement else None
     return _run(request, workflow.record_verdict, case_id, body.outcome, body.note, body.photo, body.repair_hours,
-                background_tasks=background_tasks)
+                measurement, body.reason_code, background_tasks=background_tasks)
 
 
 class Repaired(BaseModel):
