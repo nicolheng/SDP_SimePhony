@@ -9,7 +9,7 @@ import { CasePinMap } from "@/components/floor-plan";
 import { DeveloperSignoffPanel } from "@/components/developer-signoff";
 import { recordAvailable } from "@/lib/defect-record";
 import { InspectionBriefView } from "@/components/inspection-brief";
-import { PhotoThumb } from "@/components/photo";
+import { PhotoRounds } from "@/components/photo";
 import { Stars } from "@/components/rating";
 import { RepairClockBadge } from "@/components/repair-clock";
 import { ReviewPanel } from "@/components/review-panel";
@@ -272,11 +272,7 @@ export function SdpCaseDetail() {
           )}
 
           <Panel title="Photos">
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-              {c.photos.map((p, i) => (
-                <PhotoThumb key={i} photo={p} className="aspect-square" />
-              ))}
-            </div>
+            <PhotoRounds photos={c.photos} gridClass="grid grid-cols-3 gap-3 sm:grid-cols-5" />
           </Panel>
 
           {(c.verdict || c.repairNote || c.verification) && (

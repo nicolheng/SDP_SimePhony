@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { PhotoThumb } from "@/components/photo";
+import { BeforeAfterRounds } from "@/components/photo";
 import { ReviewPanel } from "@/components/review-panel";
 import { PageTitle, Panel } from "@/components/sdp-ui";
 import { StatusBadge } from "@/components/status-badge";
@@ -224,8 +224,6 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
     );
     return Array.from({ length: FLOORS }, (_, i) => FLOORS - i).map((floor) => ({ floor, id: `${unit.block}-${floor}-${unit.stack}` })).map((u) => ({ ...u, hit: ids.has(u.id) }));
   }, [cases, c.category, unit.block, unit.stack]);
-  const original = c.photos.find((p) => p.kind === "original");
-  const reopen = [...c.photos].reverse().find((p) => p.kind === "reopen");
 
   async function decide(approve: boolean) {
     setBusy(true);
@@ -281,10 +279,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
             </ul>
             {si && <p className="mt-3 text-base text-violet-950"><span className="font-medium">Suggested action:</span> {si.recommendedAction}</p>}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
-            {reopen && <PhotoThumb photo={reopen} className="aspect-[4/3]" />}
-          </div>
+          <BeforeAfterRounds photos={c.photos} />
         </div>
         <div>
           <p className="mb-1.5 text-sm font-medium text-zinc-500">
