@@ -1759,6 +1759,7 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
         is_post_dlp_recurrence = dlp["status"] == "after"
         if is_post_dlp_recurrence and not _has_repaired_recurrence(conn, unit_id, category, report_room):
             # Keep the response code aligned with kb/invalid_defect_reasons.yaml.
+            # RM4.8M latent-defect liability: only allow a documented same-category, same-room recurrence.
             raise ToolError(
                 f"POST_DLP_SUBMISSION: This report was rejected because the defect liability period ended on "
                 f"{dlp['dlp_end']}. After the DLP, only a defect in the same category and room as a previously "

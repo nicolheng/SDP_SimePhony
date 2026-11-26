@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useCase, useCaseId } from "@/components/case-views";
 import { PhotoCheckSummary } from "@/components/developer-signoff";
 import { MobileHeader, Section } from "@/components/mobile";
-import { PhotoInput, PhotoThumb, samplePhoto } from "@/components/photo";
+import { BeforeAfterRounds, PhotoInput, samplePhoto } from "@/components/photo";
 import { signoffDeadline, submitVerification } from "@/lib/api";
 import { fmtDate } from "@/lib/dates";
 import { useOffline } from "@/lib/store";
@@ -25,8 +25,6 @@ export function VerifyRepair() {
 
   if (!c) return <MobileHeader title="Case Not Found" back="/buyer/cases" />;
   const g = c.verificationGuide;
-  const original = c.photos.find((p) => p.kind === "original");
-  const repair = [...c.photos].reverse().find((p) => p.kind === "repair");
 
   async function submit(result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY") {
     if (result === "NOT_FIXED" && !photo) {
@@ -76,14 +74,7 @@ export function VerifyRepair() {
         </Section>
 
         <Section title="Before and After">
-          <div className="grid grid-cols-2 gap-2">
-            {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
-            {repair ? (
-              <PhotoThumb photo={repair} className="aspect-[4/3]" />
-            ) : (
-              <div className="grid aspect-[4/3] place-items-center rounded-lg bg-zinc-100 text-xs text-zinc-400">No repair photo</div>
-            )}
-          </div>
+          <BeforeAfterRounds photos={c.photos} />
           {/* What the VerificationAgent found in the repair photo, as SDP saw it before approving. */}
           {c.photoCheck && (
             <div className="mt-3">

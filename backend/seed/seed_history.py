@@ -364,10 +364,15 @@ def seed_history():
                     t.isoformat() if verification_result in ("FIXED", "NOT_FIXED") else None, # completed_at
                 ))
 
-            if reopen_count > 0:
+            for round_no in range(1, reopen_count + 1):
+                if round_no > 1:
+                    t += timedelta(days=3)
+                    events_to_insert.append((case_id, "repair.done", json.dumps({"note": f"Repair attempt {round_no} completed by technician."}), t.isoformat()))
+                    photos_to_insert.append((case_id, f"sample_{category}_repair.jpg", "repair", t.isoformat()))
                 t += timedelta(days=5)
                 events_to_insert.append((case_id, "case.reopened", json.dumps({"reason": "Defect returned during rain."}), t.isoformat()))
                 photos_to_insert.append((case_id, f"sample_{category}_reopen.jpg", "reopen", t.isoformat()))
+            if reopen_count > 0:
                 events_to_insert.append((case_id, "recurrence.detected", json.dumps({"occurrence": occurrence_count}), (t + timedelta(minutes=5)).isoformat()))
                 buyer_messages_to_insert.append((case_id, "Case Reopened", "Case reopened following your verification feedback. We are investigating further.", t.isoformat()))
 

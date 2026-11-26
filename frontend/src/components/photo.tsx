@@ -1,7 +1,8 @@
 "use client";
 import { Camera, CloudUpload, ImageIcon, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { fmtDateTime } from "@/lib/dates";
+import { fmtDate, fmtDateTime } from "@/lib/dates";
+import { photoRounds } from "@/lib/photos";
 import type { Photo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CameraCapture, canUseCamera } from "./camera-capture";
@@ -120,6 +121,86 @@ export function PhotoThumb({
         />
       )}
     </figure>
+  );
+}
+
+const roundTitle = (n: number, at: string) => `Round ${n} · ${n === 1 ? "Reported" : "Reopened"} ${fmtDate(at)}`;
+
+export function PhotoRounds({
+  photos,
+  kinds,
+  className,
+  gridClass = "grid grid-cols-3 gap-2",
+  thumbClass = "aspect-square",
+}: {
+  photos: Photo[];
+  kinds?: Photo["kind"][];
+  className?: string;
+  gridClass?: string;
+  thumbClass?: string;
+}) {
+  const rounds = photoRounds(photos);
+  const shown = rounds
+    .map((r) => ({ ...r, photos: kinds ? r.photos.filter((p) => kinds.includes(p.kind)) : r.photos }))
+    .filter((r) => r.photos.length > 0);
+  if (shown.length === 0) return null;
+  return (
+    <div className={cn("space-y-3", className)}>
+      {shown.map((r) => (
+        <div key={r.n}>
+          {rounds.length > 1 && <p className="mb-1.5 text-xs font-medium text-zinc-500">{roundTitle(r.n, r.startedAt)}</p>}
+          <div className={gridClass}>
+            {r.photos.map((p, i) => (
+              <PhotoThumb key={i} photo={p} className={thumbClass} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MissingPhoto({ text, className }: { text: string; className?: string }) {
+  return <div className={cn("grid place-items-center rounded-lg bg-zinc-100 text-center text-xs text-zinc-400", className)}>{text}</div>;
+}
+
+/** Before/after for the latest round (the defect as reported, then the repair), with each earlier attempt
+ *  below it, newest first, so a repeat defect shows every failed repair. One round looks like a plain pair. */
+export function BeforeAfterRounds({ photos, className }: { photos: Photo[]; className?: string }) {
+  const rounds = photoRounds(photos);
+  const latest = rounds[rounds.length - 1];
+  if (!latest) return null;
+  const earlier = rounds.slice(0, -1).reverse();
+  return (
+    <div className={className}>
+      {rounds.length > 1 && <p className="mb-1.5 text-xs font-medium text-zinc-500">{roundTitle(latest.n, latest.startedAt)} (latest)</p>}
+      <div className="grid grid-cols-2 gap-2">
+        {latest.problem ? <PhotoThumb photo={latest.problem} className="aspect-[4/3]" /> : <MissingPhoto text="No photo" className="aspect-[4/3]" />}
+        {latest.repair ? <PhotoThumb photo={latest.repair} className="aspect-[4/3]" /> : <MissingPhoto text="Not repaired yet" className="aspect-[4/3]" />}
+      </div>
+      {earlier.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-sm font-medium text-zinc-700">Earlier attempts ({earlier.length})</p>
+          <ul className="space-y-3">
+            {earlier.map((r) => {
+              const cameBack = rounds[r.n]?.startedAt; // the next round began when the defect came back
+              return (
+                <li key={r.n}>
+                  <p className="mb-1 text-xs text-zinc-500">
+                    Round {r.n} · {r.repair ? `repaired ${fmtDate(r.repair.at)}` : "no repair photo"}
+                    {cameBack ? ` · came back ${fmtDate(cameBack)}` : ""}
+                  </p>
+                  <div className="flex gap-2">
+                    {r.problem ? <PhotoThumb photo={r.problem} className="aspect-[4/3] w-28" /> : <MissingPhoto text="No photo" className="aspect-[4/3] w-28" />}
+                    {r.repair ? <PhotoThumb photo={r.repair} className="aspect-[4/3] w-28" /> : <MissingPhoto text="No repair photo" className="aspect-[4/3] w-28" />}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
