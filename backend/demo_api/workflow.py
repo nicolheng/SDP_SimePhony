@@ -198,19 +198,25 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
         intake_preview = agents.intake(description, bool(photo))
         if intake_preview.get("non_defect"):
             return {"nonDefect": intake_preview["non_defect"]}
-        case_id = _tool(
+        created = _tool(
             ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned,
             category=intake_preview.get("category"), room=pin_room or intake_preview.get("location_in_unit"),
-        )["case_id"]
+        )
+        case_id = created["case_id"]
+        if created["status"] == "PENDING_REVIEW":
+            return {"caseId": case_id}
         ctx.deferred_reports.append(case_id)
         return {"caseId": case_id}
     result = ai_agents.intake(ctx, description, photo, pin_room=pin_room)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
-    case_id = _tool(
+    created = _tool(
         ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned,
         category=result.get("category"), room=pin_room or result.get("location_in_unit"),
-    )["case_id"]
+    )
+    case_id = created["case_id"]
+    if created["status"] == "PENDING_REVIEW":
+        return {"caseId": case_id}
     ai_agents.record_pending_fallbacks(ctx, case_id)
     if _save_intake(ctx, case_id, result):
         _continue_new_case(ctx, case_id)

@@ -1741,8 +1741,8 @@ def _has_repaired_recurrence(conn: sqlite3.Connection, unit_id: str, category: O
 @_returns_errors
 def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: Optional[str] = None, photo: Optional[str] = None,
                 pin: Optional[dict] = None, category: Optional[str] = None, room: Optional[str] = None) -> dict:
-    """Buyer reports a defect (-> SUBMITTED; intake runs next). preferred_slot: the visit time the buyer
-    picked (ISO). photo: data URL or local file path. pin: where the buyer tapped the unit floor plan,
+    """Buyer reports a defect (-> SUBMITTED; accepted post-DLP recurrences wait in PENDING_REVIEW).
+    preferred_slot: the visit time the buyer picked (ISO). photo: data URL or local file path. pin: where the buyer tapped the unit floor plan,
     {x, y, room} from floor_plan.resolve_pin (x, y None for "Whole unit"); IntakeAgent then takes the room from it.
     category and room are the intake classification used for the post-DLP recurrence check.
     Returns {ok, case_id, status, preferred_visit_at, photo}."""
@@ -1756,7 +1756,8 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
 
         dlp = dlp_status(dict(unit), _now(conn))
         report_room = room or (pin.get("room") if pin else None)
-        if dlp["status"] == "after" and not _has_repaired_recurrence(conn, unit_id, category, report_room):
+        is_post_dlp_recurrence = dlp["status"] == "after"
+        if is_post_dlp_recurrence and not _has_repaired_recurrence(conn, unit_id, category, report_room):
             # Keep the response code aligned with kb/invalid_defect_reasons.yaml.
             # RM4.8M latent-defect liability: only allow a documented same-category, same-room recurrence.
             raise ToolError(
@@ -1764,18 +1765,28 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
                 f"{dlp['dlp_end']}. After the DLP, only a defect in the same category and room as a previously "
                 "repaired issue can be reported; brand-new issues must be referred to the developer directly."
             )
+        # Issue #142: an accepted post-DLP recurrence requires SDP review before any visit is booked.
+        case_status = "PENDING_REVIEW" if is_post_dlp_recurrence else "SUBMITTED"
         preferred = norm(preferred_slot) if preferred_slot else None
         case_id = _next_id(conn, "cases", "case_id", "C", 4)
         conn.execute(
-            """INSERT INTO cases (case_id, unit_id, buyer_id, status, description, occurrence_count, reopen_count, preferred_visit_at, created_at)
-               VALUES (?, ?, ?, 'SUBMITTED', ?, 1, 0, ?, ?)""",
-            (case_id, unit_id, buyer_id, description.strip(), preferred, _now(conn)),
+            """INSERT INTO cases (case_id, unit_id, buyer_id, status, category, location_in_unit, description,
+                                 occurrence_count, reopen_count, preferred_visit_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)""",
+            (case_id, unit_id, buyer_id, case_status, category if is_post_dlp_recurrence else None,
+             report_room if is_post_dlp_recurrence else None, description.strip(), preferred, _now(conn)),
         )
         if pin:  # pin columns only when there is a pin: reports without one work on a database not yet migrated
             _save(conn, case_id, pin_x=pin.get("x"), pin_y=pin.get("y"), pin_room=pin.get("room"))
         saved = _save_photo(conn, case_id, photo, "original")
         _emit(conn, case_id, "case.created", f"Buyer submitted a defect report{' with photo' if saved else ''}", preferred_visit_at=preferred)
-    return {"ok": True, "case_id": case_id, "status": "SUBMITTED", "preferred_visit_at": preferred, "photo": saved}
+        if is_post_dlp_recurrence:
+            _emit(
+                conn, case_id, "case.review_requested",
+                "Post-DLP recurrence detected. Flagged for SDP review to determine developer liability for latent defect.",
+                agent="create_case", confidence_score=1.0, previous_status="SUBMITTED"
+            )
+    return {"ok": True, "case_id": case_id, "status": case_status, "preferred_visit_at": preferred, "photo": saved}
 
 
 @_returns_errors

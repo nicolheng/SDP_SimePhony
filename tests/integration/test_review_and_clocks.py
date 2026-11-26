@@ -119,7 +119,8 @@ def test_no_new_reports_after_the_dlp_ends(client):
 
 
 @pytest.mark.parametrize("use_ai_agents", ["false", "true"])
-def test_same_repaired_category_and_room_can_be_reported_after_dlp(client, monkeypatch, use_ai_agents):
+def test_post_dlp_recurrence_waits_for_sdp_before_booking(client, monkeypatch, use_ai_agents):
+    import json
     import db
     import tools
 
@@ -141,12 +142,33 @@ def test_same_repaired_category_and_room_can_be_reported_after_dlp(client, monke
 
     response = client.post(
         "/api/cases",
-        json={"unit_id": unit_id, "buyer_id": buyer_id, "description": "Water leak in the master bedroom"},
+        json={"unit_id": unit_id, "buyer_id": buyer_id, "description": "Ceiling leak in the master bedroom"},
     )
     assert response.status_code == 200, response.text
     case_id = response.json()["caseId"]
+    held = _case(response.json()["state"], case_id)
+    assert held["status"] == "PENDING_REVIEW"
+    assert held["category"] == "water_leak" and not held["technicianId"]
+    assert held["review"]["agent"] == "create_case"
+    assert held["review"]["previousStatus"] == "SUBMITTED"
+    assert "Post-DLP recurrence detected" in held["review"]["reason"]
     with db.get_conn() as conn:
-        assert conn.execute("SELECT 1 FROM cases WHERE case_id = ?", (case_id,)).fetchone()
+        assert not conn.execute("SELECT 1 FROM slots WHERE case_id = ?", (case_id,)).fetchone()
+        events = conn.execute(
+            "SELECT type, payload FROM case_events WHERE case_id = ? ORDER BY rowid", (case_id,)
+        ).fetchall()
+    assert [event["type"] for event in events] == ["case.created", "case.review_requested"]
+    review_event = json.loads(events[1]["payload"])
+    assert review_event["agent"] == "create_case"
+    assert review_event["confidence_score"] == 1.0 and review_event["previous_status"] == "SUBMITTED"
+    assert review_event["message"] == (
+        "Post-DLP recurrence detected. Flagged for SDP review to determine developer liability for latent defect."
+    )
+
+    approved = client.post(f"/api/cases/{case_id}/review-decision", json={"approve": True})
+    assert approved.status_code == 200, approved.text
+    resumed = _case(approved.json()["state"], case_id)
+    assert resumed["status"] == "VISIT_SCHEDULED" and resumed["technicianId"]
 
 
 def test_unsure_intake_after_a_follow_up_still_books_the_visit(client, monkeypatch):
