@@ -1,0 +1,84 @@
+# kb/invalid_defect_reasons.yaml
+# Standard reasons a reported issue is excluded from the developer's Defect Liability Period (DLP) obligation.
+# Used by UI reason buttons and AI agents to enforce consistent, explainable, and legally grounded rejections.
+
+invalid_defect_reasons:
+  - code: WEAR_AND_TEAR
+    label: "Normal Wear and Tear"
+    description: "Natural aging, fading, or gradual deterioration from everyday living after Vacant Possession, rather than defective workmanship or faulty materials."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Schedule G Clause 27(1) / Schedule H Clause 30(1)"
+    source_url: "https://www.edgeprop.my/guides/buying/malaysia-defect-liability-period-dlp-10-legal-rights"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: OWNER_DAMAGE
+    label: "Damage Caused by Owner or Occupant"
+    description: "Physical damage, impact marks, scratches, or breakage caused by the homeowner, tenants, movers, or visitors after keys were handed over."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Schedule G Clause 27(1) / Schedule H Clause 30(1)"
+    source_url: "https://www.edgeprop.my/guides/buying/malaysia-defect-liability-period-dlp-10-legal-rights"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: OWNER_RENOVATION
+    label: "Affected by Owner Renovation"
+    description: "Issues in areas altered, hacked, drilled, or modified by the homeowner's own renovation contractors, which voids developer warranty on the affected work."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Schedule G Clause 27(1) / Schedule H Clause 30(1)"
+    source_url: "https://www.edgeprop.my/guides/buying/malaysia-defect-liability-period-dlp-10-legal-rights"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: WITHIN_TOLERANCE
+    label: "Within Acceptable Industry Tolerance"
+    description: "Minor variations in alignment, flatness, or hairline shrinkage cracks that fall within CIDB CIS 7 (QLASSIC) allowable limits and do not affect safety or function."
+    source_standard: "CIDB Construction Industry Standard CIS 7:2021 (QLASSIC)"
+    source_url: "https://www.cidb.gov.my/eng/qlassic-quality-assessment-system-for-building-construction-works/"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: LACK_OF_MAINTENANCE
+    label: "Lack of Routine Homeowner Maintenance"
+    description: "Issues resulting from neglected upkeep after handover, such as clogged floor traps, uncleaned air-con drain pipes, or worn-out silicone seals."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Schedule G Clause 27 / Schedule H Clause 30"
+    source_url: "https://www.pepsventures.com/resources/developer-obligations-during-the-defects-liability-period-in-malaysia"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: NATURAL_CHARACTERISTIC
+    label: "Natural Material Variation"
+    description: "Inherent differences in grain, vein, shade, or texture found in natural materials like timber, marble, granite, or clay tiles, rather than defective materials."
+    source_standard: "CIDB Construction Industry Standard CIS 7:2021 (QLASSIC) — Architectural Finishes"
+    source_url: "https://www.cidb.gov.my/wp-content/uploads/2023/08/PREVIEW-CIS7_2021.pdf"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: THIRD_PARTY_WORK
+    label: "Damage by Third-Party Contractors"
+    description: "Damage caused by third-party contractors or service providers hired by the homeowner (e.g., internet or air-con installers drilling through walls)."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Schedule G & H (Parcel & Building Scope)"
+    source_url: "https://www.leepartners.my/wp-content/uploads/2016/08/HOUSING_DEVELOPMENT_CONTROL_AND_LICENSING_-REG.pdf"
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: ACT_OF_GOD
+    label: "Extreme Weather or External Force"
+    description: "Damage caused by severe storms, lightning strikes, flash floods, or other external events beyond normal building design specifications."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Approved Plans & Specifications Clause"
+    source_url: "https://www.vcclaw.com.my/articles/liability-of-a-developer-after-the-defect-liability-period-in-housing-development-control-and-licen"
+    auto_reject_allowed: false
+    requires_sdp_review: true
+
+  - code: DUPLICATE_REPORT
+    label: "Duplicate of Existing Ticket"
+    description: "This issue has already been logged under another active or resolved defect ticket for the same location."
+    source_standard: "Internal SimePhony Business Rules"
+    source_url: ""
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: POST_DLP_SUBMISSION
+    label: "Reported After Defect Liability Period (DLP)"
+    description: "Submitted after the 24-month statutory DLP has expired. NOTE: Only accepted for SDP review if the defect was originally raised during the DLP but was not fixed completely, was fixed with poor workmanship, or is a latent defect. Brand new issues with no prior DLP history are rejected."
+    source_standard: "Housing Development (Control and Licensing) Regulations 1989 — Schedule G Clause 27(1) & Schedule H Clause 30(1)"
+    source_url: "https://jiranlink.com/articles/defect-liability-period-malaysia-condo-guide/"
+    auto_reject_allowed: false
+    requires_sdp_review: true
