@@ -1,0 +1,75 @@
+# kb/invalid_defect_reasons.yaml
+# Standard reasons a reported issue is excluded from the developer's Defect Liability Period (DLP) obligation.
+# Used by UI reason buttons and AI agents to enforce consistent, explainable, and legally grounded rejections.
+# source_ids reference the authoritative documents defined in kb/sources.yaml.
+
+invalid_defect_reasons:
+  - code: WEAR_AND_TEAR
+    label: "Normal Wear and Tear"
+    description: "Natural aging, fading, or gradual deterioration from everyday living after Vacant Possession, rather than defective workmanship or faulty materials."
+    source_ids: ["HDR-1989-SPA", "NZ-MBIE-2015"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: OWNER_DAMAGE
+    label: "Damage Caused by Owner or Occupant"
+    description: "Physical damage, impact marks, scratches, or breakage caused by the homeowner, tenants, movers, or visitors after keys were handed over."
+    source_ids: ["HDR-1989-SPA", "NZ-MBIE-2015"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: OWNER_RENOVATION
+    label: "Affected by Owner Renovation"
+    description: "Issues in areas altered, hacked, drilled, or modified by the homeowner's own renovation contractors, which voids developer warranty on the affected work."
+    source_ids: ["HDR-1989-SPA"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: WITHIN_TOLERANCE
+    label: "Within Acceptable Industry Tolerance"
+    description: "Minor variations in alignment, flatness, or hairline shrinkage cracks that fall within CIDB CIS 7 (QLASSIC) allowable limits and do not affect safety or function."
+    source_ids: ["CIS7-2021", "VIC-BPC-2026"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: LACK_OF_MAINTENANCE
+    label: "Lack of Routine Homeowner Maintenance"
+    description: "Issues resulting from neglected upkeep after handover, such as clogged floor traps, uncleaned air-con drain pipes, or worn-out silicone seals."
+    source_ids: ["HDR-1989-SPA", "NZ-MBIE-2015"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: NATURAL_CHARACTERISTIC
+    label: "Natural Material Variation"
+    description: "Inherent differences in grain, vein, shade, or texture found in natural materials like timber, marble, granite, or clay tiles, rather than defective materials."
+    source_ids: ["CIS7-2021"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: THIRD_PARTY_UTILITY
+    label: "External Utility or Service Provider Issue"
+    description: "Disruptions or faults originating outside the property boundary, such as TNB power fluctuations, Air Selangor water pressure, or telco fibre lines."
+    source_ids: ["HDR-1989-SPA"]
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: ACT_OF_GOD
+    label: "Extreme Weather or External Force"
+    description: "Damage caused by severe storms, lightning strikes, flash floods, or other external events beyond normal building design specifications."
+    source_ids: ["HDR-1989-SPA"]
+    auto_reject_allowed: false
+    requires_sdp_review: true
+
+  - code: DUPLICATE_REPORT
+    label: "Duplicate of Existing Ticket"
+    description: "This issue has already been logged under another active or resolved defect ticket for the same location."
+    source_ids: [] # Internal system rule, no external legal source required.
+    auto_reject_allowed: true
+    requires_sdp_review: false
+
+  - code: POST_DLP_SUBMISSION
+    label: "Reported After Defect Liability Period (DLP)"
+    description: "Submitted after the 24-month statutory DLP has expired. NOTE: Only accepted for SDP review if the defect was originally raised during the DLP but was not fixed completely, was fixed with poor workmanship, or is a latent defect. Brand new issues with no prior DLP history are rejected."
+    source_ids: ["HDR-1989-SPA", "HDA-1966"]
+    auto_reject_allowed: false
+    requires_sdp_review: true
