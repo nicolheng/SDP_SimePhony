@@ -14,7 +14,6 @@ import floor_plan
 import tools
 
 from . import agents, ai_agents, config
-from .analytics import dlp_days_left, dlp_expiry
 from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
@@ -193,23 +192,25 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     except ValueError as e:
         raise WorkflowError(str(e)) from e
     pin_room = pinned["room"] if pinned else None
-    left = dlp_days_left(ctx.units[unit_id].get("vp_date"), ctx.now)
-    if left is not None and left < 0:
-        raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
-                            "so new defects can no longer be reported here. Please contact the developer directly.")
     if ctx.defer_agents and ai_agents.ai_first():
         # USE_AI_AGENTS=true or only: save the report now and let the agents work after the request returns
         # (process_new_report), so the buyer's progress screen shows each step as it really finishes.
-        non_defect = agents.intake(description, bool(photo)).get("non_defect")
-        if non_defect:
-            return {"nonDefect": non_defect}
-        case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned)["case_id"]
+        intake_preview = agents.intake(description, bool(photo))
+        if intake_preview.get("non_defect"):
+            return {"nonDefect": intake_preview["non_defect"]}
+        case_id = _tool(
+            ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned,
+            category=intake_preview.get("category"), room=pin_room or intake_preview.get("location_in_unit"),
+        )["case_id"]
         ctx.deferred_reports.append(case_id)
         return {"caseId": case_id}
     result = ai_agents.intake(ctx, description, photo, pin_room=pin_room)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
-    case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned)["case_id"]
+    case_id = _tool(
+        ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned,
+        category=result.get("category"), room=pin_room or result.get("location_in_unit"),
+    )["case_id"]
     ai_agents.record_pending_fallbacks(ctx, case_id)
     if _save_intake(ctx, case_id, result):
         _continue_new_case(ctx, case_id)

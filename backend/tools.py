@@ -1702,18 +1702,68 @@ def _fmt_hours(h: float) -> str:
     return f"about {n} hour{'' if h == 1 else 's'}"
 
 
+def _room_label(unit_id: str, value: Optional[str]) -> Optional[str]:
+    """Resolve a pinned room or detailed intake location to its floor-plan room label."""
+    if not value:
+        return None
+    import floor_plan
+
+    text = value.strip()
+    labels = [room["label"] for room in floor_plan.layout_for(unit_id)["rooms"]]
+    matches = [
+        label for label in labels
+        if re.search(rf"(?<!\w){re.escape(label)}(?!\w)", text, re.IGNORECASE)
+    ]
+    return matches[0].casefold() if len(matches) == 1 else None
+
+
+def _has_repaired_recurrence(conn: sqlite3.Connection, unit_id: str, category: Optional[str],
+                             room: Optional[str]) -> bool:
+    if not category or not room:
+        return False
+    requested_category = category.strip().casefold()
+    requested_room = _room_label(unit_id, room)
+    if not requested_category or not requested_room:
+        return False
+
+    previous = conn.execute(
+        """SELECT category, pin_room, location_in_unit FROM cases
+           WHERE unit_id = ? AND status IN ('REPAIRED', 'CLOSED', 'FIXED')""",
+        (unit_id,),
+    ).fetchall()
+    return any(
+        (case["category"] or "").strip().casefold() == requested_category
+        and _room_label(unit_id, case["pin_room"] or case["location_in_unit"]) == requested_room
+        for case in previous
+    )
+
+
 @_returns_errors
 def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: Optional[str] = None, photo: Optional[str] = None,
-                pin: Optional[dict] = None) -> dict:
+                pin: Optional[dict] = None, category: Optional[str] = None, room: Optional[str] = None) -> dict:
     """Buyer reports a defect (-> SUBMITTED; intake runs next). preferred_slot: the visit time the buyer
     picked (ISO). photo: data URL or local file path. pin: where the buyer tapped the unit floor plan,
     {x, y, room} from floor_plan.resolve_pin (x, y None for "Whole unit"); IntakeAgent then takes the room from it.
+    category and room are the intake classification used for the post-DLP recurrence check.
     Returns {ok, case_id, status, preferred_visit_at, photo}."""
     if not description.strip():
         raise ToolError("Please describe the problem.")
     with _connect() as conn:
         if not conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
             raise ToolError("Unknown buyer or unit.")
+        unit = conn.execute("SELECT unit_id, vp_date FROM units WHERE unit_id = ?", (unit_id,)).fetchone()
+        from agents.simephony.kb import dlp_status
+
+        dlp = dlp_status(dict(unit), _now(conn))
+        report_room = room or (pin.get("room") if pin else None)
+        if dlp["status"] == "after" and not _has_repaired_recurrence(conn, unit_id, category, report_room):
+            # Keep the response code aligned with kb/invalid_defect_reasons.yaml.
+            # RM4.8M latent-defect liability: only allow a documented same-category, same-room recurrence.
+            raise ToolError(
+                f"POST_DLP_SUBMISSION: This report was rejected because the defect liability period ended on "
+                f"{dlp['dlp_end']}. After the DLP, only a defect in the same category and room as a previously "
+                "repaired issue can be reported; brand-new issues must be referred to the developer directly."
+            )
         preferred = norm(preferred_slot) if preferred_slot else None
         case_id = _next_id(conn, "cases", "case_id", "C", 4)
         conn.execute(
