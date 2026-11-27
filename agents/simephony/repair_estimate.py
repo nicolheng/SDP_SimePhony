@@ -6,12 +6,15 @@ the booking uses:
   start from the category's normal time (web app REPAIR_PLAN), rounded up to whole blocks
   +1 block each: large area, parts to replace, several spots, drying / curing time, recurring problem
   -1 block: small area
+  Drying / curing time also counts when the case's repair guide in the knowledge base needs it (#135,
+  kb/repair_methods.yaml needs_drying_or_curing), so waterproofing or re-laid tiles get the time even when
+  the note doesn't mention it, and even without the LLM.
   kept between half and double the normal time, then 1 block = 2 h, 2 = 4 h, 3 or more = 8 h (a day).
 The estimate is saved with tools.set_repair_estimate, so the repair slots the buyer sees fit the job.
 """
 import math
 
-from . import backend_tools
+from . import backend_tools, kb
 from .llm_client import get_client, get_models
 from .structured_output import StructuredOutputError, chat_json
 from agents.telemetry import record_llm_telemetry
@@ -38,7 +41,16 @@ def hours_for(base_hours: float, facts: dict, recurring: bool) -> int:
     return {1: 2, 2: 4}.get(blocks, 8)
 
 
-def _reason(hours: int, facts: dict | None, recurring: bool) -> str:
+def _drying_method(category: str, rule_id: str | None) -> dict | None:
+    """The case's repair guide from the knowledge base when it needs drying or curing time, else None."""
+    try:
+        method = kb.repair_method_for(category, rule_id)
+    except ValueError:  # a rule that has since left the KB: fall back to the category alone
+        method = kb.repair_method_for(category)
+    return method if method and method["needs_drying_or_curing"] else None
+
+
+def _reason(hours: int, facts: dict | None, recurring: bool, drying_method: dict | None = None) -> str:
     if not facts:
         return f"About {hours} hours: standard time for this type of repair."
     parts = []
@@ -51,7 +63,8 @@ def _reason(hours: int, facts: dict | None, recurring: bool) -> str:
     if facts.get("multiple_spots"):
         parts.append("several spots")
     if facts.get("needs_drying_or_curing"):
-        parts.append("drying or curing time")
+        parts.append(f'drying or curing time ({drying_method["title"].lower()})' if drying_method
+                     else "drying or curing time")
     if recurring:
         parts.append("extra time to check the cause, as the problem has come back")
     return f"About {hours} hours: " + ("; ".join(parts) if parts else "standard scope for this type of repair") + "."
@@ -117,8 +130,16 @@ def repair_estimate_node(state: dict) -> dict:
         except StructuredOutputError:
             facts = None
             state["_structured_output_error"] = True
-    hours = hours_for(base, facts, recurring) if facts else hours_for(base, {}, False)
-    reason = _reason(hours, facts, recurring if facts else False)
+    drying = _drying_method(category, state.get("verdict_rule_id"))
+    if facts:
+        if drying:
+            facts = {**facts, "needs_drying_or_curing": True}
+        hours = hours_for(base, facts, recurring)
+        reason = _reason(hours, facts, recurring, drying)
+    else:  # no LLM facts: the category's normal time, plus the guide's drying time
+        kb_facts = {"needs_drying_or_curing": True} if drying else {}
+        hours = hours_for(base, kb_facts, False)
+        reason = _reason(hours, kb_facts or None, False, drying)
 
     error = None
     case_id = state.get("case_id")
@@ -138,6 +159,7 @@ def repair_estimate_node(state: dict) -> dict:
         "reason": reason,
         "facts": facts,
         "base_hours": base,
+        "kb_method_id": drying["method_id"] if drying else None,
         "error": error,
         **({"_structured_output_error": True} if state.get("_structured_output_error") else {}),
     }

@@ -172,6 +172,8 @@ export interface Case {
     at: string;
     measurement?: { ruleId: string; reading: number | boolean; unit: string | null } | null;
     reasonCode?: string | null;
+    /** With a measurement: the rule's suggestion and whether the technician agreed; a reason when they didn't (#131). */
+    suggestion?: { answer: "likely_defect" | "within_limit"; agreed: boolean; disagreeReason: string | null } | null;
   };
   repairNote?: string;
   /** VerificationAgent's check of the repair photo, for SDP's developer sign-off (null when the AI did not run). */

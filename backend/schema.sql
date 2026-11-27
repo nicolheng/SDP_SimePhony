@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS cases (
     verdict_reading      REAL,                      -- ... the reading: a number for a measure rule, 1 / 0 for a yes_no rule
     verdict_unit         TEXT,                      -- ... the rule's unit when saved (mm, tries); NULL for a yes_no rule
     verdict_reason_code  TEXT,                      -- optional, INVALID only: code in kb/invalid_defect_reasons.yaml
+    verdict_suggestion   TEXT,                      -- with a measurement: the rule's answer (likely_defect / within_limit)
+    verdict_agreed       INTEGER,                   -- ... 1 if the verdict matches it, 0 if the technician went against it
+    verdict_disagree_reason TEXT,                   -- ... the technician's one-line reason when they went against it
     repair_note          TEXT,                      -- what technician fixed
     repaired_at          TEXT,                      -- ISO 8601 time marked REPAIRED
     technician_id        TEXT REFERENCES technicians(technician_id),

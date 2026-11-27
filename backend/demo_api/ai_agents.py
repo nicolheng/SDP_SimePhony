@@ -328,6 +328,7 @@ def repair_estimate(ctx, case: dict) -> dict | None:
             "intake_result": {"category": case["category"]},
             "verdict_note": case.get("verdict_note") or "",
             "reopen_count": case.get("reopen_count") or 0,
+            "verdict_rule_id": case.get("verdict_rule_id"),  # the KB repair guide's drying time (#135)
             "_skip_scope_facts": True,
         })
         return state["repair_estimate"]
@@ -337,7 +338,8 @@ def repair_estimate(ctx, case: dict) -> dict | None:
         r = repair_estimate_node({"case_id": case["case_id"], "current_status": case["status"],
                                   "intake_result": {"category": case["category"]},
                                   "verdict_note": case.get("verdict_note") or "",
-                                  "reopen_count": case.get("reopen_count") or 0})["repair_estimate"]
+                                  "reopen_count": case.get("reopen_count") or 0,
+                                  "verdict_rule_id": case.get("verdict_rule_id")})["repair_estimate"]
         if r.get("_structured_output_error"):
             from agents.simephony.structured_output import StructuredOutputError
             raise StructuredOutputError()

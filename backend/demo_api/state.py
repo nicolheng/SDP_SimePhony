@@ -32,6 +32,12 @@ def _measurement(r: dict) -> dict | None:
     return {"ruleId": m["rule_id"], "reading": m["reading"], "unit": m["unit"]} if m else None
 
 
+def _suggestion(r: dict) -> dict | None:
+    """The rule's suggestion for the verdict measurement and whether the technician agreed (#131), or None."""
+    s = tools.verdict_suggestion(r)
+    return {"answer": s["answer"], "agreed": s["agreed"], "disagreeReason": s["disagree_reason"]} if s else None
+
+
 def _photo_check(v) -> dict | None:
     """The saved photo check in the shape the web app reads: {assessment, observations, confidence, flagged, source, model, at}."""
     c = _json(v, None)
@@ -172,7 +178,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "missingInfo": _json(r["missing_info"], []),
             "followUpQuestion": r["follow_up_question"],
             "verdict": {"outcome": verdict, "note": r["verdict_note"] or "", "at": norm(r["verdict_at"]),
-                        "measurement": _measurement(r), "reasonCode": r.get("verdict_reason_code")} if verdict and r["verdict_at"] else None,
+                        "measurement": _measurement(r), "reasonCode": r.get("verdict_reason_code"),
+                        "suggestion": _suggestion(r)} if verdict and r["verdict_at"] else None,
             "repairNote": r["repair_note"],
             "repairedAt": norm(r["repaired_at"]),
             # VerificationAgent's repair photo check, for SDP's developer sign-off (null when the AI did not run)
