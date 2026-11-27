@@ -35,6 +35,9 @@ CASE_COLUMNS = {
     "verdict_reading": "REAL",       # number, or 1 / 0 for a yes_no rule
     "verdict_unit": "TEXT",          # the rule's unit when saved; NULL for a yes_no rule
     "verdict_reason_code": "TEXT",   # INVALID only: kb/invalid_defect_reasons.yaml code
+    "verdict_suggestion": "TEXT",    # with a measurement: the rule's answer, likely_defect / within_limit (#131)
+    "verdict_agreed": "INTEGER",     # 1 if the verdict matches the suggestion, 0 if not
+    "verdict_disagree_reason": "TEXT",  # the technician's one-line reason when they went against it
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 UNIT_COLUMNS = {"vp_date": "TEXT"}  # vacant possession date; the defect liability period runs from it

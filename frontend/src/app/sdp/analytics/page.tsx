@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Analytics is now a tab on the Overview; systemic detection and the heatmap moved to Systemic Issues.
+// Analytics moved to Insights (the Overview is now Today, for staff).
 export default function AnalyticsRedirect() {
-  redirect("/sdp?tab=analytics");
+  redirect("/sdp/insights");
 }

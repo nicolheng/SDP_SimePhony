@@ -149,6 +149,20 @@ def repair_options(case_id: str):
             raise HTTPException(status_code=404, detail=str(e)) from e
 
 
+@router.get("/cases/{case_id}/technician-guide")
+def technician_guide(case_id: str):
+    """For the technician's job page only (#128, #134): the "what to check" card for the case's category and, once
+    the defect is confirmed Valid, its repair guide from the knowledge base. Kept out of /api/state so buyer pages
+    never receive repair steps. 0 AI tokens."""
+    from agents.simephony import kb
+    with db.get_conn() as conn:
+        ctx = Ctx(conn)
+        try:
+            return kb.technician_guide(workflow.load_case(ctx, case_id))
+        except WorkflowError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+
+
 # ---------- buyer ----------
 
 
@@ -261,13 +275,14 @@ class Verdict(BaseModel):
     repair_hours: Literal[2, 4, 8] | None = None  # technician's expected repair duration (VALID only)
     measurement: VerdictMeasurement | None = None
     reason_code: str | None = Field(None, min_length=1, max_length=64)
+    disagree_reason: str | None = Field(None, max_length=200)  # one line, when going against the rule (#131)
 
 
 @router.post("/cases/{case_id}/verdict")
 def verdict(case_id: str, body: Verdict, request: Request, background_tasks: BackgroundTasks):
     measurement = body.measurement.model_dump() if body.measurement else None
     return _run(request, workflow.record_verdict, case_id, body.outcome, body.note, body.photo, body.repair_hours,
-                measurement, body.reason_code, background_tasks=background_tasks)
+                measurement, body.reason_code, body.disagree_reason, background_tasks=background_tasks)
 
 
 class Repaired(BaseModel):

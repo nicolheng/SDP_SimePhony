@@ -623,9 +623,10 @@ def _book_revisit(ctx: Ctx, case_id: str, t: dict, occurrence: int, description:
 
 
 def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None, repair_hours: float | None = None,
-                   measurement: dict | None = None, reason_code: str | None = None) -> None:
+                   measurement: dict | None = None, reason_code: str | None = None,
+                   disagree_reason: str | None = None) -> None:
     _tool(ctx, tools.record_verdict, case_id, outcome, note, photo, repair_hours,
-          measurement=measurement, reason_code=reason_code)
+          measurement=measurement, reason_code=reason_code, disagree_reason=disagree_reason)
     if outcome == "INVALID":
         # Held for SDP (decide_review): the buyer hears the result only once SDP confirms or overturns it.
         c = load_case(ctx, case_id)

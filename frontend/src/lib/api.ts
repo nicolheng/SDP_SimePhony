@@ -64,26 +64,54 @@ export async function reopenCase(caseId: string, description: string, photoUrl: 
 
 // ---------- technician / subcontractor ----------
 
+/** A verdict measurement against a kb/tolerances.yaml rule: a number in the rule's unit, or true / false (yes/no). */
+export interface VerdictMeasurement { ruleId: string; reading: number | boolean }
+
 /** repairHours (VALID only): the technician's expected repair duration, 2, 4 or 8.
- * reasonCode (INVALID only): why it is not a defect, a code from kb/invalid_defect_reasons.yaml.
- * measurement (either verdict): the reading taken for a kb/tolerances.yaml rule. */
-export async function recordVerdict(
-  caseId: string,
-  outcome: "VALID" | "INVALID",
-  note: string,
-  photoUrl: string | null,
-  repairHours?: 2 | 4 | 8,
-  reasonCode?: string,
-  measurement?: { ruleId: string; reading: number | boolean },
-) {
+ *  extra.measurement: optional reading. extra.disagreeReason: one short line, required by the backend when the
+ *  outcome goes against the rule's suggestion for that reading (see goesAgainstSuggestion, #131). */
+export async function recordVerdict(caseId: string, outcome: "VALID" | "INVALID", note: string, photoUrl: string | null, repairHours?: 2 | 4 | 8,
+                                    extra?: { measurement?: VerdictMeasurement; disagreeReason?: string }) {
   await apiAction(`/api/cases/${caseId}/verdict`, {
-    outcome,
-    note,
-    photo: photoUrl,
+    outcome, note, photo: photoUrl,
     ...(outcome === "VALID" && repairHours ? { repair_hours: repairHours } : {}),
-    ...(outcome === "INVALID" && reasonCode ? { reason_code: reasonCode } : {}),
-    ...(measurement ? { measurement: { rule_id: measurement.ruleId, reading: measurement.reading } } : {}),
+    ...(extra?.measurement ? { measurement: { rule_id: extra.measurement.ruleId, reading: extra.measurement.reading } } : {}),
+    ...(extra?.disagreeReason?.trim() ? { disagree_reason: extra.disagreeReason.trim() } : {}),
   });
+}
+
+/** One "what to check" item: a limit rule as fixed sentences (#128). */
+export interface CheckCardItem { ruleId: string; condition: string; check: "measure" | "yes_no"; lines: string[]; verified: boolean }
+
+/** The repair guide from the knowledge base (#134): a step-by-step "guide", or a "referral" to the trade when the KB
+ *  has no guide (no invented steps). Technician-only. */
+export interface RepairMethod {
+  kind: "guide" | "referral";
+  methodId: string | null;
+  title: string;
+  matchedBy: "rule" | "category";
+  steps: string[];
+  materials: string[];
+  needsDryingOrCuring: boolean;
+  dryingTime: string | null;
+  callSpecialistIf: string[];
+  specialistTrade: string | null;
+  licensedOnly: boolean;
+  verified: boolean;
+  sources: { id: string; title: string; authority: string; authorityLabel: string }[];
+}
+
+export interface TechnicianGuide { caseId: string; checkCard: CheckCardItem[]; repairMethod: RepairMethod | null }
+
+/** For the technician's job page only: not part of /api/state, so buyer pages never receive repair steps. */
+export async function getTechnicianGuide(caseId: string): Promise<TechnicianGuide> {
+  return apiFetch<TechnicianGuide>(`/api/cases/${caseId}/technician-guide`);
+}
+
+/** True when the chosen outcome is the opposite of the rule's suggestion, so the form must ask for a reason (#131).
+ *  answer: the suggestion for the reading (likely_defect / within_limit / measure_first). */
+export function goesAgainstSuggestion(answer: "likely_defect" | "within_limit" | "measure_first", outcome: "VALID" | "INVALID"): boolean {
+  return (answer === "likely_defect" && outcome === "INVALID") || (answer === "within_limit" && outcome === "VALID");
 }
 
 export async function markRepaired(caseId: string, note: string, photoUrl: string | null) {

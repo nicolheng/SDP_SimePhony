@@ -1,8 +1,9 @@
 "use client";
 import { Check, ChevronDown, ClipboardList, History, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BeforeAfterRounds } from "@/components/photo";
 import { isLatentDefect, ReviewPanel } from "@/components/review-panel";
@@ -35,7 +36,19 @@ function QueueRow({ open, onToggle, id, title, meta, badge, children }: { open: 
   );
 }
 
-export default function Approvals() {
+const TAB_IDS: Tab[] = ["review", "extra", "signoff", "decided"];
+
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="text-base text-zinc-500">Loading…</p>}>
+      <Approvals />
+    </Suspense>
+  );
+}
+
+/** ?tab=review&open=C-0042 opens that queue with that row expanded (links from Today). */
+function Approvals() {
+  const params = useSearchParams();
   const approvals = useDemo((s) => s.approvals);
   const cases = useDemo((s) => s.cases);
   const issues = useDemo((s) => s.systemicIssues);
@@ -46,9 +59,8 @@ export default function Approvals() {
   const overdue = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && c.signoffOverdueAt), [cases]);
   const awaitingDev = useMemo(() => cases.filter((c) => c.status === "PENDING_SIGNOFF" && !c.signoff?.developer), [cases]);
   const signoffCount = new Set([...overdue, ...awaitingDev].map((c) => c.id)).size;
-  const [picked, setTab] = useState<Tab | null>(null);
-  // Ids the staff member collapsed; everything else is open.
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [picked, setTab] = useState<Tab | null>(() => TAB_IDS.find((t) => t === params.get("tab")) ?? null);
+  const [openId, setOpenId] = useState<string | null>(() => params.get("open"));
   // Default to the first queue with work in it.
   const tab: Tab = picked ?? (held.length ? "review" : signoffCount ? "signoff" : pending.length ? "extra" : "decided");
   const toggle = (id: string) =>
