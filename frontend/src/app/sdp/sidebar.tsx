@@ -1,5 +1,5 @@
 "use client";
-import { Activity, ClipboardList, LayoutDashboard, Layers, PlayCircle, ShieldCheck } from "lucide-react";
+import { Activity, BarChart3, ClipboardList, Layers, ListTodo, PlayCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -84,10 +84,11 @@ export function SdpSidebar() {
     [approvals, cases],
   );
   const items = [
-    // Most important first: today's picture, decisions waiting on staff, the case list, then insight pages.
-    { href: "/sdp", label: "Overview", icon: LayoutDashboard },
+    // "Do the work" pages first (staff), then "understand the project" pages (managers), split by a divider.
+    { href: "/sdp", label: "Today", icon: ListTodo },
     { href: "/sdp/approvals", label: "Approvals", icon: ShieldCheck, badge: pending },
     { href: "/sdp/defects", label: "Defects", icon: ClipboardList },
+    { href: "/sdp/insights", label: "Insights", icon: BarChart3, divider: true },
     { href: "/sdp/systemic", label: "Systemic Issues", icon: Layers },
     { href: "/sdp/trace", label: "Agent Trace", icon: Activity },
   ];
@@ -112,6 +113,7 @@ export function SdpSidebar() {
               href={i.href}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-base",
+                "divider" in i && "relative mt-4 before:absolute before:inset-x-3 before:-top-2.5 before:h-px before:bg-white/10",
                 isActive(i.href) ? "bg-brand text-white" : "hover:bg-white/10 hover:text-white",
               )}
             >

@@ -163,6 +163,8 @@ def seed_history():
     db.init_schema(SEED_DB_PATH)
 
     random.seed(20261019)
+    # data/seed.db was then moved 30 days forward (to 18 Nov 2026) with seed/shift_seed_dates.py --days 30.
+    # After regenerating, run that again so the demo stays current.
     now = datetime(2026, 10, 19, 9, 0, 0, tzinfo=timezone.utc)
 
     try:
