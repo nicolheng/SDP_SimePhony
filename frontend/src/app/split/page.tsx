@@ -47,7 +47,7 @@ export default function SplitView() {
         >
           <RotateCw className="size-3.5" /> Reload both
         </button>
-        <a href="/sdp" className="rounded-lg px-2.5 py-1 ring-1 ring-white/20 hover:bg-white/10">
+        <a href="/sdp/approvals" className="rounded-lg px-2.5 py-1 ring-1 ring-white/20 hover:bg-white/10">
           Staff view
         </a>
       </header>

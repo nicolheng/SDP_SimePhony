@@ -1,4 +1,5 @@
 "use client";
+import { INVALID_REASON_LABEL } from "@/lib/kb";
 import { AlertTriangle, ArrowLeft, Bot, ChevronDown, ChevronRight, FileText, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -280,7 +281,8 @@ export function SdpCaseDetail() {
               <ul className="space-y-2 text-base">
                 {c.verdict && (
                   <li>
-                    <span className="font-medium">Verdict ({fmtDate(c.verdict.at)}):</span> {c.verdict.outcome} — {c.verdict.note}
+                    <span className="font-medium">Verdict ({fmtDate(c.verdict.at)}):</span> {c.verdict.outcome}
+                    {c.verdict.reasonCode && <> · Reason: {INVALID_REASON_LABEL[c.verdict.reasonCode] ?? c.verdict.reasonCode}</>} — {c.verdict.note}
                   </li>
                 )}
                 {c.repairNote && (

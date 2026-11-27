@@ -97,6 +97,13 @@ interface DefectItem {
 const DRAFT_ID = -1;
 const pinRoom = (p: DefectPin) => (p === "whole_unit" ? WHOLE_UNIT : p.room);
 
+/** Shown when the defect period is over and nothing in the report can be accepted. */
+const dlpOverMessage = (dlpEnd: string | null | undefined) =>
+  `Your Defect Liability Period ended on ${fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can't be reported in the app. Please contact the developer.`;
+/** Shown on a post-DLP defect in a room we repaired before: it is accepted and goes to SDP review. */
+const RECURRENCE_NOTE =
+  "Your defect period has ended. We'll pass this to SDP to review because we repaired this before.";
+
 export default function ReportDefect() {
   const now = useDemo((s) => s.now);
   // Defects already added to this report, plus the one being written now.
@@ -115,6 +122,26 @@ export default function ReportDefect() {
   const dlpEnd = getUnit(unitId).dlpExpiry;
   const dlpOver =
     !!dlpEnd && new Date(`${dlpEnd}T23:59:59+08:00`) < new Date(now);
+  // After the DLP only a repeat of an earlier repair (same room and category) can be reported; it goes to SDP review.
+  // The room is checked here; the backend also checks the category once the report is classified.
+  const cases = useDemo((s) => s.cases);
+  const repairedRooms = new Set(
+    cases
+      .filter(
+        (x) =>
+          x.unitId === unitId &&
+          !!x.repairedAt &&
+          ["REPAIRED", "PENDING_SIGNOFF", "CLOSED"].includes(x.status),
+      )
+      .map((x) => (x.pin?.room || x.location || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const repairedBefore = (p: DefectPin) =>
+    p !== "whole_unit" && repairedRooms.has(p.room.trim().toLowerCase());
+  // Blocked outright only when this unit has no earlier repair at all (the current message).
+  const dlpBlocked = dlpOver && repairedRooms.size === 0;
+  // Post-DLP defects in a room with no earlier repair can't be submitted.
+  const dlpRefused = (p: DefectPin) => dlpOver && !repairedBefore(p);
 
   const draftReady = !!photo && !!pin && !!text.trim();
   const draftStarted = !!photo || !!pin || !!text.trim();
@@ -123,13 +150,26 @@ export default function ReportDefect() {
     ? [...items, { id: DRAFT_ID, photo: photo!, pin: pin!, text: text.trim() }]
     : items;
   const canSubmit =
-    toSubmit.length > 0 && (!draftStarted || draftReady) && !busy && !dlpOver;
+    toSubmit.length > 0 &&
+    (!draftStarted || draftReady) &&
+    !busy &&
+    !dlpBlocked &&
+    !toSubmit.some((it) => dlpRefused(it.pin));
   const addedPins: PlanPin[] = items.flatMap((it, i) =>
     it.pin === "whole_unit"
       ? []
       : [{ x: it.pin.x, y: it.pin.y, label: String(i + 1) }],
   );
   const draftRoom = pin ? pinRoom(pin) : null;
+
+  // After "Add Another Defect", bring the new defect's photo upload into view (the list above it just grew).
+  const draftRef = useRef<HTMLDivElement>(null);
+  const scrollToDraft = useRef(false);
+  useEffect(() => {
+    if (!scrollToDraft.current) return;
+    scrollToDraft.current = false;
+    draftRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [items.length]);
 
   function addAnother() {
     if (!draftReady) return;
@@ -140,6 +180,7 @@ export default function ReportDefect() {
     setPhoto(null);
     setPin(null);
     setText("");
+    scrollToDraft.current = true;
   }
 
   function movePin(x: number, y: number, room: string) {
@@ -179,10 +220,12 @@ export default function ReportDefect() {
         );
         if (r.nonDefect) setNonDefect(r.nonDefect);
       } catch (err) {
+        const msg = err instanceof Error ? err.message : "";
+        // The backend refuses a post-DLP report that is not a repeat of an earlier repair (e.g. a different category).
         toast.error(
-          err instanceof Error
-            ? err.message
-            : "Could not submit. Please try again.",
+          msg.includes("POST_DLP_SUBMISSION") && dlpEnd
+            ? dlpOverMessage(dlpEnd)
+            : msg || "Could not submit. Please try again.",
         );
       }
     }
@@ -227,11 +270,9 @@ export default function ReportDefect() {
             onClose={() => setPicking(false)}
           />
         )}
-        {dlpOver && (
+        {dlpBlocked && (
           <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
-            Your Defect Liability Period ended on{" "}
-            {fmtDate(`${dlpEnd}T12:00:00+08:00`)}, so new defects can&apos;t be
-            reported in the app. Please contact the developer.
+            {dlpOverMessage(dlpEnd)}
           </p>
         )}
         <div className="mt-4 border-t border-zinc-100 pt-3">
@@ -257,7 +298,7 @@ export default function ReportDefect() {
                     />
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
-                    <p className="text-[11px] font-bold uppercase leading-4 tracking-wide text-zinc-600">
+                    <p className="text-xs font-bold leading-4 text-zinc-600">
                       Defect {i + 1}
                     </p>
                     <p className="flex items-center gap-1 text-xs font-medium leading-4 text-zinc-600">
@@ -267,6 +308,7 @@ export default function ReportDefect() {
                     <p className="line-clamp-2 text-sm leading-5 text-zinc-800">
                       {it.text}
                     </p>
+                    {dlpOver && <DlpNote refused={dlpRefused(it.pin)} dlpEnd={dlpEnd} />}
                   </div>
                   <button
                     type="button"
@@ -284,8 +326,8 @@ export default function ReportDefect() {
             </ul>
           )}
 
-          <div className="rounded-xl ring-1 ring-zinc-200 p-3">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-zinc-600">
+          <div ref={draftRef} className="scroll-mt-24 rounded-xl ring-1 ring-zinc-200 p-3">
+            <p className="mb-2 text-xs font-bold text-zinc-600">
               Defect {items.length + 1}
             </p>
             <PhotoInput value={photo} onChange={setPhoto} />
@@ -350,12 +392,15 @@ export default function ReportDefect() {
                     </span>
                   </div>
                 )}
+                {pin && dlpOver && (
+                  <DlpNote refused={dlpRefused(pin)} dlpEnd={dlpEnd} />
+                )}
               </div>
             )}
             {photo && pin && (
               <div className="mt-4">
                 <p className="mb-2 text-sm font-semibold text-zinc-900">
-                  Description
+                  Description <span className="text-brand">*</span>
                 </p>
                 <textarea
                   value={text}
@@ -463,6 +508,19 @@ export default function ReportDefect() {
         </PrimaryButton>
       </div>
     </div>
+  );
+}
+
+/** Post-DLP line on a defect: accepted for SDP review (we repaired this room before), or refused. */
+function DlpNote({ refused, dlpEnd }: { refused: boolean; dlpEnd: string | null | undefined }) {
+  return refused ? (
+    <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
+      {dlpOverMessage(dlpEnd)}
+    </p>
+  ) : (
+    <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900 ring-1 ring-amber-200">
+      {RECURRENCE_NOTE}
+    </p>
   );
 }
 

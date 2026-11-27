@@ -84,9 +84,9 @@ export function SdpSidebar() {
     [approvals, cases],
   );
   const items = [
-    // Most important first: today's picture, decisions waiting on staff, the case list, then insight pages.
-    { href: "/sdp", label: "Overview", icon: LayoutDashboard },
+    // Most important first: decisions waiting on staff (the landing page), today's picture, the case list, then insight pages.
     { href: "/sdp/approvals", label: "Approvals", icon: ShieldCheck, badge: pending },
+    { href: "/sdp", label: "Overview", icon: LayoutDashboard },
     { href: "/sdp/defects", label: "Defects", icon: ClipboardList },
     { href: "/sdp/systemic", label: "Systemic Issues", icon: Layers },
     { href: "/sdp/trace", label: "Agent Trace", icon: Activity },

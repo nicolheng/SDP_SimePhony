@@ -239,3 +239,7 @@ def test_kb_endpoint_lists_rules_and_reasons(client):
     assert leak["check"] == "yes_no" and leak["question"] and leak["unit"] is None
     codes = {x["code"]: x["label"] for x in body["reasons"]}
     assert codes["WEAR_AND_TEAR"] == "Normal Wear and Tear" and len(codes) == 10
+    # Each rule points to its repair method, which the technician's What to Check view shows.
+    assert leak["repairMethodId"] == "REP-WET-AREA-LEAK"
+    wet = next(m for m in body["methods"] if m["id"] == "REP-WET-AREA-LEAK")
+    assert wet["title"] and wet["steps"] and wet["expectedOutcome"] and "water_leak" in wet["categories"]

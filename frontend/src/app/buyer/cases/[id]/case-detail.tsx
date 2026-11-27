@@ -1,8 +1,9 @@
 "use client";
-import { ArrowRightLeft, Bot, CalendarClock, CheckCircle2, Clock, FileText, MessageSquare, ShieldAlert, Star } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, CheckCircle2, Clock, FileText, MessageSquare, ShieldAlert, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
+import { SwipePager } from "@/components/swipe-pager";
 import { CaseChat } from "@/components/case-chat";
 import { CaseProgress, useCase, useCaseEvents, useCaseId } from "@/components/case-views";
 import { ArrangingSoon } from "@/components/arranging-soon";
@@ -103,6 +104,22 @@ function YourTechnician({ c }: { c: Case }) {
         </p>
       )}
     </Section>
+  );
+}
+
+/** An update's text: long ones (e.g. the sign-off message with every check) show 3 lines until expanded. */
+function UpdateBody({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 160;
+  return (
+    <>
+      <p className={`whitespace-pre-line text-xs text-zinc-600 ${long && !open ? "line-clamp-3" : ""}`}>{text}</p>
+      {long && (
+        <button type="button" onClick={() => setOpen(!open)} className="mt-0.5 text-xs font-semibold text-brand">
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -262,64 +279,81 @@ export function CaseDetail() {
             )}
             {rating && <RatingDialog unitId={c.unitId} onDone={() => setRating(false)} />}
 
-            {/* What the buyer sent */}
-            <Section title="Your Report">
-              <ul className="space-y-2">
-                {c.description
-                  .split("\n")
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line, i) => (
-                    <li key={i} className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-800">
-                      <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400">{i === 0 ? "Initial report" : "Additional detail"}</p>
-                      {line}
-                    </li>
-                  ))}
-              </ul>
-              <PhotoRounds photos={c.photos} kinds={REPORT_PHOTO_KINDS} className="mt-3" />
-            </Section>
-
-            {/* What the AI understood */}
-            <Section>
-              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-                <Bot className="size-4 text-violet-600" /> Defect Assessment
-              </h2>
-              {c.status === "INFO_NEEDED" ? (
-                // Only a guess until the buyer answers the follow-up question.
-                <p className="text-sm text-zinc-700">We&apos;ll show our assessment once you&apos;ve answered the question above.</p>
-              ) : assessing ? (
-                <p className="text-sm text-zinc-700">Checking your report…</p>
-              ) : (
-                <dl>
-                  <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
-                  <Row label="Defect type">{c.subCategory}</Row>
-                  <Row label="Location">{c.location || "—"}</Row>
-                  <Row label="Priority">
-                    <UrgencyBadge urgency={c.urgency} />
-                  </Row>
-                </dl>
-              )}
-              <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-3" />
-            </Section>
-
-            {/* Inspection + repair */}
+            {/* Your report, then inspection & repair (once there is one), then the assessment: swipe or tap the arrows. */}
             {/* Technician notes are internal (SDP and technician only): written for colleagues, they can say things
-                the developer must not tell a buyer ("we admit…"). The buyer's explanation is CommsAgent's message. */}
-            {/* A technician's Invalid verdict waits for SDP (PENDING_REVIEW): the buyer sees the result once SDP decides. */}
-            {((c.verdict && c.status !== "PENDING_REVIEW") || c.repairedAt) && (
-              <Section title="Inspection & Repair">
-                <dl>
-                  {c.verdict && c.status !== "PENDING_REVIEW" && (
-                    <>
-                      <Row label="Inspection result">{c.verdict.outcome === "VALID" ? "Defect confirmed" : "Not a defect"}</Row>
-                      <Row label="Inspected on">{fmtDate(c.verdict.at)}</Row>
-                    </>
-                  )}
-                  {c.repairedAt && <Row label="Repaired on">{fmtDate(c.repairedAt)}</Row>}
-                </dl>
-                <PhotoRounds photos={c.photos} kinds={WORK_PHOTO_KINDS} className="mt-3" />
-              </Section>
-            )}
+                the developer must not tell a buyer ("we admit…"). The buyer's explanation is CommsAgent's message.
+                A technician's Invalid verdict waits for SDP (PENDING_REVIEW): the buyer sees the result once SDP decides. */}
+            <Section>
+              <SwipePager
+                fit
+                pages={[
+                  {
+                    title: "Your Report",
+                    content: (
+                      <>
+                        <ul className="space-y-2">
+                          {c.description
+                            .split("\n")
+                            .map((line) => line.trim())
+                            .filter(Boolean)
+                            .map((line, i) => (
+                              <li key={i} className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-800">
+                                <p className="mb-0.5 text-xs font-medium text-zinc-400">{i === 0 ? "Initial Report" : "Additional Detail"}</p>
+                                {line}
+                              </li>
+                            ))}
+                        </ul>
+                        <PhotoRounds photos={c.photos} kinds={REPORT_PHOTO_KINDS} className="mt-3" gridClass="grid grid-cols-2 gap-2 [&>*:only-child]:col-span-2" thumbClass="aspect-[4/3] w-full" />
+                      </>
+                    ),
+                  },
+                  ...((c.verdict && c.status !== "PENDING_REVIEW") || c.repairedAt
+                    ? [
+                        {
+                          title: "Inspection & Repair",
+                          content: (
+                            <>
+                              <dl>
+                                {c.verdict && c.status !== "PENDING_REVIEW" && (
+                                  <>
+                                    <Row label="Inspection result">{c.verdict.outcome === "VALID" ? "Defect confirmed" : "Not a defect"}</Row>
+                                    <Row label="Inspected on">{fmtDate(c.verdict.at)}</Row>
+                                  </>
+                                )}
+                                {c.repairedAt && <Row label="Repaired on">{fmtDate(c.repairedAt)}</Row>}
+                              </dl>
+                              <PhotoRounds photos={c.photos} kinds={WORK_PHOTO_KINDS} className="mt-3" gridClass="grid grid-cols-2 gap-2 [&>*:only-child]:col-span-2" thumbClass="aspect-[4/3] w-full" />
+                            </>
+                          ),
+                        },
+                      ]
+                    : []),
+                  {
+                    title: "Defect Assessment",
+                    content: (
+                      <>
+                        {c.status === "INFO_NEEDED" ? (
+                          // Only a guess until the buyer answers the follow-up question.
+                          <p className="text-sm text-zinc-700">We&apos;ll show our assessment once you&apos;ve answered the question above.</p>
+                        ) : assessing ? (
+                          <p className="text-sm text-zinc-700">Checking your report…</p>
+                        ) : (
+                          <dl>
+                            <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
+                            <Row label="Defect type">{c.subCategory}</Row>
+                            <Row label="Location">{c.location || "—"}</Row>
+                            <Row label="Priority">
+                              <UrgencyBadge urgency={c.urgency} />
+                            </Row>
+                          </dl>
+                        )}
+                        <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-3" />
+                      </>
+                    ),
+                  },
+                ]}
+              />
+            </Section>
           </>
         )}
 
@@ -337,7 +371,7 @@ export function CaseDetail() {
                       <MessageSquare className="mt-0.5 size-4 shrink-0 text-brand" />
                       <div>
                         <p className="text-sm font-medium">{m.title}</p>
-                        <p className="text-xs text-zinc-600">{m.body}</p>
+                        <UpdateBody text={m.body} />
                         <p className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-400">
                           <CalendarClock className="size-3" /> {fmtDateTime(m.at)}
                         </p>

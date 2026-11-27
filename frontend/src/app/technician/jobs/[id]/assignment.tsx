@@ -9,6 +9,7 @@ import { acceptJob, handOverJob } from "@/lib/api";
 import { getTechnician, workerLabel } from "@/lib/constants";
 import { fmtDateTime } from "@/lib/dates";
 import { useOffline } from "@/lib/store";
+import { AiValidityNote } from "@/components/ai-validity";
 import type { Case } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -60,9 +61,10 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
       {pending ? (
         <>
           <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-800">
-            <Clock className="size-4" /> {c.handover ? "Reassigned Job: Confirmation Required" : "New Assignment: Confirmation Required"}
+            <Clock className="size-4" /> {c.handover ? "Reassigned Job: Confirmation Required" : "Confirmation Required"}
           </p>
           {c.handover && <p className="mt-1 text-sm text-zinc-700">{workerLabel(c.handover.fromId)} couldn&apos;t make it.</p>}
+          <AiValidityNote c={c} className="mt-2" />
           {!open && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button

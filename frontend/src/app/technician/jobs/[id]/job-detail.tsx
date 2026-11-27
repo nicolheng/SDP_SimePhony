@@ -1,6 +1,5 @@
 "use client";
 import {
-  Bot,
   CalendarClock,
   FileText,
   History,
@@ -39,6 +38,7 @@ import { REPORT_PHOTO_KINDS, WORK_PHOTO_KINDS } from "@/lib/photos";
 import { RepairClockBadge } from "@/components/repair-clock";
 import { SimilarDefects } from "@/components/similar-defects";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
+import { SwipePager } from "@/components/swipe-pager";
 import { markRepaired, recordVerdict } from "@/lib/api";
 import { CATEGORY_LABEL, getUnit, workerLabel } from "@/lib/constants";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
@@ -48,29 +48,21 @@ import { useTechnicianId } from "@/lib/session";
 import { useDemo, useOffline } from "@/lib/store";
 import { jobSlot } from "../../use-my-jobs";
 import { JobAssignment } from "./assignment";
+import { SuggestedRepair } from "@/components/suggested-repair";
+import {
+  INVALID_REASON_CHOICES,
+  INVALID_REASON_LABEL,
+  methodFor,
+  useKb,
+} from "@/lib/kb";
+
+const OTHER_REASON = "OTHER";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex justify-between gap-4 border-b border-zinc-100 py-2 text-sm last:border-0">
       <dt className="shrink-0 text-zinc-500">{label}</dt>
       <dd className="text-right font-medium text-zinc-900">{children}</dd>
-    </div>
-  );
-}
-
-function AgentCard({
-  agent,
-  children,
-}: {
-  agent: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="rounded-xl bg-violet-50/60 p-3 ring-1 ring-violet-100">
-      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-violet-700">
-        <Bot className="size-3.5" /> {agent}
-      </p>
-      <div className="text-sm text-zinc-800">{children}</div>
     </div>
   );
 }
@@ -133,6 +125,11 @@ export function JobDetail() {
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [hours, setHours] = useState<2 | 4 | 8 | null>(null);
+  // Answering Invalid: pick a reason (or Other with a short note) before confirming.
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
+  const [otherNote, setOtherNote] = useState("");
+  const kb = useKb();
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
   const now = useDemo((st) => st.now);
@@ -171,6 +168,11 @@ export function JobDetail() {
     accepted;
   const repairing = c.status === "REPAIR_BOOKED" && accepted;
   const sameStack = c.similar.some((s) => s.unitId !== c.unitId);
+  // The suggested repair: from the inspection until the repair is done.
+  const repairMethod =
+    kb && ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "VALID", "REPAIR_BOOKED"].includes(c.status)
+      ? methodFor(kb, c.category)
+      : undefined;
 
   async function run(fn: () => Promise<void>, msg: string) {
     setBusy(true);
@@ -178,6 +180,9 @@ export function JobDetail() {
       await fn();
       setNote("");
       setPhoto(null);
+      setRejecting(false);
+      setReason(null);
+      setOtherNote("");
       toast.success(msg);
     } catch (err) {
       toast.error(
@@ -275,7 +280,7 @@ export function JobDetail() {
                   {note.length} / 500
                 </p>
                 <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">
-                  3. Expected repair duration (if valid) <span className="text-brand">*</span>
+                  3. Expected Repair Duration <span className="text-brand">*</span>
                 </p>
                 <div className="mb-3 grid grid-cols-3 gap-2">
                   {REPAIR_DURATIONS.map((d) => (
@@ -293,7 +298,7 @@ export function JobDetail() {
                   ))}
                 </div>
                 <p className="mb-1.5 mt-2 text-xs font-medium text-zinc-500">
-                  4. Defect validity <span className="text-brand">*</span>
+                  4. Defect Validity <span className="text-brand">*</span>
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -311,19 +316,82 @@ export function JobDetail() {
                   </button>
                   <button
                     type="button"
-                    disabled={!note.trim() || busy || offline}
-                    onClick={() =>
-                      run(
-                        () =>
-                          recordVerdict(c.id, "INVALID", note.trim(), photo),
-                        "Marked invalid: case closed",
-                      )
-                    }
-                    className="h-12 rounded-xl border-2 border-zinc-800 text-sm font-semibold text-zinc-800 disabled:border-zinc-200 disabled:text-zinc-400"
+                    disabled={busy || offline}
+                    aria-pressed={rejecting}
+                    onClick={() => setRejecting(!rejecting)}
+                    className={cn(
+                      "h-12 rounded-xl border-2 border-zinc-800 text-sm font-semibold disabled:border-zinc-200 disabled:text-zinc-400",
+                      rejecting ? "bg-zinc-100 text-zinc-800" : "text-zinc-800",
+                    )}
                   >
                     Invalid
                   </button>
                 </div>
+                {/* Invalid always records a reason: tap one, or Other with a short note. */}
+                {rejecting && (
+                  <div className="mt-3 rounded-xl bg-zinc-50 p-3 ring-1 ring-zinc-200">
+                    <p className="mb-2 text-sm font-semibold text-zinc-900">
+                      Why is it not a defect? <span className="text-brand">*</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[...INVALID_REASON_CHOICES, OTHER_REASON].map((code) => (
+                        <button
+                          key={code}
+                          type="button"
+                          aria-pressed={reason === code}
+                          onClick={() => setReason(code)}
+                          className={cn(
+                            "min-h-12 rounded-xl px-2 text-sm ring-1 transition",
+                            reason === code
+                              ? "bg-red-50 text-brand ring-2 ring-brand"
+                              : "bg-white text-zinc-800 ring-zinc-300 hover:ring-zinc-500",
+                          )}
+                        >
+                          {code === OTHER_REASON ? "Other" : INVALID_REASON_LABEL[code]}
+                        </button>
+                      ))}
+                    </div>
+                    {reason === OTHER_REASON && (
+                      <input
+                        value={otherNote}
+                        onChange={(e) => setOtherNote(e.target.value)}
+                        maxLength={120}
+                        placeholder="Short reason"
+                        className="mt-2 h-11 w-full rounded-xl border border-zinc-300 px-3 text-sm outline-none focus:border-brand"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      disabled={
+                        !reason ||
+                        (reason === OTHER_REASON && !otherNote.trim()) ||
+                        busy ||
+                        offline
+                      }
+                      onClick={() => {
+                        const why =
+                          reason === OTHER_REASON
+                            ? otherNote.trim()
+                            : INVALID_REASON_LABEL[reason!];
+                        run(
+                          () =>
+                            recordVerdict(
+                              c.id,
+                              "INVALID",
+                              [why, note.trim()].filter(Boolean).join(". ").slice(0, 500),
+                              photo,
+                              undefined,
+                              reason === OTHER_REASON ? undefined : reason!,
+                            ),
+                          "Marked invalid: sent to SDP to review",
+                        );
+                      }}
+                      className="mt-3 h-12 w-full rounded-xl bg-brand text-sm font-semibold text-white disabled:bg-zinc-200 disabled:text-zinc-400"
+                    >
+                      Confirm Invalid
+                    </button>
+                  </div>
+                )}
               </Section>
             )}
 
@@ -334,7 +402,7 @@ export function JobDetail() {
                 </p>
                 <PhotoInput value={photo} onChange={setPhoto} />
                 <p className="mb-1.5 mt-4 text-xs font-medium text-zinc-500">
-                  2. Description of repair works <span className="text-brand">*</span>
+                  2. Description of Repair Works <span className="text-brand">*</span>
                 </p>
                 <textarea
                   value={note}
@@ -364,97 +432,116 @@ export function JobDetail() {
               </Section>
             )}
 
-            {/* Buyer's report */}
-            <Section title="Defect Report">
-              <ul className="space-y-2">
-                {c.description
-                  .split("\n")
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line, i) => (
-                    <li
-                      key={i}
-                      className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-800"
-                    >
-                      <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-                        {i === 0 ? "Initial report" : "Additional detail"}
-                      </p>
-                      {line}
-                    </li>
-                  ))}
-              </ul>
-              <PhotoRounds photos={c.photos} kinds={REPORT_PHOTO_KINDS} className="mt-3" />
-            </Section>
-
-            {/* Intake Agent's assessment: same layout as the buyer's Defect Assessment */}
+            {/* Your record (after the visit), the buyer's report and the Intake Agent's assessment: swipe or tap the arrows. */}
             <Section>
-              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-                <Bot className="size-4 text-violet-600" /> Defect Assessment
-              </h2>
-              <dl>
-                <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
-                <Row label="Defect type">{c.subCategory}</Row>
-                <Row label="Location">{c.location || "—"}</Row>
-                <Row label="Priority">
-                  <UrgencyBadge urgency={c.urgency} />
-                </Row>
-              </dl>
-              <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-3" />
+              <SwipePager
+                fit
+                pages={[
+                  // The technician's own record comes first once there is one (after the inspection visit).
+                  ...(c.verdict || c.repairNote
+                    ? [
+                        {
+                          title: "Your Record",
+                          content: (
+                            <>
+                            <dl>
+                              {c.verdict && (
+                                <Row label="Verdict">
+                                  {c.verdict.outcome === "VALID"
+                                    ? `Valid · ${fmtDate(c.verdict.at)}`
+                                    : `Invalid · ${fmtDate(c.verdict.at)}`}
+                                </Row>
+                              )}
+                              {c.verdict?.outcome === "INVALID" && c.verdict.reasonCode && (
+                    <Row label="Reason">
+                      {INVALID_REASON_LABEL[c.verdict.reasonCode] ?? c.verdict.reasonCode}
+                    </Row>
+                  )}
+                  {c.verdict?.outcome === "VALID" && !!c.repairHours && (
+                                <Row label="Expected repair">{fmtRepairHours(c.repairHours)}</Row>
+                              )}
+                              {c.repairedAt && (
+                                <Row label="Repaired">{fmtDate(c.repairedAt)}</Row>
+                              )}
+                              {c.reopenCount > 0 && (
+                                <Row label="Reopened">{c.reopenCount}×</Row>
+                              )}
+                            </dl>
+                            {c.verdict?.note && (
+                              <p className="mt-2 text-sm text-zinc-700">
+                                Inspection: {c.verdict.note}
+                              </p>
+                            )}
+                            {c.repairNote && (
+                              <p className="mt-1 text-sm text-zinc-700">
+                                Repair: {c.repairNote}
+                              </p>
+                            )}
+                            <PhotoRounds photos={c.photos} kinds={WORK_PHOTO_KINDS} className="mt-3" gridClass="grid grid-cols-2 gap-2 [&>*:only-child]:col-span-2" thumbClass="aspect-[4/3] w-full" />
+              
+                            </>
+                          ),
+                        },
+                      ]
+                    : []),
+                  {
+                    title: "Defect Report",
+                    content: (
+                      <>
+                        <ul className="space-y-2">
+                          {c.description
+                            .split("\n")
+                            .map((line) => line.trim())
+                            .filter(Boolean)
+                            .map((line, i) => (
+                              <li
+                                key={i}
+                                className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-800"
+                              >
+                                <p className="mb-0.5 text-xs font-medium text-zinc-400">
+                                  {i === 0 ? "Initial Report" : "Additional Detail"}
+                                </p>
+                                {line}
+                              </li>
+                            ))}
+                        </ul>
+                        <PhotoRounds photos={c.photos} kinds={REPORT_PHOTO_KINDS} className="mt-3" gridClass="grid grid-cols-2 gap-2 [&>*:only-child]:col-span-2" thumbClass="aspect-[4/3] w-full" />
+                      </>
+                    ),
+                  },
+                  {
+                    title: "Defect Assessment",
+                    content: (
+                      <>
+                        <dl>
+                          <Row label="Category">{CATEGORY_LABEL[c.category]}</Row>
+                          <Row label="Defect type">{c.subCategory}</Row>
+                          <Row label="Location">{c.location || "—"}</Row>
+                          <Row label="Priority">
+                            <UrgencyBadge urgency={c.urgency} />
+                          </Row>
+                        </dl>
+                        <CasePinMap unitId={c.unitId} pin={c.pin} className="mt-3" />
+                      </>
+                    ),
+                  },
+                ]}
+              />
             </Section>
 
-            {/* What the other agents worked out for this job */}
-            {(c.inspectionBrief || sameStack) && (
+            {/* What the other agents worked out for this job: one swipe card (brief views, then same-stack defects). */}
+            {(c.inspectionBrief || sameStack || repairMethod) && (
               <Section>
                 <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
                   <Sparkles className="size-4 text-violet-600" /> AI Assistance
                 </h2>
-                <div className="space-y-3">
-                  {c.inspectionBrief && (
-                    <AgentCard agent="Inspection Brief">
-                      <InspectionBriefView c={c} interactive={inspecting} />
-                    </AgentCard>
-                  )}
-                  {sameStack && (
-                    <AgentCard agent="Similar Defects in the Same Stack">
-                      <SimilarDefects c={c} />
-                    </AgentCard>
-                  )}
-                </div>
-              </Section>
-            )}
-
-            {/* Inspection, repair and sign-off record */}
-            {(c.verdict || c.repairNote) && (
-              <Section title="Your Record">
-                <dl>
-                  {c.verdict && (
-                    <Row label="Verdict">
-                      {c.verdict.outcome === "VALID"
-                        ? `Valid · ${fmtDate(c.verdict.at)}`
-                        : `Invalid · ${fmtDate(c.verdict.at)}`}
-                    </Row>
-                  )}
-                  {c.verdict?.outcome === "VALID" && !!c.repairHours && (
-                    <Row label="Expected repair">{fmtRepairHours(c.repairHours)}</Row>
-                  )}
-                  {c.repairedAt && (
-                    <Row label="Repaired">{fmtDate(c.repairedAt)}</Row>
-                  )}
-                  {c.reopenCount > 0 && (
-                    <Row label="Reopened">{c.reopenCount}×</Row>
-                  )}
-                </dl>
-                {c.verdict?.note && (
-                  <p className="mt-2 text-sm text-zinc-700">
-                    Inspection: {c.verdict.note}
-                  </p>
-                )}
-                {c.repairNote && (
-                  <p className="mt-1 text-sm text-zinc-700">
-                    Repair: {c.repairNote}
-                  </p>
-                )}
-                <PhotoRounds photos={c.photos} kinds={WORK_PHOTO_KINDS} className="mt-3" />
+                <InspectionBriefView
+                  c={c}
+                  interactive={inspecting}
+                  paged
+                  nearby={sameStack ? <SimilarDefects c={c} /> : undefined}
+                  suggestedRepair={repairMethod ? <SuggestedRepair method={repairMethod} /> : undefined}
+                />
               </Section>
             )}
 

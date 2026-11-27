@@ -64,9 +64,26 @@ export async function reopenCase(caseId: string, description: string, photoUrl: 
 
 // ---------- technician / subcontractor ----------
 
-/** repairHours (VALID only): the technician's expected repair duration, 2, 4 or 8. */
-export async function recordVerdict(caseId: string, outcome: "VALID" | "INVALID", note: string, photoUrl: string | null, repairHours?: 2 | 4 | 8) {
-  await apiAction(`/api/cases/${caseId}/verdict`, { outcome, note, photo: photoUrl, ...(outcome === "VALID" && repairHours ? { repair_hours: repairHours } : {}) });
+/** repairHours (VALID only): the technician's expected repair duration, 2, 4 or 8.
+ * reasonCode (INVALID only): why it is not a defect, a code from kb/invalid_defect_reasons.yaml.
+ * measurement (either verdict): the reading taken for a kb/tolerances.yaml rule. */
+export async function recordVerdict(
+  caseId: string,
+  outcome: "VALID" | "INVALID",
+  note: string,
+  photoUrl: string | null,
+  repairHours?: 2 | 4 | 8,
+  reasonCode?: string,
+  measurement?: { ruleId: string; reading: number | boolean },
+) {
+  await apiAction(`/api/cases/${caseId}/verdict`, {
+    outcome,
+    note,
+    photo: photoUrl,
+    ...(outcome === "VALID" && repairHours ? { repair_hours: repairHours } : {}),
+    ...(outcome === "INVALID" && reasonCode ? { reason_code: reasonCode } : {}),
+    ...(measurement ? { measurement: { rule_id: measurement.ruleId, reading: measurement.reading } } : {}),
+  });
 }
 
 export async function markRepaired(caseId: string, note: string, photoUrl: string | null) {

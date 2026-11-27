@@ -9,6 +9,7 @@
 # needs_drying_or_curing: same name as the fact in agents/simephony/repair_estimate.py, so the repair
 #   estimate can add drying time for this method (#135).
 # for_rules: the tolerance rules (tolerances.yaml) whose defect this method repairs.
+# expected_outcome: what the finished repair should achieve, in plain words (no new numbers).
 # verified: true only when the method's source-backed claims are checked; international fallbacks remain unverified.
 
 version: 1
@@ -25,6 +26,7 @@ methods:
       - Re-fix the tiles with full adhesive cover (notched trowel; also butter the back of large tiles).
       - Grout once the adhesive has set, then check the joint step with a straightedge.
       - If several tiles across the room have lifted, check the floor has movement joints and tell your supervisor.
+    expected_outcome: "The tiles are fully bonded with no hollow sound, and level with their neighbours."
     materials: [tile adhesive, grout, notched trowel, spare tiles from the same batch, straightedge]
     needs_drying_or_curing: true
     drying_time: New floor screed per manufacturer; wall render at least 7 days; concrete 28 days where applicable. Adhesive and grout set per the product label.
@@ -46,6 +48,7 @@ methods:
       - If only the grout or sealant has failed, rake it out, re-grout and reseal.
       - If the waterproofing membrane has failed, remove the tiles and screed, lay a new membrane turned up the walls, let it cure, flood-test again, then re-tile.
       - Grout and tiles alone cannot waterproof a wet area. Never just re-grout a membrane failure.
+    expected_outcome: "The leak is stopped at its source and the area stays dry after the flood test."
     materials: [moisture meter, drain plug, waterproofing membrane, epoxy grout, sealant]
     needs_drying_or_curing: true
     drying_time: Follow the selected membrane's product-specific cure time (ARDEX TB266 ranges from 30 minutes to 72 hours across its listed systems); flood-test for at least 24 hours and no longer than 72 hours continuously.
@@ -67,6 +70,7 @@ methods:
       - Rake the crack open slightly and brush out the dust.
       - Fill with a flexible crack filler and smooth it flush.
       - Once the filler is dry, sand it and repaint the whole wall panel so the patch doesn't show.
+    expected_outcome: "The crack is filled flush and the repainted wall panel shows no patch."
     materials: [crack width gauge, flexible crack filler, filling knife, sandpaper, matching paint]
     needs_drying_or_curing: true
     drying_time: Filler dry before painting, per the product label.
@@ -91,6 +95,7 @@ methods:
       - Clean the rust off the exposed steel bars and coat them with a rust-protection primer.
       - Apply a bonding agent, then rebuild the surface with polymer-modified repair mortar.
       - Once the mortar has cured, repaint.
+    expected_outcome: "Loose concrete is removed, the steel is protected from rust, and the surface is rebuilt and repainted."
     materials: [hammer and chisel, wire brush, rust-protection primer, bonding agent, polymer-modified repair mortar, paint]
     needs_drying_or_curing: true
     drying_time: Repair mortar cured per the product label before painting.
@@ -112,6 +117,7 @@ methods:
       - Scrape off loose paint and brush off the white powder (efflorescence).
       - Let the wall dry out fully.
       - Apply an alkali-resisting sealer, then apply top coats according to the product label.
+    expected_outcome: "The wall is dry and the new paint stays bonded, with no more peeling, blistering or powder."
     materials: [scraper, stiff brush, alkali-resisting sealer, top-coat paint]
     needs_drying_or_curing: true
     drying_time: Wall dry before sealing; sealer and each coat dry per the product label.
@@ -132,6 +138,7 @@ methods:
       - Switch off and isolate the circuit before inspecting.
       - Do not keep resetting a breaker that trips; find the cause.
       - Test the circuit before switching it back on.
+    expected_outcome: "A licensed electrician finds and fixes the fault, and the circuit passes testing before it is switched back on."
     materials: []
     needs_drying_or_curing: false
     drying_time: null

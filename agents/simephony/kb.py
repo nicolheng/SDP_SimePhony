@@ -180,7 +180,7 @@ def get() -> dict:
 
 def public_view() -> dict:
     """The KB for the web app (GET /api/kb), camelCase like the rest of the API: the limit rules the technician
-    measures against and the reasons a defect can be invalid. 0 AI tokens."""
+    measures against, the repair method for each rule, and the reasons a defect can be invalid. 0 AI tokens."""
     kb = get()
 
     def rule(r: dict) -> dict:
@@ -192,11 +192,21 @@ def public_view() -> dict:
             "tool": r["tool"], "howToMeasure": r["how_to_measure"], "photoCanDecide": r["photo_can_decide"],
             "source": {"id": src["id"], "title": src["title"], "authority": src["authority"],
                        "clause": r["source"].get("clause")},
-            "verified": r["verified"],
+            "verified": r["verified"], "repairMethodId": r.get("repair_method_id"),
+        }
+
+    def method(m: dict) -> dict:
+        # Technician screens only (repair_methods.yaml): the buyer app never shows these steps.
+        return {
+            "id": m["id"], "title": m["title"], "categories": m.get("categories", []), "steps": m["steps"],
+            "expectedOutcome": m.get("expected_outcome"), "materials": m.get("materials", []),
+            "dryingTime": m.get("drying_time"), "callSpecialistIf": m.get("call_specialist_if", []),
+            "specialistTrade": m.get("specialist_trade"),
         }
 
     return {
         "rules": [rule(r) for r in kb["rules"].values()],
+        "methods": [method(m) for m in kb["methods"].values()],
         "reasons": [{"code": x["code"], "label": x["label"], "description": x["description"]}
                     for x in kb["reasons"].values()],
     }
