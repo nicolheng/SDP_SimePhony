@@ -3,6 +3,7 @@ import json
 import re
 from pathlib import Path
 
+import db
 import tools
 
 from . import agents, config
@@ -23,6 +24,12 @@ def _json(v, fallback):
         return json.loads(v)
     except (TypeError, ValueError):
         return fallback
+
+
+def _measurement(r: dict) -> dict | None:
+    """The technician's optional verdict measurement: {ruleId, reading, unit}."""
+    m = tools.verdict_measurement(r)
+    return {"ruleId": m["rule_id"], "reading": m["reading"], "unit": m["unit"]} if m else None
 
 
 def _photo_check(v) -> dict | None:
@@ -104,8 +111,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
     def photo_url(path: str) -> str | None:
         if not path:
             return None
-        if (UPLOADS_DIR / path).is_file():
-            return f"{base_url}/uploads/{path}"
+        if (db.scoped_dir(UPLOADS_DIR) / path).is_file():
+            return f"{base_url}{db.scoped_url('/uploads', path)}"
         # A real sample photo (.jpg) if there is one, else the drawn stand-in (.svg).
         for sample in (Path(path).name, Path(path).with_suffix(".svg").name):
             if (SAMPLE_PHOTOS_DIR / sample).is_file():
@@ -164,7 +171,8 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             "similar": [{"caseId": l["related_case_id"], "unitId": unit_of.get(l["related_case_id"], ""), "reason": l["reason"], "at": norm(l["created_at"])} for l in links.get(cid, [])],
             "missingInfo": _json(r["missing_info"], []),
             "followUpQuestion": r["follow_up_question"],
-            "verdict": {"outcome": verdict, "note": r["verdict_note"] or "", "at": norm(r["verdict_at"])} if verdict and r["verdict_at"] else None,
+            "verdict": {"outcome": verdict, "note": r["verdict_note"] or "", "at": norm(r["verdict_at"]),
+                        "measurement": _measurement(r), "reasonCode": r.get("verdict_reason_code")} if verdict and r["verdict_at"] else None,
             "repairNote": r["repair_note"],
             "repairedAt": norm(r["repaired_at"]),
             # VerificationAgent's repair photo check, for SDP's developer sign-off (null when the AI did not run)
@@ -201,6 +209,10 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             c["review"] = {"agent": held.get("agent") or "AI agent", "reason": held.get("message") or "An AI agent was unsure and asked a person to check.",
                            "confidence": score if isinstance(score, (int, float)) else None,
                            "previousStatus": held.get("previous_status") or "SUBMITTED", "at": norm(held.get("at"))}
+            if held.get("reason_code") == tools.LATENT_DEFECT_REVIEW or (
+                    held.get("agent") == "create_case" and str(held.get("message") or "").startswith("Post-DLP")):
+                c["review"].update(reasonCode=tools.LATENT_DEFECT_REVIEW, earlierCaseId=held.get("earlier_case_id"),
+                                   earlierRepairedAt=norm(held.get("earlier_repaired_at")))
         if cid in briefs:
             b = _json(briefs[cid]["brief"], None)
             if isinstance(b, dict):

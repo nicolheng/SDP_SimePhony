@@ -31,6 +31,10 @@ CASE_COLUMNS = {
     "pin_x": "REAL",                 # buyer's pin on the unit floor plan (fractions of its width / height)
     "pin_y": "REAL",
     "pin_room": "TEXT",              # room the pin falls in, or "Whole unit"
+    "verdict_rule_id": "TEXT",       # optional verdict measurement: kb/tolerances.yaml rule
+    "verdict_reading": "REAL",       # number, or 1 / 0 for a yes_no rule
+    "verdict_unit": "TEXT",          # the rule's unit when saved; NULL for a yes_no rule
+    "verdict_reason_code": "TEXT",   # INVALID only: kb/invalid_defect_reasons.yaml code
 }
 TECHNICIAN_COLUMNS = {"kind": "TEXT DEFAULT 'technician'", "company": "TEXT"}
 UNIT_COLUMNS = {"vp_date": "TEXT"}  # vacant possession date; the defect liability period runs from it
@@ -148,10 +152,10 @@ def _spread_seed_repair_times(conn: sqlite3.Connection) -> None:
 def reset_demo() -> None:
     """Reset demo: copy seed.db over the live DB, delete uploaded photos, and re-apply this migration."""
     db.reset_db()
-    uploads = db.ROOT / "uploads"
+    uploads = db.scoped_dir(db.ROOT / "uploads")
     if uploads.is_dir():
         shutil.rmtree(uploads)
-    uploads.mkdir(exist_ok=True)
+    uploads.mkdir(parents=True, exist_ok=True)
     with db.get_conn() as conn:
         migrate(conn)
 

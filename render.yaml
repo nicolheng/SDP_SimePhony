@@ -1,0 +1,56 @@
+# Render Blueprint for the backend API (free plan). Dashboard: New > Blueprint > pick this repo.
+# The web app (frontend/) goes on Vercel; see DEPLOY.md.
+services:
+  - type: web
+    name: simephony-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install -r requirements-deploy.txt
+    # --proxy-headers: Render serves https, so photo links must say https too (else browsers block them).
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      # Every visitor gets their own copy of seed.db (see backend/db.py)
+      - key: DEMO_SESSIONS
+        value: "true"
+      - key: SESSION_TTL_HOURS
+        value: "24"
+      - key: MAX_SESSIONS
+        value: "300"
+      - key: RATE_LIMIT_WRITES_PER_MIN
+        value: "40"
+      # AI first, rules as backup: if the shared free Gemini quota runs out, the demo keeps working.
+      - key: USE_AI_AGENTS
+        value: "true"
+      - key: LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+      - key: LLM_API_KEY
+        sync: false          # paste the Gemini key in the Render dashboard; never commit it
+      - key: MODEL_TEXT
+        value: gemini-3.1-flash-lite
+      - key: MODEL_VL
+        value: gemini-3.5-flash-lite
+      - key: LLM_TIMEOUT_TEXT
+        value: "10"
+      - key: LLM_TIMEOUT_VISION
+        value: "45"
+      - key: LLM_MAX_TOKENS
+        value: "4000"
+      - key: LLM_REASONING_EFFORT
+        value: low
+      - key: LLM_MAX_RETRIES
+        value: "3"
+      - key: LLM_PRIVACY_FILTER
+        value: "on"
+      - key: EMBEDDINGS_ENABLED
+        value: "false"
+      - key: EMAIL_ENABLED
+        value: "false"       # also forced off in code whenever DEMO_SESSIONS is on
+      - key: CORS_ORIGINS
+        sync: false          # the Vercel URL, e.g. https://simephony.vercel.app
+      - key: API_BASE_URL
+        sync: false          # this service's URL, e.g. https://simephony-api.onrender.com

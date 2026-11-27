@@ -2,7 +2,7 @@
 import { Bot, Check, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { PhotoThumb } from "@/components/photo";
+import { BeforeAfterRounds } from "@/components/photo";
 import { Panel } from "@/components/sdp-ui";
 import { developerSignOff, rejectRepair } from "@/lib/api";
 import { workerLabel } from "@/lib/constants";
@@ -49,8 +49,6 @@ export function DeveloperSignoffPanel({ c }: { c: Case }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const offline = useOffline();
-  const before = c.photos.find((p) => p.kind === "original");
-  const after = [...c.photos].reverse().find((p) => p.kind === "repair");
 
   async function decide(approve: boolean) {
     if (!approve && !note.trim()) {
@@ -79,12 +77,7 @@ export function DeveloperSignoffPanel({ c }: { c: Case }) {
         Check the repair by {workerLabel(c.technicianId)}, then sign it off or send it back.
       </p>
       {c.repairNote && <p className="mt-2 text-sm text-zinc-600">Technician&apos;s note: &ldquo;{c.repairNote}&rdquo;</p>}
-      {(before || after) && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          {before && <PhotoThumb photo={before} className="aspect-[4/3]" />}
-          {after && <PhotoThumb photo={after} className="aspect-[4/3]" />}
-        </div>
-      )}
+      <BeforeAfterRounds photos={c.photos} className="mt-4" />
       <div className="mt-4">
         {c.photoCheck ? (
           <PhotoCheckSummary check={c.photoCheck} sdp />

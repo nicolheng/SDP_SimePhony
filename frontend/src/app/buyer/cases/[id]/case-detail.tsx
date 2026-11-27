@@ -13,7 +13,8 @@ import { CasePinMap } from "@/components/floor-plan";
 import { FollowUpForm } from "@/components/follow-up-form";
 import { recordAvailable } from "@/lib/defect-record";
 import { EmptyState, MobileHeader, primaryButtonClass, Section, UnderlineTabs } from "@/components/mobile";
-import { PhotoThumb } from "@/components/photo";
+import { PhotoRounds, PhotoThumb } from "@/components/photo";
+import { REPORT_PHOTO_KINDS, WORK_PHOTO_KINDS } from "@/lib/photos";
 import { RatingDialog, STAR_LABEL, Stars } from "@/components/rating";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { canReopen, signoffDeadline } from "@/lib/api";
@@ -134,8 +135,6 @@ export function CaseDetail() {
   const reopenable = canReopen(c, now);
   const graceEnd = c.closedAt ? addDays(c.closedAt, RULES.gracePeriodDays) : null;
   const daysLeft = c.closedAt ? Math.max(0, Math.ceil(RULES.gracePeriodDays - daysBetween(c.closedAt, now))) : 0;
-  const reported = c.photos.filter((p) => p.kind === "original" || p.kind === "reopen");
-  const evidence = c.photos.filter((p) => p.kind !== "original" && p.kind !== "reopen");
   const deadline = signoffDeadline(c);
   const signoffDaysLeft = Math.max(0, Math.ceil(daysBetween(now, deadline)));
 
@@ -277,11 +276,7 @@ export function CaseDetail() {
                     </li>
                   ))}
               </ul>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {reported.map((p, i) => (
-                  <PhotoThumb key={i} photo={p} className="aspect-square" />
-                ))}
-              </div>
+              <PhotoRounds photos={c.photos} kinds={REPORT_PHOTO_KINDS} className="mt-3" />
             </Section>
 
             {/* What the AI understood */}
@@ -310,10 +305,11 @@ export function CaseDetail() {
             {/* Inspection + repair */}
             {/* Technician notes are internal (SDP and technician only): written for colleagues, they can say things
                 the developer must not tell a buyer ("we admit…"). The buyer's explanation is CommsAgent's message. */}
-            {(c.verdict || c.repairedAt) && (
+            {/* A technician's Invalid verdict waits for SDP (PENDING_REVIEW): the buyer sees the result once SDP decides. */}
+            {((c.verdict && c.status !== "PENDING_REVIEW") || c.repairedAt) && (
               <Section title="Inspection & Repair">
                 <dl>
-                  {c.verdict && (
+                  {c.verdict && c.status !== "PENDING_REVIEW" && (
                     <>
                       <Row label="Inspection result">{c.verdict.outcome === "VALID" ? "Defect confirmed" : "Not a defect"}</Row>
                       <Row label="Inspected on">{fmtDate(c.verdict.at)}</Row>
@@ -321,13 +317,7 @@ export function CaseDetail() {
                   )}
                   {c.repairedAt && <Row label="Repaired on">{fmtDate(c.repairedAt)}</Row>}
                 </dl>
-                {evidence.length > 0 && (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {evidence.map((p, i) => (
-                      <PhotoThumb key={i} photo={p} className="aspect-square" />
-                    ))}
-                  </div>
-                )}
+                <PhotoRounds photos={c.photos} kinds={WORK_PHOTO_KINDS} className="mt-3" />
               </Section>
             )}
           </>

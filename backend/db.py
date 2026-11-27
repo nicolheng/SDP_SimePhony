@@ -1,8 +1,10 @@
 """Shared SQLite access (owner: P3). Every part of the code opens the DB through here."""
 import os
+import re
 import shutil
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -10,11 +12,50 @@ DB_PATH = ROOT / os.getenv("DB_PATH", "data/simephony.db")
 SEED_DB_PATH = ROOT / os.getenv("SEED_DB_PATH", "data/seed.db")
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
+# ---- Per-visitor demo databases (hosted demo) ----
+# DEMO_SESSIONS=true gives every browser its own copy of seed.db (data/sessions/<id>/simephony.db) and its own
+# uploads/<id>/ folder, picked by the id the web app sends. Off (default): one shared DB_PATH, as on a laptop.
+SESSIONS_ENABLED = os.getenv("DEMO_SESSIONS", "").strip().lower() in ("1", "true", "yes")
+SESSIONS_DIR = ROOT / os.getenv("SESSIONS_DIR", "data/sessions")
+SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")  # also keeps ids safe to use as folder names
+_session: ContextVar[str | None] = ContextVar("demo_session", default=None)
+
+
+def set_session(session_id: str | None):
+    """Use this visitor's database for the current request or thread. Returns a token for reset_session."""
+    if session_id is not None and not SESSION_ID_RE.match(session_id):
+        raise ValueError("Invalid session id")
+    return _session.set(session_id)
+
+
+def reset_session(token) -> None:
+    _session.reset(token)
+
+
+def session_id() -> str | None:
+    return _session.get() if SESSIONS_ENABLED else None
+
+
+def current_db_path() -> Path:
+    sid = session_id()
+    return SESSIONS_DIR / sid / "simephony.db" if sid else DB_PATH
+
+
+def scoped_dir(base: Path) -> Path:
+    """base, or base/<session id> for a visitor's own files (uploaded photos)."""
+    sid = session_id()
+    return base / sid if sid else base
+
+
+def scoped_url(prefix: str, name: str) -> str:
+    sid = session_id()
+    return f"{prefix}/{sid}/{name}" if sid else f"{prefix}/{name}"
+
 
 # Paths default to None and resolve to DB_PATH at call time, so tests can point DB_PATH elsewhere.
 def connect(path: Path | None = None) -> sqlite3.Connection:
     # timeout = busy wait: an agent and the web app may write at the same moment (default 5 s was short).
-    conn = sqlite3.connect(path or DB_PATH, check_same_thread=False, timeout=30)
+    conn = sqlite3.connect(path or current_db_path(), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -101,15 +142,63 @@ def next_record_id(conn: sqlite3.Connection, table: str) -> str:
 
 def ensure_db() -> None:
     """Restore from seed.db if the live DB is missing; otherwise create an empty schema."""
-    if not DB_PATH.exists():
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    target = current_db_path()
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
         if SEED_DB_PATH.exists():
-            shutil.copyfile(SEED_DB_PATH, DB_PATH)
-    init_schema(DB_PATH)
+            shutil.copyfile(SEED_DB_PATH, target)
+    init_schema(target)
 
 
 def reset_db() -> None:
     """Demo 'Reset' button: copy seed.db over simephony.db (also clears outbox)."""
     for suffix in ("", "-wal", "-shm"):
-        Path(f"{DB_PATH}{suffix}").unlink(missing_ok=True)
+        Path(f"{current_db_path()}{suffix}").unlink(missing_ok=True)
     ensure_db()
+
+
+# ---- session bookkeeping (hosted demo) ----
+import threading
+import time
+
+MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "300"))
+SESSION_TTL_S = int(os.getenv("SESSION_TTL_HOURS", "24")) * 3600
+_ready_sessions: set[str] = set()
+_sessions_lock = threading.Lock()
+
+
+def session_ready(sid: str) -> bool:
+    return sid in _ready_sessions and (SESSIONS_DIR / sid / "simephony.db").exists()
+
+
+def mark_session_ready(sid: str) -> None:
+    with _sessions_lock:
+        _ready_sessions.add(sid)
+
+
+def list_sessions() -> list[str]:
+    if not SESSIONS_DIR.is_dir():
+        return []
+    return [p.name for p in SESSIONS_DIR.iterdir() if p.is_dir() and SESSION_ID_RE.match(p.name)]
+
+
+def _last_used(sid: str) -> float:
+    try:
+        return max(f.stat().st_mtime for f in (SESSIONS_DIR / sid).glob("simephony.db*"))
+    except ValueError:
+        return 0.0
+
+
+def cleanup_sessions() -> None:
+    """Delete visitors' databases and photos idle past SESSION_TTL_HOURS, and the oldest ones above MAX_SESSIONS
+    (the free host has little disk). A visitor who comes back later simply starts from a fresh copy."""
+    now = time.time()
+    sids = sorted(list_sessions(), key=_last_used)
+    doomed = [s for s in sids if now - _last_used(s) > SESSION_TTL_S]
+    survivors = [s for s in sids if s not in doomed]
+    doomed += survivors[: max(0, len(survivors) - MAX_SESSIONS)]
+    for sid in doomed:
+        shutil.rmtree(SESSIONS_DIR / sid, ignore_errors=True)
+        shutil.rmtree(ROOT / os.getenv("UPLOADS_DIR", "uploads") / sid, ignore_errors=True)
+        with _sessions_lock:
+            _ready_sessions.discard(sid)

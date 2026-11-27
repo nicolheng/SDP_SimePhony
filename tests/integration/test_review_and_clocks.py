@@ -118,6 +118,64 @@ def test_no_new_reports_after_the_dlp_ends(client):
     assert r.status_code == 400 and "defect liability period" in r.json()["detail"]
 
 
+@pytest.mark.parametrize("use_ai_agents", ["false", "true"])
+def test_post_dlp_recurrence_waits_for_sdp_before_booking(client, monkeypatch, use_ai_agents):
+    import json
+    import db
+    import tools
+
+    monkeypatch.setenv("USE_AI_AGENTS", use_ai_agents)
+    unit_id, buyer_id = "C-1-01", "B-0301"
+    with db.get_conn() as conn:
+        conn.execute("UPDATE units SET vp_date = '2026-01-01' WHERE unit_id = ?", (unit_id,))
+    previous = tools.create_case(unit_id, buyer_id, "Previous bedroom water leak")
+    assert previous["ok"] is True
+    with db.get_conn() as conn:
+        conn.execute(
+            """UPDATE cases
+               SET category = 'water_leak', pin_room = 'Master bedroom',
+                   location_in_unit = 'Master bedroom ceiling', status = 'REPAIRED'
+               WHERE case_id = ?""",
+            (previous["case_id"],),
+        )
+        conn.execute("UPDATE units SET vp_date = '2020-01-01' WHERE unit_id = ?", (unit_id,))
+
+    response = client.post(
+        "/api/cases",
+        json={"unit_id": unit_id, "buyer_id": buyer_id, "description": "Ceiling leak in the master bedroom"},
+    )
+    assert response.status_code == 200, response.text
+    case_id = response.json()["caseId"]
+    held = _case(response.json()["state"], case_id)
+    assert held["status"] == "PENDING_REVIEW"
+    assert held["category"] == "water_leak" and not held["technicianId"]
+    assert held["review"]["agent"] == "create_case"
+    assert held["review"]["previousStatus"] == "SUBMITTED"
+    assert "Post-DLP recurrence detected" in held["review"]["reason"]
+    # #144: the SDP review list shows the reason and links the earlier repair
+    assert held["review"]["reasonCode"] == "POSSIBLE_LATENT_DEFECT"
+    assert held["review"]["earlierCaseId"] == previous["case_id"]
+    with db.get_conn() as conn:
+        assert not conn.execute("SELECT 1 FROM slots WHERE case_id = ?", (case_id,)).fetchone()
+        events = conn.execute(
+            "SELECT type, payload FROM case_events WHERE case_id = ? ORDER BY rowid", (case_id,)
+        ).fetchall()
+    assert [event["type"] for event in events] == ["case.created", "case.review_requested"]
+    review_event = json.loads(events[1]["payload"])
+    assert review_event["agent"] == "create_case"
+    assert review_event["confidence_score"] == 1.0 and review_event["previous_status"] == "SUBMITTED"
+    assert review_event["reason_code"] == "POSSIBLE_LATENT_DEFECT"
+    assert review_event["earlier_case_id"] == previous["case_id"]
+    assert review_event["message"] == (
+        "Post-DLP recurrence detected. Flagged for SDP review to determine developer liability for latent defect."
+    )
+
+    approved = client.post(f"/api/cases/{case_id}/review-decision", json={"approve": True})
+    assert approved.status_code == 200, approved.text
+    resumed = _case(approved.json()["state"], case_id)
+    assert resumed["status"] == "VISIT_SCHEDULED" and resumed["technicianId"]
+
+
 def test_unsure_intake_after_a_follow_up_still_books_the_visit(client, monkeypatch):
     from demo_api import ai_agents, agents
     unsure = lambda ctx, description, *a, **k: {**agents.intake(description, True), "needs_human_review": True,  # noqa: E731

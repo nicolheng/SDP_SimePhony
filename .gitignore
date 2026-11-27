@@ -47,3 +47,19 @@ Thumbs.db
 *.log
 
 docs/
+# Hosted demo: one database per visitor
+data/sessions/
+data/sessions-localtest/
+
+# Claude Code local files (worktrees, launch config)
+/.claude/
+
+# Slides: built exports and the copy made by `open-slide sync:skills`
+slides/exports/
+slides/.agents/
+
+# Poster: keep only the final source, not drafts or rendered files
+poster/*.pdf
+poster/*.png
+poster/poster-v*.html
+!poster/poster-v14.html

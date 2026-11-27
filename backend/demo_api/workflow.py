@@ -14,7 +14,6 @@ import floor_plan
 import tools
 
 from . import agents, ai_agents, config
-from .analytics import dlp_days_left, dlp_expiry
 from .timeutil import add_days, demo_now, fmt_date, fmt_datetime, norm, parse
 
 UPLOADS_DIR = tools.UPLOADS_DIR
@@ -193,23 +192,31 @@ def submit_report(ctx: Ctx, unit_id: str, buyer_id: str, description: str, photo
     except ValueError as e:
         raise WorkflowError(str(e)) from e
     pin_room = pinned["room"] if pinned else None
-    left = dlp_days_left(ctx.units[unit_id].get("vp_date"), ctx.now)
-    if left is not None and left < 0:
-        raise WorkflowError(f"The defect liability period for {unit_id} ended on {fmt_date(dlp_expiry(ctx.units[unit_id]['vp_date']) + 'T12:00:00+08:00')}, "
-                            "so new defects can no longer be reported here. Please contact the developer directly.")
     if ctx.defer_agents and ai_agents.ai_first():
         # USE_AI_AGENTS=true or only: save the report now and let the agents work after the request returns
         # (process_new_report), so the buyer's progress screen shows each step as it really finishes.
-        non_defect = agents.intake(description, bool(photo)).get("non_defect")
-        if non_defect:
-            return {"nonDefect": non_defect}
-        case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned)["case_id"]
+        intake_preview = agents.intake(description, bool(photo))
+        if intake_preview.get("non_defect"):
+            return {"nonDefect": intake_preview["non_defect"]}
+        created = _tool(
+            ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned,
+            category=intake_preview.get("category"), room=pin_room or intake_preview.get("location_in_unit"),
+        )
+        case_id = created["case_id"]
+        if created["status"] == "PENDING_REVIEW":
+            return {"caseId": case_id}
         ctx.deferred_reports.append(case_id)
         return {"caseId": case_id}
     result = ai_agents.intake(ctx, description, photo, pin_room=pin_room)
     if "non_defect" in result:
         return {"nonDefect": result["non_defect"]}
-    case_id = _tool(ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned)["case_id"]
+    created = _tool(
+        ctx, tools.create_case, unit_id, buyer_id, description, slot, photo, pinned,
+        category=result.get("category"), room=pin_room or result.get("location_in_unit"),
+    )
+    case_id = created["case_id"]
+    if created["status"] == "PENDING_REVIEW":
+        return {"caseId": case_id}
     ai_agents.record_pending_fallbacks(ctx, case_id)
     if _save_intake(ctx, case_id, result):
         _continue_new_case(ctx, case_id)
@@ -467,12 +474,36 @@ def rate_unit(ctx: Ctx, unit_id: str, rating: int, comment: str) -> None:
     _tool(ctx, tools.record_unit_rating, unit_id, rating, comment)
 
 
+def _reason_label(code: str | None) -> str | None:
+    """The buyer-facing label of a reason code in kb/invalid_defect_reasons.yaml, e.g. "Normal Wear and Tear"."""
+    if not code:
+        return None
+    from agents.simephony import kb
+    reason = kb.get()["reasons"].get(code)
+    return reason["label"] if reason else None
+
+
 def decide_review(ctx: Ctx, case_id: str, approve: bool, note: str) -> None:
-    """SDP staff approve or reject a case an AI agent held for review. An approved case carries on from the held
-    step with the rule-based agents (a person has checked it, so it is not held again)."""
+    """SDP staff approve or reject a case held for review. An approved case carries on from the held
+    step with the rule-based agents (a person has checked it, so it is not held again). For a technician's Invalid
+    verdict, approve confirms it (closed, buyer told) and reject overturns it (valid defect, repair booked)."""
     r = _tool(ctx, tools.resolve_review, case_id, approve, note)
     c = load_case(ctx, case_id)
     said = f': "{note}"' if note else "."
+    if r["previous_status"] == "INVALID":
+        if approve:
+            reason = _reason_label(c.get("verdict_reason_code"))
+            _tool(ctx, tools.notify_buyer, case_id, "Inspection result",
+                  f"Case {case_id} ({c['summary']}). Our team reviewed the inspection and confirmed it is not covered "
+                  f"as a defect{f' ({reason})' if reason else ''}{said} This case is now closed. If the problem gets "
+                  "worse or changes, please submit a new report.")
+        else:
+            _estimate_repair(ctx, case_id)
+            _tool(ctx, tools.notify_buyer, case_id, "Defect confirmed: repair being arranged",
+                  f"Case {case_id} ({c['summary']}). Our team reviewed the inspection and confirmed this is a defect. "
+                  "We're booking the repair and will send you the time.")
+            book_repair_now(ctx, case_id)
+        return
     if not approve:
         if r["status"] == "INVALID":
             _tool(ctx, tools.notify_buyer, case_id, "Update on your report",
@@ -591,17 +622,30 @@ def _book_revisit(ctx: Ctx, case_id: str, t: dict, occurrence: int, description:
 # ---------- technician / subcontractor ----------
 
 
-def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None, repair_hours: float | None = None) -> None:
-    _tool(ctx, tools.record_verdict, case_id, outcome, note, photo, repair_hours)
+def record_verdict(ctx: Ctx, case_id: str, outcome: str, note: str, photo: str | None, repair_hours: float | None = None,
+                   measurement: dict | None = None, reason_code: str | None = None) -> None:
+    _tool(ctx, tools.record_verdict, case_id, outcome, note, photo, repair_hours,
+          measurement=measurement, reason_code=reason_code)
+    if outcome == "INVALID":
+        # Held for SDP (decide_review): the buyer hears the result only once SDP confirms or overturns it.
+        c = load_case(ctx, case_id)
+        _tool(ctx, tools.notify_buyer, case_id, "Inspection done",
+              f"Case {case_id} ({c['summary']}). The technician has inspected the problem. Our team is reviewing "
+              "the result and will update you shortly.")
+        return
     # The technician chose the expected repair duration: no RepairEstimateAgent run.
-    if outcome == "VALID" and repair_hours is None:
-        if ctx.async_ai:  # after the click, before the "please book a repair" message that quotes the hours
-            ctx.after_click.append(("estimate", case_id))
-        else:
-            ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
-    notify_buyer(ctx, case_id, "valid" if outcome == "VALID" else "invalid", note=note.strip())
-    if outcome == "VALID":
-        book_repair_now(ctx, case_id)
+    if repair_hours is None:
+        _estimate_repair(ctx, case_id)
+    notify_buyer(ctx, case_id, "valid", note=note.strip())
+    book_repair_now(ctx, case_id)
+
+
+def _estimate_repair(ctx: Ctx, case_id: str) -> None:
+    """RepairEstimateAgent after a VALID verdict, when the technician gave no repair duration."""
+    if ctx.async_ai:  # after the click, before the "please book a repair" message that quotes the hours
+        ctx.after_click.append(("estimate", case_id))
+    else:
+        ai_agents.repair_estimate(ctx, load_case(ctx, case_id))  # saves repair_hours and its trace step (USE_AI_AGENTS)
 
 
 def mark_repaired(ctx: Ctx, case_id: str, note: str, photo: str | None) -> None:

@@ -1,0 +1,18 @@
+# Hosted demo (Render free tier, ~512 MB RAM): requirements.txt without torch / sentence-transformers / pytest.
+# The similar-case embedder is off there (EMBEDDINGS_ENABLED=false), so those multi-GB packages are not needed.
+langgraph
+langchain-core
+openai
+
+fastmcp
+fastapi
+uvicorn[standard]
+python-dotenv
+python-multipart
+pyyaml
+google-api-python-client
+google-auth
+google-auth-oauthlib
+
+numpy
+pillow>=13.0.0

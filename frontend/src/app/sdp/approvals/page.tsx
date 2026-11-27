@@ -1,16 +1,16 @@
 "use client";
-import { Check, ChevronDown, ClipboardList, ShieldCheck, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardList, History, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { PhotoThumb } from "@/components/photo";
-import { ReviewPanel } from "@/components/review-panel";
+import { BeforeAfterRounds } from "@/components/photo";
+import { isLatentDefect, ReviewPanel } from "@/components/review-panel";
 import { PageTitle, Panel } from "@/components/sdp-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { decideApproval } from "@/lib/api";
 import { FLOORS, getUnit } from "@/lib/constants";
-import { fmtDateTime } from "@/lib/dates";
+import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { useDemo, useOffline } from "@/lib/store";
 import type { Approval, Case, SystemicIssue } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -18,12 +18,13 @@ import { cn } from "@/lib/utils";
 type Tab = "review" | "extra" | "signoff" | "decided";
 
 /** Compact, clickable summary row; the full decision panel opens underneath, one at a time. */
-function QueueRow({ open, onToggle, id, title, meta, children }: { open: boolean; onToggle: () => void; id: string; title: string; meta: string; children: ReactNode }) {
+function QueueRow({ open, onToggle, id, title, meta, badge, children }: { open: boolean; onToggle: () => void; id: string; title: string; meta: string; badge?: ReactNode; children: ReactNode}) {
   return (
     <li className="rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200">
       <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3 text-left">
         <span className="w-16 shrink-0 font-mono text-sm text-zinc-500">{id}</span>
         <span className="min-w-0 flex-1">
+          {badge}
           <span className="block truncate text-base font-medium">{title}</span>
           <span className="block truncate text-sm text-zinc-500">{meta}</span>
         </span>
@@ -85,7 +86,10 @@ export default function Approvals() {
       {tab === "review" &&
         (held.length ? (
           <>
-            <p className="mb-3 text-base text-zinc-600">An AI agent was not confident enough to continue, so it paused these cases. Open one to approve or reject it.</p>
+            <p className="mb-3 text-base text-zinc-600">
+              An AI agent was not confident enough to continue, a technician marked the defect invalid, or a defect came back after the defect liability period
+              ended, so these cases wait for SDP. Open one to decide it.
+            </p>
             <ul className="space-y-2">
               {held.map((c) => (
                 <QueueRow
@@ -94,11 +98,25 @@ export default function Approvals() {
                   open={openId === c.id}
                   onToggle={() => toggle(c.id)}
                   title={`${c.unitId} · ${c.summary}`}
-                  meta={[
-                    c.review?.agent ?? "AI agent",
-                    typeof c.review?.confidence === "number" ? `${Math.round(c.review.confidence * 100)}% confidence` : null,
-                    c.review?.at ? fmtDateTime(c.review.at) : null,
-                  ]
+                  badge={
+                    isLatentDefect(c) && (
+                      <span className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        <History className="size-3" /> Possible latent defect
+                      </span>
+                    )
+                  }
+                  meta={(isLatentDefect(c)
+                    ? [
+                        "Reported after the DLP",
+                        c.review?.earlierCaseId ? `earlier repair ${c.review.earlierCaseId}` : null,
+                        c.review?.earlierRepairedAt ? `repaired ${fmtDate(c.review.earlierRepairedAt)}` : null,
+                      ]
+                    : [
+                        c.review?.agent ?? "AI agent",
+                        typeof c.review?.confidence === "number" ? `${Math.round(c.review.confidence * 100)}% confidence` : null,
+                        c.review?.at ? fmtDateTime(c.review.at) : null,
+                      ]
+                  )
                     .filter(Boolean)
                     .join(" · ")}
                 >
@@ -224,8 +242,6 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
     );
     return Array.from({ length: FLOORS }, (_, i) => FLOORS - i).map((floor) => ({ floor, id: `${unit.block}-${floor}-${unit.stack}` })).map((u) => ({ ...u, hit: ids.has(u.id) }));
   }, [cases, c.category, unit.block, unit.stack]);
-  const original = c.photos.find((p) => p.kind === "original");
-  const reopen = [...c.photos].reverse().find((p) => p.kind === "reopen");
 
   async function decide(approve: boolean) {
     setBusy(true);
@@ -281,10 +297,7 @@ function ApprovalCard({ a, c, si, cases }: { a: Approval; c: Case; si?: Systemic
             </ul>
             {si && <p className="mt-3 text-base text-violet-950"><span className="font-medium">Suggested action:</span> {si.recommendedAction}</p>}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {original && <PhotoThumb photo={original} className="aspect-[4/3]" />}
-            {reopen && <PhotoThumb photo={reopen} className="aspect-[4/3]" />}
-          </div>
+          <BeforeAfterRounds photos={c.photos} />
         </div>
         <div>
           <p className="mb-1.5 text-sm font-medium text-zinc-500">

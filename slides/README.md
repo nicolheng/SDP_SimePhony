@@ -47,24 +47,23 @@ play in Present mode (next section).
 | Key | What it does |
 | --- | --- |
 | **F** or the red **Present** button | Fullscreen Present mode |
-| **→**, **Space**, clicker | Next beat (the next item appears, or the camera moves), then the next slide |
-| **←** | Back one beat |
+| **→**, **Space**, clicker | Next slide |
+| **←** | Previous slide |
 | **Esc** | Leave Present mode |
 
-The main slides build up one click at a time, so the speaker controls the pace. Click once for each item you
-talk about:
+Every slide now animates by itself when it opens (about 2–3 seconds), so one click per slide is all you need.
+Each slide's animation:
 
 | Slide | Clicks | What each click shows |
 | --- | --- | --- |
-| 02 Problem | 4 | The camera moves to each stat as it counts up, then pulls back and the "Today" pipeline builds |
-| 03 Missing step | 1 | The pipeline morphs in from slide 2; one click shows Photo-checked · Signed off · Watched |
-| 04 Why it matters | 2 | The "SIGNATURE FORGED" stamp lands on the form, then the court case slides in |
-| 05 Solution | 3 | The camera visits the buyer app → SDP console → technician app, then pulls back |
-| 06 How it works | 4 | The "Ceiling leak" ticket moves through the four stages while the camera follows it |
-| 07 Innovation | 3 | The 3rd leak escalates, then the features appear, then the comparison table |
-| 08 Impact | 3 | The camera visits each card, then the Value bar appears |
-| 09 Feasibility | 4 | A data packet travels through each layer, then the three reasons appear |
-| 10 Scale | 5 | The roadmap draws one phase at a time, then pulls back |
+| 02 In the news | 0 | Breaking-news opener: the headline, the case and the defects appear; the "LATEST" ticker scrolls (play your news sting here) |
+| 03 Problem | 0 | The ticker band holds still and becomes the sources line while the four stats count up |
+| 04 Solution | 0 | The three apps appear together, then the "proof" circle and the "know the unknown" block |
+| 05 How it works | 0 | The people / AI agents diagram; the "Ceiling leak" ticket glides stage to stage with a frame following it, then the motto |
+| 06 Innovation | 0 | Water drips in five units, the shared riser is flagged, then the right column lands |
+| 07 Impact | 0 | Three cards together, then the Values bar |
+| 08 Feasibility | 0 | The packet glides through the four layers (~1 s), then the three reasons |
+| 09 Scale | 0 | Text always shown; the road and circles 0 → 4 colour in (~2 s) |
 
 Coming back to a slide with **←** shows it fully built.
 
@@ -77,8 +76,8 @@ Everything is in one file: [`slides/simephony-finals/index.tsx`](slides/simephon
 - **Change colours or fonts for the whole deck:** edit `design` near the top of the file, or use the **Design**
   button in the editor.
 - **Swap an image:** put the file in `slides/simephony-finals/assets/` and change the matching `import` at the top.
-  The team photos for Phoebe and Tan Syn Yee are still placeholders: click one in the editor and choose
-  **Replace…**, or ask Claude Code to do it.
+  Team photos are cropped per person with the `crop` prop on each `<Member>` (so every face lines up); a new
+  photo needs its own `crop` numbers.
 - **Reorder or remove slides:** edit the list at the very bottom of the file (`export default [ ... ]`).
 
 Rules from open-slide: keep each slide inside 1920 × 1080 (anything past the edge is cut off), don't add npm

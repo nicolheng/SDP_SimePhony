@@ -21,6 +21,7 @@ import base64
 import functools
 import json
 import logging
+import math
 import os
 import re
 import smtplib
@@ -107,7 +108,7 @@ def _connect():
     if shared is not None:
         yield shared
         return
-    key = str(db.DB_PATH)
+    key = str(db.current_db_path())
     if key not in _ready_dbs:
         db.ensure_db()
         with db.get_conn() as conn:
@@ -502,7 +503,8 @@ def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], ki
     else:
         src = Path(photo)
         if not src.is_absolute():
-            src = UPLOADS_DIR / src if (UPLOADS_DIR / src).is_file() else ROOT / src
+            up = db.scoped_dir(UPLOADS_DIR)
+            src = up / src if (up / src).is_file() else ROOT / src
         if not src.is_file():
             raise ToolError(f"Photo not found: {photo}")
         ext = src.suffix.lstrip(".").lower().replace("jpeg", "jpg")
@@ -513,13 +515,14 @@ def _save_photo(conn: sqlite3.Connection, case_id: str, photo: Optional[str], ki
         raise ToolError("That photo is too large (max 15 MB).")
     photo_id = db.next_record_id(conn, "case_photos")
     name = f"{case_id}_{photo_id}_{kind}.{ext}"
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    (UPLOADS_DIR / name).write_bytes(raw)
+    up = db.scoped_dir(UPLOADS_DIR)
+    up.mkdir(parents=True, exist_ok=True)
+    (up / name).write_bytes(raw)
     conn.execute(
         "INSERT INTO case_photos (photo_id, case_id, path, kind, created_at) VALUES (?, ?, ?, ?, ?)",
         (photo_id, case_id, name, kind, _now(conn)),
     )
-    return {"photo_id": photo_id, "path": name, "url": f"/uploads/{name}"}
+    return {"photo_id": photo_id, "path": name, "url": db.scoped_url("/uploads", name)}
 
 
 # ---------- case lifecycle helpers ----------
@@ -748,7 +751,7 @@ def get_case(case_id: str) -> dict:
             w = _worker(conn, case.get(key))
             case[key.replace("_id", "")] = {k: w[k] for k in ("technician_id", "name", "email", "skills", "kind", "company")} if w else None
         case["photos"] = [
-            {"photo_id": r["photo_id"], "kind": r["kind"], "url": f"/uploads/{r['path']}", "created_at": r["created_at"]}
+            {"photo_id": r["photo_id"], "kind": r["kind"], "url": db.scoped_url("/uploads", r["path"]), "created_at": r["created_at"]}
             for r in conn.execute("SELECT * FROM case_photos WHERE case_id = ? ORDER BY created_at, photo_id", (case_id,))
         ]
         case["bookings"] = [
@@ -775,6 +778,7 @@ def get_case(case_id: str) -> dict:
             )
         ]
         case["repair_plan"] = _case_repair_plan(case)
+        case["verdict_measurement"] = verdict_measurement(case)
     return case
 
 
@@ -1220,7 +1224,7 @@ def assign_technician(
         if support:
             fields["support_id"] = support_id
         if case["status"] in ("REOPENED", "EXTRA_INSPECTION"):
-            fields.update(inspection_outcome=None, verdict_note=None, verdict_at=None)  # new inspection, new verdict
+            fields.update(_cleared_verdict(case))  # new inspection, new verdict
         _save(conn, case_id, **fields)
         _emit(conn, case_id, "case.assigned", f"Assigned to {tech['name']}", technician_id=technician_id, start=start)
         _emit(conn, case_id, "booking.requested", f"Visit requested from {tech['name']} for {fmt_datetime(start)}; waiting for the technician to accept",
@@ -1491,13 +1495,15 @@ def attach_inspection_brief(case_id: str, brief: dict | str) -> dict:
             "INSERT INTO inspection_briefs (case_id, brief, created_at) VALUES (?, ?, ?) ON CONFLICT(case_id) DO UPDATE SET brief = excluded.brief, created_at = excluded.created_at",
             (case_id, json.dumps(brief), now),
         )
-        _save(conn, case_id, status="EXTRA_INSPECTION", inspection_outcome=None, verdict_note=None, verdict_at=None)
+        _save(conn, case_id, status="EXTRA_INSPECTION", **_cleared_verdict(case))
         _emit(conn, case_id, "agent.step", f"Inspection brief ready: {len(brief['checklist'])}-point checklist", agent="InitialInspectionAgent")
     return {"ok": True, "status": "EXTRA_INSPECTION"}
 
 
 def _email_disabled_reason() -> Optional[str]:
     """Why emails are only logged (EMAIL_ENABLED=false or no Gmail login), or None when they can be sent."""
+    if db.SESSIONS_ENABLED:  # the public demo never sends real email, whatever .env says
+        return "email is off in the hosted demo"
     if os.getenv("EMAIL_ENABLED", "true").lower() != "true":
         return "EMAIL_ENABLED is false"
     if not os.getenv("GMAIL_ADDRESS") or not os.getenv("GMAIL_APP_PASSWORD"):
@@ -1698,30 +1704,101 @@ def _fmt_hours(h: float) -> str:
     return f"about {n} hour{'' if h == 1 else 's'}"
 
 
+def _room_label(unit_id: str, value: Optional[str]) -> Optional[str]:
+    """Resolve a pinned room or detailed intake location to its floor-plan room label."""
+    if not value:
+        return None
+    import floor_plan
+
+    text = value.strip()
+    labels = [room["label"] for room in floor_plan.layout_for(unit_id)["rooms"]]
+    matches = [
+        label for label in labels
+        if re.search(rf"(?<!\w){re.escape(label)}(?!\w)", text, re.IGNORECASE)
+    ]
+    return matches[0].casefold() if len(matches) == 1 else None
+
+
+LATENT_DEFECT_REVIEW = "POSSIBLE_LATENT_DEFECT"
+
+
+def _repaired_recurrence(conn: sqlite3.Connection, unit_id: str, category: Optional[str],
+                             room: Optional[str]) -> Optional[dict]:
+    """The most recent repaired case in this unit with the same category and room, or None.
+    Returns {case_id, repaired_at}: the earlier repair a post-DLP report recurs (#141, #144)."""
+    if not category or not room:
+        return None
+    requested_category = category.strip().casefold()
+    requested_room = _room_label(unit_id, room)
+    if not requested_category or not requested_room:
+        return None
+
+    previous = conn.execute(
+        """SELECT case_id, category, pin_room, location_in_unit, repaired_at, closed_at FROM cases
+           WHERE unit_id = ? AND status IN ('REPAIRED', 'CLOSED', 'FIXED')
+           ORDER BY COALESCE(repaired_at, closed_at, created_at) DESC, case_id DESC""",
+        (unit_id,),
+    ).fetchall()
+    for case in previous:
+        if ((case["category"] or "").strip().casefold() == requested_category
+                and _room_label(unit_id, case["pin_room"] or case["location_in_unit"]) == requested_room):
+            return {"case_id": case["case_id"], "repaired_at": case["repaired_at"] or case["closed_at"]}
+    return None
+
+
 @_returns_errors
 def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: Optional[str] = None, photo: Optional[str] = None,
-                pin: Optional[dict] = None) -> dict:
-    """Buyer reports a defect (-> SUBMITTED; intake runs next). preferred_slot: the visit time the buyer
-    picked (ISO). photo: data URL or local file path. pin: where the buyer tapped the unit floor plan,
+                pin: Optional[dict] = None, category: Optional[str] = None, room: Optional[str] = None) -> dict:
+    """Buyer reports a defect (-> SUBMITTED; accepted post-DLP recurrences wait in PENDING_REVIEW).
+    preferred_slot: the visit time the buyer picked (ISO). photo: data URL or local file path. pin: where the buyer tapped the unit floor plan,
     {x, y, room} from floor_plan.resolve_pin (x, y None for "Whole unit"); IntakeAgent then takes the room from it.
+    category and room are the intake classification used for the post-DLP recurrence check.
     Returns {ok, case_id, status, preferred_visit_at, photo}."""
     if not description.strip():
         raise ToolError("Please describe the problem.")
     with _connect() as conn:
         if not conn.execute("SELECT 1 FROM buyers WHERE buyer_id = ? AND unit_id = ?", (buyer_id, unit_id)).fetchone():
             raise ToolError("Unknown buyer or unit.")
+        unit = conn.execute("SELECT unit_id, vp_date FROM units WHERE unit_id = ?", (unit_id,)).fetchone()
+        from agents.simephony.kb import dlp_status
+
+        dlp = dlp_status(dict(unit), _now(conn))
+        report_room = room or (pin.get("room") if pin else None)
+        earlier = _repaired_recurrence(conn, unit_id, category, report_room) if dlp["status"] == "after" else None
+        if dlp["status"] == "after" and not earlier:
+            # Keep the response code aligned with kb/invalid_defect_reasons.yaml.
+            # RM4.8M latent-defect liability: only allow a documented same-category, same-room recurrence.
+            raise ToolError(
+                f"POST_DLP_SUBMISSION: This report was rejected because the defect liability period ended on "
+                f"{dlp['dlp_end']}. After the DLP, only a defect in the same category and room as a previously "
+                "repaired issue can be reported; brand-new issues must be referred to the developer directly."
+            )
+        # Issue #142: an accepted post-DLP recurrence requires SDP review before any visit is booked.
+        is_post_dlp_recurrence = earlier is not None
+        case_status = "PENDING_REVIEW" if is_post_dlp_recurrence else "SUBMITTED"
         preferred = norm(preferred_slot) if preferred_slot else None
         case_id = _next_id(conn, "cases", "case_id", "C", 4)
         conn.execute(
-            """INSERT INTO cases (case_id, unit_id, buyer_id, status, description, occurrence_count, reopen_count, preferred_visit_at, created_at)
-               VALUES (?, ?, ?, 'SUBMITTED', ?, 1, 0, ?, ?)""",
-            (case_id, unit_id, buyer_id, description.strip(), preferred, _now(conn)),
+            """INSERT INTO cases (case_id, unit_id, buyer_id, status, category, location_in_unit, description,
+                                 occurrence_count, reopen_count, preferred_visit_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)""",
+            (case_id, unit_id, buyer_id, case_status, category if is_post_dlp_recurrence else None,
+             report_room if is_post_dlp_recurrence else None, description.strip(), preferred, _now(conn)),
         )
         if pin:  # pin columns only when there is a pin: reports without one work on a database not yet migrated
             _save(conn, case_id, pin_x=pin.get("x"), pin_y=pin.get("y"), pin_room=pin.get("room"))
         saved = _save_photo(conn, case_id, photo, "original")
         _emit(conn, case_id, "case.created", f"Buyer submitted a defect report{' with photo' if saved else ''}", preferred_visit_at=preferred)
-    return {"ok": True, "case_id": case_id, "status": "SUBMITTED", "preferred_visit_at": preferred, "photo": saved}
+        if is_post_dlp_recurrence:
+            _emit(
+                conn, case_id, "case.review_requested",
+                "Post-DLP recurrence detected. Flagged for SDP review to determine developer liability for latent defect.",
+                agent="create_case", confidence_score=1.0, previous_status="SUBMITTED",
+                # Issue #144: the SDP review list shows the reason and links the earlier repair.
+                reason_code=LATENT_DEFECT_REVIEW, earlier_case_id=earlier["case_id"],
+                earlier_repaired_at=earlier["repaired_at"],
+            )
+    return {"ok": True, "case_id": case_id, "status": case_status, "preferred_visit_at": preferred, "photo": saved}
 
 
 @_returns_errors
@@ -1850,14 +1927,76 @@ def _require_accepted_job(case: dict, action: str) -> None:
 # repair_estimate_reason when the technician chose the duration (the web app shows "set by your technician").
 TECHNICIAN_ESTIMATE = "Set by the technician at the inspection"
 
+# Every verdict field. A new inspection (or SDP's own verdict) clears them all, so an old reading never sticks.
+VERDICT_FIELDS = ("inspection_outcome", "verdict_note", "verdict_at", "verdict_rule_id", "verdict_reading",
+                  "verdict_unit", "verdict_reason_code")
+
+
+def _cleared_verdict(case: dict) -> dict:
+    """VERDICT_FIELDS set to None. Skips columns the case row doesn't have (a DB not migrated yet, e.g. seed.db
+    used over a shared connection), so the clear never fails where nothing could have been saved."""
+    return {k: None for k in VERDICT_FIELDS if k in case}
+
+
+def _verdict_measurement_fields(measurement: Optional[dict]) -> dict:
+    """Check an optional verdict measurement {rule_id, reading} against kb/tolerances.yaml and return the columns to save.
+    reading: a number in the rule's unit for a "measure" rule, true / false for a "yes_no" rule. The unit is not sent:
+    it is copied from the rule, so a reading can't be saved in the wrong unit."""
+    if measurement is None:
+        return {}
+    from agents.simephony import kb
+    rule_id, reading = measurement.get("rule_id"), measurement.get("reading")
+    if not rule_id or reading is None:
+        raise ToolError("A measurement needs the rule it is for and the reading.")
+    if isinstance(reading, float) and not math.isfinite(reading):
+        raise ToolError("The reading must be a real number.")
+    try:
+        kb.check_measurement(rule_id, reading)  # unknown rule, wrong kind of reading or a negative number -> ValueError
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    return {"verdict_rule_id": rule_id, "verdict_reading": float(reading),  # True / False -> 1.0 / 0.0
+            "verdict_unit": kb.get()["rules"][rule_id].get("unit")}
+
+
+def verdict_measurement(case: dict) -> Optional[dict]:
+    """The saved verdict measurement as {rule_id, reading, unit}, or None. A yes_no reading (saved with no unit)
+    comes back as true / false. Reads only the saved row, so it still works if the rule later leaves the KB."""
+    if not case.get("verdict_rule_id") or case.get("verdict_reading") is None:
+        return None
+    unit = case.get("verdict_unit")
+    reading = case["verdict_reading"]
+    return {"rule_id": case["verdict_rule_id"], "reading": bool(reading) if unit is None else reading, "unit": unit}
+
+
+def _invalid_review_message(tech_name: str, note: str, reason_code: Optional[str], reading: Optional[dict]) -> str:
+    """What SDP reads on the review card for a technician's Invalid verdict: the note, the reason and the reading."""
+    from agents.simephony import kb
+    text = f'{tech_name} marked this not a defect: "{note}"'
+    if reason_code:
+        text += f' Reason: {kb.get()["reasons"][reason_code]["label"]}.'
+    rule = kb.get()["rules"].get(reading["rule_id"]) if reading else None
+    if rule and rule["check"] == "measure":
+        side = "above" if rule["op"] == ">" else "below"
+        text += (f' Measured {rule["metric"]}: {reading["reading"]:g} {rule["unit"]}'
+                 f' (a defect {side} {rule["threshold"]:g} {rule["unit"]}).')
+    elif rule:
+        text += f' {rule["question"]} {"Yes" if reading["reading"] else "No"}.'
+    return text
+
 
 @_returns_errors
 def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] = None,
-                   repair_hours: Optional[float] = None) -> dict:
+                   repair_hours: Optional[float] = None, measurement: Optional[dict] = None,
+                   reason_code: Optional[str] = None) -> dict:
     """Technician's inspection result (the visit must be accepted). VALID -> buyer books a repair.
-    INVALID -> terminal (a new report becomes a new case). repair_hours (VALID only): the technician's
+    INVALID -> PENDING_REVIEW: SDP confirms it (-> INVALID, closed) or overturns it (-> VALID) with resolve_review,
+    because rejecting a defect is the developer's decision. repair_hours (VALID only): the technician's
     expected repair duration, 2, 4 or 8 (whole 2-hour blocks, at most a day); repair options and the
-    buyer's pages then use it instead of the RepairEstimateAgent. Returns {ok, status}."""
+    buyer's pages then use it instead of the RepairEstimateAgent.
+    measurement (optional, either verdict): {rule_id, reading} for a rule in kb/tolerances.yaml; reading is a
+    number in the rule's unit, or true / false for a yes/no rule. The unit is taken from the rule.
+    reason_code (optional, INVALID only): why it is not the developer's fault, a code in
+    kb/invalid_defect_reasons.yaml (e.g. WEAR_AND_TEAR). Returns {ok, status} (PENDING_REVIEW for INVALID)."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
         _require_status(case, ("VISIT_SCHEDULED", "EXTRA_INSPECTION"), "record a verdict", "This case isn't waiting for an inspection result.")
@@ -1866,21 +2005,44 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
             raise ToolError("Choose Valid or Invalid and add a note.")
         if repair_hours is not None and (verdict != "VALID" or repair_hours not in (2, 4, 8)):
             raise ToolError("The expected repair duration must be 2, 4 or 8 hours, for a valid defect.")
+        if reason_code is not None:
+            from agents.simephony import kb
+            if verdict != "INVALID":
+                raise ToolError("A reason code is only for an Invalid result.")
+            if reason_code not in kb.get()["reasons"]:
+                raise ToolError(f"Unknown reason code {reason_code!r}.")
+        measured = _verdict_measurement_fields(measurement)
         _save_photo(conn, case_id, photo, "verdict")
         _finish(conn, case_id, "visit")
         now = _now(conn)
-        fields = {"inspection_outcome": "VALID_DEFECT" if verdict == "VALID" else "NOT_A_DEFECT", "verdict_note": note.strip(),
+        fields = {**_cleared_verdict(case), **measured,
+                  "inspection_outcome": "VALID_DEFECT" if verdict == "VALID" else "NOT_A_DEFECT", "verdict_note": note.strip(),
                   "verdict_at": now, "inspector_id": case["technician_id"], "status": verdict}
+        if reason_code:
+            fields["verdict_reason_code"] = reason_code
         if verdict == "INVALID":
-            fields["closed_at"] = now
+            fields["status"] = "PENDING_REVIEW"  # the technician's verdict is saved; SDP confirms or overturns it
         if repair_hours is not None:
             fields["repair_hours"] = repair_hours
             fields["repair_estimate_reason"] = TECHNICIAN_ESTIMATE
         _save(conn, case_id, **fields)
-        duration = f"; expected repair about {repair_hours:g} hours" if repair_hours is not None else ""
-        _emit(conn, case_id, "verdict.recorded", f'Technician marked {verdict}: "{note.strip()}"{duration}', verdict=verdict,
-              **({"repair_hours": repair_hours} if repair_hours is not None else {}))
-    return {"ok": True, "status": verdict}
+        details = f"; expected repair about {repair_hours:g} hours" if repair_hours is not None else ""
+        extra = {"repair_hours": repair_hours} if repair_hours is not None else {}
+        reading = verdict_measurement(fields)
+        if reading:
+            shown = ("yes" if reading["reading"] else "no") if reading["unit"] is None else f'{reading["reading"]:g} {reading["unit"]}'
+            details += f'; measured {shown} ({reading["rule_id"]})'
+            extra["measurement"] = reading
+        if reason_code:
+            details += f"; reason {reason_code}"
+            extra["reason_code"] = reason_code
+        _emit(conn, case_id, "verdict.recorded", f'Technician marked {verdict}: "{note.strip()}"{details}', verdict=verdict, **extra)
+        if verdict == "INVALID":
+            tech = _worker(conn, case["technician_id"])
+            _emit(conn, case_id, "case.review_requested",
+                  _invalid_review_message(tech["name"] if tech else "The technician", note.strip(), reason_code, reading),
+                  agent="Technician", confidence_score=None, previous_status="INVALID")
+    return {"ok": True, "status": fields["status"]}
 
 
 @_returns_errors
@@ -1996,7 +2158,8 @@ def record_signoff(case_id: str, party: str = "developer", signed_by: Optional[s
 # where it gets booked again.
 _REVIEW_RESUME = {"SUBMITTED": "SUBMITTED", "INFO_NEEDED": "SUBMITTED", "VISIT_SCHEDULED": "SUBMITTED",
                   "REOPENED": "REOPENED", "EXTRA_INSPECTION": "REOPENED", "ESCALATION_PENDING": "REOPENED",
-                  "VALID": "VALID", "REPAIR_BOOKED": "VALID", "REPAIRED": "REPAIRED"}
+                  "VALID": "VALID", "REPAIR_BOOKED": "VALID", "REPAIRED": "REPAIRED",
+                  "INVALID": "INVALID"}  # a technician's Invalid verdict (record_verdict)
 
 
 def review_request(conn: sqlite3.Connection, case_id: str) -> Optional[dict]:
@@ -2015,11 +2178,14 @@ def review_request(conn: sqlite3.Connection, case_id: str) -> Optional[dict]:
 
 @_returns_errors
 def resolve_review(case_id: str, approve: bool, note: str = "", decided_by: Optional[str] = None) -> dict:
-    """SDP staff decide a case an AI agent held in PENDING_REVIEW (flag_case_for_human_review).
+    """SDP staff decide a case held in PENDING_REVIEW, by an AI agent (flag_case_for_human_review) or by a
+    technician's Invalid verdict (record_verdict).
     Approve -> the case resumes from the held step: a new report goes back to SUBMITTED (to be booked), a reopened
-    case to REOPENED, a held repair check to REPAIRED, a held repair booking to VALID.
+    case to REOPENED, a held repair check to REPAIRED, a held repair booking to VALID, and a technician's Invalid
+    verdict is confirmed (INVALID, closed).
     Reject -> a new report becomes INVALID (closed, not a defect); a reopened case goes back to CLOSED; a held
-    repair goes back to VALID so the repair is redone. Returns {ok, status, previous_status, resume}."""
+    repair goes back to VALID so the repair is redone; a technician's Invalid verdict is overturned (VALID, the
+    repair gets booked). Returns {ok, status, previous_status, resume}."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
         _require_status(case, ("PENDING_REVIEW",), "decide the review", "This case isn't waiting for review.")
@@ -2034,6 +2200,14 @@ def resolve_review(case_id: str, approve: bool, note: str = "", decided_by: Opti
             fields: dict = {"status": status}
             if status == "SUBMITTED":  # the reviewer accepts the report as it is
                 fields.update(follow_up_question=None, missing_info="[]")
+            elif status == "INVALID":  # SDP agrees with the technician: not a defect
+                fields["closed_at"] = now
+        elif resume == "INVALID":  # SDP overturns the technician: it is a defect after all
+            status = "VALID"
+            fields = {"status": status, "inspection_outcome": "VALID_DEFECT",
+                      "verdict_note": note or "Accepted as a defect after SDP review."}
+            if "verdict_reason_code" in case:  # the reason for rejecting no longer applies; the reading is kept
+                fields["verdict_reason_code"] = None
         elif resume == "REOPENED":
             status = "CLOSED"
             fields = {"status": status, "closed_at": now}
@@ -2042,11 +2216,13 @@ def resolve_review(case_id: str, approve: bool, note: str = "", decided_by: Opti
             fields = {"status": status, "repaired_at": None, "repair_note": None}
         else:
             status = "INVALID"
-            fields = {"status": status, "inspection_outcome": "NOT_A_DEFECT", "verdict_at": now, "closed_at": now,
+            fields = {**_cleared_verdict(case), "status": status, "inspection_outcome": "NOT_A_DEFECT", "verdict_at": now, "closed_at": now,
                       "verdict_note": note or "Not accepted as a defect after SDP review."}
         _save(conn, case_id, **fields)
+        what = (("confirmed" if approve else "overturned") + " the technician's Invalid verdict" if previous == "INVALID"
+                else ("approved" if approve else "rejected") + " the held case")
         _emit(conn, case_id, "case.review_approved" if approve else "case.review_rejected",
-              f"{by} {'approved' if approve else 'rejected'} the held case" + (f' — "{note}"' if note else ""),
+              f"{by} {what}" + (f' — "{note}"' if note else ""),
               decided_by=by, previous_status=previous, status=status, held_by=held.get("agent"))
     return {"ok": True, "status": status, "previous_status": previous, "resume": resume}
 

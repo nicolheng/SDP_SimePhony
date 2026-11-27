@@ -57,7 +57,7 @@ export function useRecentActivity(cases: Case[]) {
 /** Vertical progress list, styled after the SDP app's Construction Progress screen. */
 export function CaseProgress({ c }: { c: Case }) {
   const events = useCaseEvents(c.id);
-  const idx = buyerStepIndex(c.status);
+  const idx = buyerStepIndex(c.status === "PENDING_REVIEW" && c.verdict ? "VISIT_SCHEDULED" : c.status);
   const steps = c.status === "INVALID" ? ["Reported", "Inspection visit", "Not a defect — closed"] : BUYER_STEPS;
   const done = c.status === "INVALID" ? 3 : idx;
   const times = stepTimes(c, events);

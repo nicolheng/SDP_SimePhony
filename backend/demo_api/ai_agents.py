@@ -206,7 +206,7 @@ def _photo_path(
         return None
     row = ctx.conn.execute("SELECT path FROM case_photos WHERE case_id = ? AND kind = ? ORDER BY created_at DESC, photo_id DESC",
                            (case_id, kind)).fetchone()
-    path = tools.UPLOADS_DIR / row["path"] if row else None
+    path = db.scoped_dir(tools.UPLOADS_DIR) / row["path"] if row else None
     return str(path) if path and path.is_file() else None
 
 

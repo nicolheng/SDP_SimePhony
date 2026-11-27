@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Simephony poster v14</title>
+<link href="https://fonts.googleapis.com/css2?family=Allura&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  @page { size: 950mm 2350mm; margin: 0; }
+  :root { --bg:#FAF6F1; --ink:#1C1814; --accent:#C64A1F; --muted:#5E554D; --card:#FFFDFA; --line:#E3D7CA;
+          --peach:#FBE3D6; --sand:#E9DCCB; --kraft:#D9C3A5; --blue:#24589E; --blueSoft:#E8EFF8; --orangeSoft:#FBEDE6; --green:#2E7D4F; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { width:950mm; height:2350mm; }
+  body { font-family:'Inter',system-ui,sans-serif; color:var(--ink); -webkit-print-color-adjust:exact; print-color-adjust:exact;
+         background-color:#F3EADF;
+         background-image: radial-gradient(rgba(94,85,77,.16) 0.9mm, transparent 1mm); background-size:12mm 12mm; }
+  .page { width:950mm; height:2350mm; padding:22mm 30mm 22mm; display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; }
+
+  /* shared scrapbook bits */
+  .paper { background:var(--card); position:relative; box-shadow:0 2.5mm 5mm rgba(28,24,20,.16); }
+  .tape { position:absolute; width:62mm; height:16mm; background:rgba(242,185,160,.75); box-shadow:0 .6mm 1mm rgba(28,24,20,.08); z-index:3; }
+  .tape.b { background:rgba(200,216,238,.8); }
+  .tape.s { background:rgba(233,220,203,.9); }
+  .script { font-family:'Allura',cursive; color:var(--accent); line-height:.9; }
+  .cap { font-size:28pt; font-weight:800; letter-spacing:.16em; color:var(--muted); text-transform:uppercase; }
+  .sticker { filter:drop-shadow(1.2mm 0 0 #fff) drop-shadow(-1.2mm 0 0 #fff) drop-shadow(0 1.2mm 0 #fff) drop-shadow(0 -1.2mm 0 #fff) drop-shadow(0 2mm 2.5mm rgba(28,24,20,.25)); }
+  .torn { clip-path: polygon(0 0,100% 0,100% 92%,97% 100%,93% 94%,89% 99%,85% 93%,80% 100%,76% 94%,71% 99%,66% 93%,61% 100%,56% 95%,51% 100%,46% 93%,41% 99%,36% 94%,31% 100%,26% 93%,21% 99%,16% 94%,11% 100%,6% 93%,2% 99%,0 95%); }
+
+  .top { display:flex; justify-content:space-between; align-items:center; }
+  .top .tl { height:30mm; } .top .um { height:28mm; }
+
+  /* hero */
+  .hero { padding:12mm 22mm 20mm; transform:rotate(-.6deg); margin-top:4mm;
+          background: linear-gradient(#FFFDFA,#FFFDFA); }
+  .hero .wm { font-size:150pt; margin-bottom:4mm; }
+  .hero h1 { font-size:128pt; font-weight:900; line-height:1.02; letter-spacing:-.03em; margin-top:5mm; white-space:nowrap; }
+  .hero h1 span { color:var(--accent); display:block; }
+  .hero p { font-size:36pt; line-height:1.35; color:#3B332C; margin-top:6mm; }
+  .hero .fig { position:absolute; right:14mm; top:-10mm; height:110mm; transform:rotate(8deg); }
+
+  .sh { display:flex; align-items:baseline; gap:8mm; }
+  .sh .script { font-size:120pt; }
+  .sh .sub { font-size:44pt; font-weight:800; letter-spacing:-.01em; }
+
+  /* problem */
+  .notes { display:grid; grid-template-columns:repeat(4,1fr); gap:9mm; margin-top:4mm; }
+  .note { padding:8mm 7mm 9mm; box-shadow:0 2.5mm 5mm rgba(28,24,20,.16); position:relative; }
+  .note .n { font-size:96pt; font-weight:900; color:var(--accent); line-height:1; letter-spacing:-.03em; }
+  .note .l { font-size:32pt; line-height:1.22; color:#3B2A20; margin-top:2mm; }
+  .note::before { content:''; position:absolute; left:50%; top:-4mm; width:9mm; height:9mm; border-radius:50%; background:var(--accent); transform:translateX(-50%); box-shadow:0 1mm 1.5mm rgba(0,0,0,.3); }
+  .strips { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:9mm; }
+  .strip { background:var(--ink); color:#F4EAE0; padding:6mm 10mm 10mm; font-size:38pt; font-weight:800; line-height:1.15; }
+  .strip small { display:block; font-size:24pt; letter-spacing:.12em; color:#F6B48F; margin-bottom:2mm; }
+
+  /* solution */
+  .kraft { background:var(--kraft); padding:9mm 12mm 10mm; transform:rotate(.4deg); }
+  .devices { display:grid; grid-template-columns:150mm 1fr 150mm; gap:8mm; margin-top:4mm; align-items:start; }
+  .label { display:inline-block; background:var(--card); padding:2mm 6mm; font-size:30pt; font-weight:800; letter-spacing:.1em; color:var(--accent); transform:rotate(-2deg); box-shadow:0 1mm 2mm rgba(0,0,0,.15); }
+  .dv { text-align:center; }
+  .fr { margin:5mm auto 0; border:3.5mm solid var(--ink); border-radius:11mm; overflow:hidden; background:#fff; box-shadow:0 3mm 6mm rgba(28,24,20,.25); }
+  .phone { width:110mm; height:230mm; } .phone img { width:100%; height:100%; object-fit:cover; object-position:top; display:block; }
+  .console { width:420mm; border-radius:7mm; } .console img { width:100%; display:block; }
+  .dcap { font-size:29pt; line-height:1.25; color:#3B2A20; margin-top:4mm; }
+
+  /* how */
+  .sheet { padding:8mm 10mm 9mm; transform:rotate(-.3deg); }
+  .sheet .wf { width:100%; display:block; margin-top:4mm; }
+  .chips { display:flex; gap:10mm; justify-content:center; margin-top:6mm; }
+  .chips span { font-size:36pt; font-weight:800; padding:4mm 9mm; border-radius:999px; box-shadow:0 1.5mm 3mm rgba(0,0,0,.15); }
+
+  /* innovation */
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:4mm; align-items:start; }
+  .cards { display:grid; grid-template-columns:1fr; gap:8mm; }
+  .idx { padding:5mm 9mm 7mm; background-color:#FFFDFA; background-image:linear-gradient(transparent 21.4mm, #F4B9A0 21.4mm, #F4B9A0 22.2mm, transparent 22.2mm); background-repeat:no-repeat; box-shadow:0 2.5mm 5mm rgba(28,24,20,.16); }
+  .idx .ft { font-size:44pt; font-weight:800; line-height:16mm; height:16mm; white-space:nowrap; }
+  .idx .ft b { color:var(--accent); }
+  .idx .fb { font-size:34pt; line-height:1.25; margin-top:3mm; color:#3B332C; }
+  .tbl { width:100%; border-collapse:separate; border-spacing:0; background:var(--card); font-size:28pt; line-height:1.2; }
+  .tbl th { font-size:22pt; font-weight:800; letter-spacing:.1em; text-align:left; padding:3mm 5mm; background:var(--peach); }
+  .tbl th:first-child { color:var(--accent); } .tbl th:last-child { color:var(--green); }
+  .tbl td { padding:3mm 5mm; color:var(--muted); border-top:1mm solid #F0CDBB; }
+  .tbl td+td, .tbl th+th { border-left:1mm solid #F0CDBB; } .tbl td:last-child { color:var(--ink); font-weight:700; }
+  .polaroid { background:#fff; padding:6mm 6mm 16mm; box-shadow:0 3mm 6mm rgba(28,24,20,.2); position:relative; }
+  .polaroid img.ph { width:100%; display:block; background:#FAF6F1; }
+  .polaroid .pc { position:absolute; left:0; right:0; bottom:3mm; text-align:center; font-family:'Allura',cursive; font-size:56pt; color:var(--accent); line-height:1; }
+
+  /* impact */
+  .impact { display:flex; flex-direction:column; gap:10mm; margin-top:6mm; }
+  .inkpaper { background:var(--ink); color:#F4EAE0; padding:10mm 12mm 16mm; transform:rotate(-.4deg); display:grid; grid-template-columns:repeat(3,1fr); gap:10mm; }
+  .inkpaper .it { font-size:46pt; font-weight:800; color:#F6B48F; line-height:1.1; }
+  .inkpaper .ib { font-size:32pt; line-height:1.25; margin-top:2mm; }
+  .badges { display:grid; grid-template-columns:repeat(4,1fr); gap:4mm; justify-items:center; }
+  .badge { width:186mm; height:186mm; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 16mm; box-shadow:0 2.5mm 5mm rgba(28,24,20,.18); border:3mm dashed rgba(255,255,255,.7); outline:4mm solid; outline-offset:-1mm; }
+  .badge .vn { font-size:64pt; font-weight:900; line-height:1; letter-spacing:-.02em; }
+  .badge .vl { font-size:24pt; line-height:1.2; margin-top:2mm; }
+
+  /* bottom */
+  .bottom { display:grid; grid-template-columns:.9fr 1.1fr; gap:14mm; align-items:start; }
+  .notebook { padding:8mm 10mm 10mm 30mm; background-color:#FFFDFA;
+              background-image: linear-gradient(90deg, transparent 22mm, #F4B9A0 22mm, #F4B9A0 23mm, transparent 23mm), repeating-linear-gradient(transparent 0 11.4mm, #DCE6F2 11.4mm 12mm);
+              background-position:0 0, 0 22mm; box-shadow:0 2.5mm 5mm rgba(28,24,20,.16); transform:rotate(.6deg); }
+  .notebook .script { font-size:80pt; }
+  .notebook li { font-size:30pt; line-height:12mm; list-style:none; }
+  .notebook li b { font-weight:800; }
+  .pols { display:grid; grid-template-columns:repeat(4,1fr); gap:5mm; }
+  .pol { background:#fff; padding:3.5mm 3.5mm 4mm; box-shadow:0 2.5mm 5mm rgba(28,24,20,.2); position:relative; }
+  .pol .ph { width:100%; aspect-ratio:1/1; overflow:hidden; position:relative; background:var(--line); }
+  .pol .ph img { position:absolute; display:block; }
+  .pol .nm { font-size:20pt; font-weight:800; margin-top:3mm; line-height:1.1; text-align:center; }
+  .pol .rl { font-size:18pt; color:var(--muted); text-align:center; }
+  .foot { font-size:21pt; color:#8A7F75; text-align:center; }
+
+  .devices2 { display:grid; grid-template-columns:1fr 1fr; gap:8mm; margin-top:6mm; }
+  .rel { position:relative; }
+  .col { display:flex; flex-direction:column; gap:10mm; }
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:16mm; align-items:start; }
+
+  .page { padding-left:64mm; position:relative; }
+  .thread { position:absolute; left:30.3mm; top:330mm; bottom:240mm; z-index:0; width:3.5mm; background:repeating-linear-gradient(#D98B6A 0 9mm, transparent 9mm 16mm); }
+  .stepn { position:absolute; left:-52mm; top:2mm; width:40mm; height:40mm; border-radius:50%; background:var(--accent); color:#fff; font-size:44pt; font-weight:900; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 3mm #F3EADF, 0 2mm 4mm rgba(0,0,0,.25); z-index:2; }
+  .hero, .top { margin-left:-34mm; }
+  .sh .script { font-size:104pt; }
+  .sh.stack { flex-direction:column; align-items:flex-start; gap:1mm; }
+  .sh.stack .sub { font-size:36pt; }
+  .bento { display:grid; grid-template-columns:repeat(12,1fr); gap:0 12mm; }
+
+  .note { padding:9mm 8mm 11mm; } .note .n { font-size:112pt; } .note .l { font-size:34pt; }
+  .strip { font-size:44pt; padding:8mm 10mm 14mm; } .strip small { font-size:27pt; }
+  .vs { font-family:'Allura',cursive; font-size:92pt; color:var(--accent); text-align:right; line-height:1; margin-top:6mm; }
+
+  .devm { display:flex; justify-content:center; align-items:flex-start; gap:14mm; margin-top:4mm; }
+  .devm .console { width:440mm; }
+  .devm .phone { height:calc(440mm * 545 / 871); width:calc(440mm * 545 / 871 * 278 / 624); }
+  .devm .dv { display:flex; flex-direction:column; align-items:center; }
+  .devm .dv .dcap { max-width:440mm; font-size:30pt; }
+  .devm .dv:not(:nth-child(2)) .dcap { max-width:150mm; }
+
+  .idx { background-image:none; border-top:3mm solid #F4B9A0; padding:5mm 8mm 7mm; }
+  .idx .ft { font-size:37pt; white-space:normal; height:auto; line-height:1.1; } .idx .fb { font-size:31pt; }
+  .tbl { font-size:29pt; } .tbl td { padding:4.5mm 5mm; }
+  .inkpaper { padding:10mm 12mm 18mm; } .inkpaper .it { font-size:42pt; } .inkpaper .ib { font-size:31pt; margin-bottom:5mm; }
+  .badge { padding:0 8mm; border-width:2mm; outline-width:3mm; } .badge .vn { font-size:52pt; } .badge .vl { font-size:21pt; }
+  .polaroid .pc { font-size:44pt; } .polaroid { padding:5mm 5mm 14mm; }
+
+  .listen { display:grid; grid-template-columns:1fr 1fr 1.05fr; gap:14mm; margin-top:5mm; align-items:start; }
+  .tq { display:flex; flex-direction:column; gap:6mm; }
+  .tpol { width:200mm; padding:4mm 4mm 12mm; }
+  .tqt { padding-left:4mm; }
+  .qq { font-family:'Allura',cursive; font-size:62pt; line-height:1.05; color:var(--ink); }
+  .qn { font-size:28pt; font-weight:800; margin-top:3mm; } .qr { font-size:25pt; color:var(--muted); }
+  .changed { padding:12mm 11mm 12mm; }
+  .changed .cl { font-size:28pt; font-weight:800; letter-spacing:.14em; color:var(--accent); margin-bottom:5mm; }
+  .ch { display:flex; gap:5mm; align-items:flex-start; font-size:30pt; line-height:1.25; margin-top:5mm; color:#3B332C; }
+  .ch b { color:var(--ink); }
+  .ch .ok, .ch .nx { flex-shrink:0; width:14mm; height:14mm; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:28pt; }
+  .ch .ok { background:var(--green); color:#fff; } .ch .nx { border:1mm dashed #B7791F; color:#B7791F; background:#FBF1DD; }
+
+  .road { position:relative; display:grid; grid-template-columns:repeat(5,1fr); gap:8mm; margin-top:8mm; }
+  .roadline { position:absolute; left:0; right:0; top:4mm; width:100%; height:14mm; z-index:0; }
+  .stop { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; }
+  .pin { width:22mm; height:22mm; border-radius:50%; background:#FFFDFA; border:1.5mm solid #D98B6A; color:#D98B6A; font-size:30pt; font-weight:900; display:flex; align-items:center; justify-content:center; }
+  .pin.on { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 0 0 3mm rgba(198,74,31,.2); }
+  .snote { background:#FFFDFA; box-shadow:0 2.5mm 5mm rgba(28,24,20,.16); padding:6mm 6mm 7mm; margin-top:6mm; width:100%; }
+  .sn { font-size:34pt; font-weight:800; line-height:1.1; }
+  .sw { font-size:25pt; font-weight:700; color:var(--accent); margin-top:1mm; display:flex; flex-wrap:wrap; gap:2mm; align-items:center; }
+  .here { font-size:16pt; font-weight:800; letter-spacing:.1em; color:#fff; background:var(--accent); padding:1mm 3mm; border-radius:1.5mm; }
+  .sb { font-size:25pt; line-height:1.25; color:#3B332C; margin-top:2mm; }
+  .sc { font-size:23pt; font-weight:700; color:var(--blue); margin-top:2mm; }
+  .engine { background:var(--peach); padding:5mm 9mm; margin-top:9mm; font-size:30pt; line-height:1.3; transform:rotate(-.4deg); box-shadow:0 2mm 4mm rgba(28,24,20,.12); }
+
+  .teamrow { display:grid; grid-template-columns:auto 1fr; gap:14mm; align-items:center; }
+  .pols .nm, .pol .nm { font-size:26pt; } .pols .rl, .pol .rl { font-size:23pt; }
+
+  .listen2 { display:grid; grid-template-columns:1.9fr 1fr; gap:14mm; margin-top:5mm; align-items:center; }
+  .quotes { display:grid; grid-template-columns:1fr 1fr; gap:12mm; }
+  .tq2 { display:grid; grid-template-columns:104mm 1fr; gap:7mm; align-items:center; }
+  .tq2 .tpol { width:104mm; padding:3.5mm 3.5mm 10mm; }
+  .tq2 .qq { font-family:'Allura',cursive; font-size:48pt; line-height:1.05; }
+  .tq2 .qn { font-size:25pt; font-weight:800; margin-top:3mm; } .tq2 .qr { font-size:22pt; color:var(--muted); }
+
+  .vgrid { display:grid; grid-template-columns:1fr 1.1fr .8fr; gap:12mm; margin-top:5mm; align-items:stretch; }
+  .vcard { padding:9mm 9mm 9mm; }
+  .vh { font-size:36pt; font-weight:900; margin-bottom:4mm; }
+  .am { display:grid; grid-template-columns:auto 1fr; gap:5mm; align-items:baseline; margin-top:4mm; }
+  .amv { font-size:56pt; font-weight:900; color:var(--accent); letter-spacing:-.02em; line-height:1; white-space:nowrap; }
+  .aml { font-size:27pt; font-weight:700; line-height:1.15; }
+  .aml span { font-weight:400; font-size:22pt; color:var(--muted); }
+  .shd { display:flex; justify-content:space-between; font-size:27pt; font-weight:800; border-bottom:1mm solid; padding-bottom:1.5mm; margin-top:2mm; }
+  .sr { display:flex; align-items:center; gap:4mm; font-size:27pt; font-weight:700; margin-top:3.5mm; }
+  .sr b { width:11mm; height:11mm; border-radius:2.5mm; color:#fff; font-size:22pt; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .sr i { margin-left:auto; font-style:normal; font-weight:900; font-size:32pt; }
+  .sr.up { color:var(--muted); font-weight:500; font-size:24pt; border:1mm dashed #CDBFB0; padding:2mm 3mm; margin-top:5mm; }
+  .vtot { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7mm; }
+  .bigbadge { width:236mm; max-width:100%; aspect-ratio:1/1; border-radius:50%; background:var(--accent); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+              border:3mm dashed rgba(255,255,255,.65); outline:5mm solid var(--accent); outline-offset:-1mm; transform:rotate(-5deg); box-shadow:0 3mm 6mm rgba(28,24,20,.25); }
+  .bl { font-size:24pt; font-weight:700; letter-spacing:.06em; }
+  .bv { font-size:84pt; font-weight:900; line-height:1; letter-spacing:-.02em; margin:2mm 0; }
+  .bs { font-size:22pt; line-height:1.2; }
+  .assume { font-size:21pt; line-height:1.3; color:var(--muted); text-align:center; }
+  .cycle { display:flex; flex-wrap:nowrap; align-items:center; gap:4mm; margin-top:8mm; }
+  .cyl { font-family:'Allura',cursive; font-size:54pt; color:var(--accent); line-height:1; margin-right:3mm; white-space:nowrap; }
+  .cy { background:rgba(242,185,160,.75); padding:3mm 5mm; font-size:24pt; font-weight:700; line-height:1.15; display:flex; gap:3mm; align-items:center; box-shadow:0 1mm 2mm rgba(0,0,0,.08); }
+  .cy b { width:9mm; height:9mm; border-radius:50%; background:var(--accent); color:#fff; font-size:19pt; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .cyarrow { font-size:30pt; color:var(--accent); font-weight:900; }
+
+  .devm .console { width:385mm; }
+  .devm .phone { height:calc(385mm * 545 / 871); width:calc(385mm * 545 / 871 * 278 / 624); }
+  .teamrow .pols { grid-template-columns:repeat(4,118mm) !important; justify-content:space-between; }
+  .bigbadge { width:168mm; } .bv { font-size:66pt; } .bl { font-size:21pt; } .bs { font-size:20pt; }
+  .cycard { display:flex; flex-direction:column; gap:4mm; justify-content:center; }
+  .cycard .cyl { font-family:'Allura',cursive; font-size:56pt; color:var(--accent); line-height:1; margin-bottom:2mm; white-space:normal; }
+  .cycard .cy { font-size:26pt; }
+  .cyloop { font-size:24pt; font-weight:800; color:var(--accent); margin-top:1mm; }
+  .sh .script { font-size:92pt; }
+  .note .n { font-size:98pt; } .note { padding:7mm 8mm 9mm; }
+  .devm .console { width:355mm; }
+  .devm .phone { height:calc(355mm * 545 / 871); width:calc(355mm * 545 / 871 * 278 / 624); }
+  .vtot { margin-top:4mm; }
+  .thread { bottom:250mm; }
+
+  .top .tl { height:50mm; } .top .um { height:40mm; }
+  .tq2 .qq { font-family:'Inter',system-ui,sans-serif; font-style:italic; font-weight:600; font-size:30pt; line-height:1.3; color:var(--ink); }
+  .tq2 .qq::before { content:''; }
+  .cycard2 { background:#FFFDFA; box-shadow:0 2.5mm 5mm rgba(28,24,20,.16); padding:8mm 9mm; display:flex; flex-direction:column; justify-content:center; transform:rotate(-.5deg); }
+  .cyh { font-size:30pt; font-weight:900; line-height:1.15; margin-bottom:5mm; }
+  .cline { position:relative; display:flex; flex-direction:column; gap:4mm; }
+  .cline::before { content:''; position:absolute; left:6mm; top:6mm; bottom:6mm; width:1.2mm; background:#F0B49A; }
+  .cs { position:relative; display:flex; gap:5mm; align-items:center; font-size:27pt; font-weight:700; line-height:1.2; }
+  .cs b { width:13mm; height:13mm; border-radius:50%; background:var(--accent); color:#fff; font-size:21pt; display:flex; align-items:center; justify-content:center; flex-shrink:0; z-index:1; box-shadow:0 0 0 1.5mm #FFFDFA; }
+  .cycard2 .cyloop { font-size:24pt; font-weight:800; color:var(--accent); margin-top:4mm; padding-left:1mm; }
+</style>
+</head>
+<body>
+<div class="page">
+<div class="top"><img class="tl" src="assets/team-logo-oneline.svg" alt="Group We Hit The Token Limit"><img class="um" src="assets/um-logo.png" alt="Universiti Malaya"></div>
+<div class="paper hero torn"><div class="tape" style="left:40mm; top:-6mm; transform:rotate(-4deg)"></div>
+<div class="script wm">Simephony</div><div class="cap" style="color:var(--accent)">People Challenge</div>
+<h1>Don’t just close the defect.<span>Prove the root cause is fixed.</span></h1>
+<p>Simephony is an <b>agentic resolution layer</b> that verifies every repair and spots recurring defects early, connecting buyers, Sime Darby Property and contractors through <b>one trusted record</b>.</p><img class="fig sticker" src="assets/deco-solution.svg" alt=""></div>
+<div class="thread"></div>
+
+<div class="rel"><div class="stepn">1</div>
+  <div class="bento">
+    <div class="rel" style="grid-column:1 / span 7"><div class="sh stack"><div class="script">The problem</div><div class="sub">Defects get closed, not resolved.</div></div>
+      <div style="margin-top:5mm"><div class="notes" style="grid-template-columns:repeat(2,1fr)"><div class="note" style="background:#FBE3D6;transform:rotate(-2deg)"><div class="n">95%</div><div class="l">of homebuyers had problems with how complaints were handled</div></div><div class="note" style="background:#F6EBD0;transform:rotate(1.5deg)"><div class="n">70%</div><div class="l">faced the same defect more than once</div></div><div class="note" style="background:#E8EFF8;transform:rotate(-1deg)"><div class="n">50%</div><div class="l">were unhappy with the response and speed</div></div><div class="note" style="background:#F2D4C2;transform:rotate(2deg)"><div class="n">1 in 2</div><div class="l">were never asked to sign off a repair</div></div></div></div><img class="sticker" src="assets/deco-problem.svg" alt="" style="position:absolute; right:0; top:0; height:62mm; transform:rotate(-8deg)"></div>
+    <div class="col" style="grid-column:8 / span 5; justify-content:flex-end"><div class="strips" style="grid-template-columns:repeat(1,1fr)">
+<div class="strip torn" style="transform:rotate(-.8deg)"><small>THE BUYER’S JOURNEY</small>Actually fixed? Nobody checks.</div>
+<div class="strip torn" style="transform:rotate(.8deg)"><small>THE DEVELOPER’S BLINDSPOT</small>Recurring defects? Nobody noticed.</div></div><div class="vs">…so we built Simephony ↓</div></div>
+  </div></div>
+
+<div class="rel"><div class="stepn">2</div><div class="sh "><div class="script">The solution</div><div class="sub">From complaint → resolution → <span style='color:var(--accent)'>proof</span></div></div>
+  <img class="sticker" src="assets/deco-solution.svg" alt="" style="position:absolute; right:0; top:-14mm; height:62mm; transform:rotate(6deg)"><div style="margin-top:4mm"><div class="kraft paper" style="background:var(--kraft)"><div class="tape s" style="right:60mm; top:-7mm; transform:rotate(5deg)"></div><div class="devm"><div class="dv"><span class="label">BUYER</span><div class="fr phone"><img src="assets/app-buyer.png" alt=""></div><div class="dcap">Track repairs, verify fixes, stay informed.</div></div><div class="dv"><span class="label">SDP CONSOLE</span><div class="fr console"><img src="assets/app-sdp-console.png" alt=""></div><div class="dcap">Monitor cases, approvals and recurring defects with explainable AI.</div></div><div class="dv"><span class="label">TECHNICIAN</span><div class="fr phone"><img src="assets/app-technician.png" alt=""></div><div class="dcap">Review unit history before arrival.</div></div></div></div></div></div>
+
+<div class="rel"><div class="stepn">3</div><div class="sh "><div class="script">How it works</div><div class="sub">One defect, four stages, one trusted record</div></div>
+  <img class="sticker" src="assets/deco-how.svg" alt="" style="position:absolute; right:0; top:-16mm; height:62mm; transform:rotate(6deg)"><div style="margin-top:4mm"><div class="paper sheet"><div class="tape" style="left:-12mm; top:6mm; transform:rotate(-40deg)"></div><div class="tape b" style="right:-12mm; top:6mm; transform:rotate(40deg)"></div>
+<img class="wf" src="assets/agent-workflow-people-ai.svg" alt="Simephony workflow">
+<div class="chips"><span style="background:var(--blueSoft);color:var(--blue);transform:rotate(-2deg)">AI recommends.</span><span style="background:var(--orangeSoft);color:#A63A14;transform:rotate(1.5deg)">Humans decide.</span><span style="background:#ECE8E3;transform:rotate(-1deg)">The system records.</span></div></div></div></div>
+
+<div class="rel"><div class="stepn">4</div>
+  <div class="bento">
+    <div class="col rel" style="grid-column:1 / span 4"><div class="sh stack"><div class="script">Innovation</div><div class="sub">What tickets can’t do</div></div><div class="cards" style="grid-template-columns:repeat(1,1fr)"><div class="idx" style="transform:rotate(-1deg)"><div class="ft"><b>01</b> Similar-Defect Linking</div><div class="fb">Links related defects across units, stacks and contractors to spot systemic issues.</div></div><div class="idx" style="transform:rotate(1deg)"><div class="ft"><b>02</b> Recurrence Detection</div><div class="fb">Auto-escalates when recurring defects or affected units hit set thresholds.</div></div><div class="idx" style="transform:rotate(0.8deg)"><div class="ft"><b>03</b> Human-in-the-Loop</div><div class="fb">AI investigates and recommends. Humans approve verdicts, sign-offs and escalations.</div></div><div class="idx" style="transform:rotate(-1.2deg)"><div class="ft"><b>04</b> Evidence &amp; Guardrails</div><div class="fb">Traceable records, duplicate repair-photo detection, restricted unsafe AI replies.</div></div></div>
+      <img class="sticker" src="assets/deco-innov.svg" alt="" style="position:absolute; right:0; top:-8mm; height:50mm; transform:rotate(-10deg)"></div>
+    <div class="col rel" style="grid-column:5 / span 4"><div class="sh stack"><div class="script">Compare</div><div class="sub">Normal vs Simephony</div></div><div class="paper" style="transform:rotate(0.5deg)"><div class="tape b" style="right:-16mm; top:-8mm; transform:rotate(28deg); width:46mm"></div>
+<table class="tbl"><thead><tr><th>NORMAL SYSTEM</th><th>SIMEPHONY</th></tr></thead><tbody>
+<tr><td>3rd complaint = new ticket</td><td>3rd occurrence = auto-escalation</td></tr>
+<tr><td>Marked repaired = closed</td><td>Failed verification = reopens</td></tr>
+<tr><td>30 days to find a pattern</td><td>&lt; 24 h to flag a systemic issue</td></tr>
+<tr><td>Separate reports</td><td>Connected defect patterns</td></tr></tbody></table></div><div class="polaroid" style="transform:rotate(-1.2deg)"><div class="tape" style="right:16mm; top:-7mm; transform:rotate(6deg)"></div>
+<img class="ph" src="assets/stack-section.svg" alt="Block A section view"><div class="pc">5 tickets → 1 pattern</div></div></div>
+    <div class="col rel" style="grid-column:9 / span 4"><div class="sh stack"><div class="script">Impact</div><div class="sub">Closed ≠ resolved</div></div><div class="inkpaper torn" style="grid-template-columns:repeat(1,1fr); transform:rotate(-0.6deg)"><div><div class="it">Verify actual resolution</div><div class="ib">AI compares repair and original photos. Closes only after SDP and buyer sign off.</div></div><div><div class="it">Connect the pattern</div><div class="ib">A returning defect is a recurrence, not a new ticket.</div></div><div><div class="it">Escalate early</div><div class="ib">Systemic risks go to SDP for approval before extra inspection.</div></div></div><div class="vtot"><div class="bigbadge"><div class="bl">Counted Year-5 value</div><div class="bv">RM1.16m</div><div class="bs">≈ 3.9× the RM0.3m<br>a year it costs to run</div></div>
+</div>
+      <img class="sticker" src="assets/deco-impact.svg" alt="" style="position:absolute; right:0; top:-8mm; height:48mm; transform:rotate(8deg)"></div>
+  </div></div>
+
+<div class="rel"><div class="stepn">5</div><div class="sh "><div class="script">Value</div><div class="sub">Save first, then earn</div></div><div class="vgrid"><div class="paper vcard" style="transform:rotate(-.8deg)"><div class="tape" style="left:30%; top:-7mm; transform:rotate(-4deg)"></div>
+<div class="vh">Less admin, more judgement</div>
+<div class="am"><div class="amv">100×+</div><div class="aml">lower cost per case<br><span>AI first pass ≈ RM0.06–0.08 vs RM13–27 of manual admin</span></div></div>
+<div class="am"><div class="amv">Minutes</div><div class="aml">not 45–60 min of admin per case<br><span>drafts ready for your team to approve</span></div></div>
+<div class="am"><div class="amv">375–500 h</div><div class="aml">freed every month<br><span>at 500 cases a month (illustrative)</span></div></div></div><div class="paper vcard" style="transform:rotate(.6deg)"><div class="tape b" style="right:20mm; top:-7mm; transform:rotate(5deg)"></div>
+<div class="vh">Save first, then earn</div>
+<div class="shd" style="color:var(--accent); border-color:var(--accent)">Saves during the DLP <span>RM0.93m</span></div>
+<div class="sr"><b style="background:#9A3317">A</b>Fewer repeat visits<i style="color:#9A3317">RM669k</i></div>
+<div class="sr"><b style="background:#D45B2C">B</b>Lower dispute risk<i style="color:#D45B2C">RM133k</i></div>
+<div class="sr"><b style="background:#E9A060">C</b>Contractor back-charges<i style="color:#C07A2C">RM126k</i></div>
+<div class="shd" style="color:var(--blue); border-color:var(--blue); margin-top:5mm">Earns after the DLP <span>RM0.24m</span></div>
+<div class="sr"><b style="background:var(--blue)">D</b>Strata subscriptions<i style="color:var(--blue)">RM236k</i></div>
+<div class="sr up"><b style="background:#8A7F75">E</b>Licences (upside, not counted)<i style="color:#8A7F75">RM700k</i></div>
+<div class="assume" style="text-align:left; margin-top:4mm">Base case: ~3,000 handovers/yr · RM350 per repair visit · build RM500k, run RM300k/yr</div></div><div class="cycard2"><div class="cyh">One handover, earning every year after</div><div class="cline"><div class="cs"><b>1</b><span>Handover</span></div><div class="cs"><b>2</b><span>Verify repairs in the 24-month DLP</span></div><div class="cs"><b>3</b><span>Build trust &amp; data</span></div><div class="cs"><b>4</b><span>Paid plans after the DLP</span></div><div class="cs"><b>5</b><span>Better next phase</span></div></div><div class="cyloop">↺ then the loop repeats</div></div></div></div>
+
+<div class="rel"><div class="stepn">6</div><div class="sh "><div class="script">We listened</div><div class="sub">Real homeowners shaped what we built</div></div><div class="listen2"><div class="quotes"><div class="tq2"><div class="pol tpol" style="transform:rotate(-3deg)"><div class="ph"><img src="assets/testimonial-kimberly.jpg" style="width:100%;height:100%;object-fit:cover;object-position:50% 62%;left:0;top:0"></div></div>
+<div><div class="qq">“Buyers may not need to book repair slots. Contractors usually handle repairs.”</div><div class="qn">Kimberly Anne Surin, 27</div><div class="qr">Interior designer</div></div></div>
+<div class="tq2"><div class="pol tpol" style="transform:rotate(2.5deg)"><div class="ph"><img src="assets/testimonial-lim.jpg" style="width:100%;height:100%;object-fit:cover;object-position:58% 40%;left:0;top:0"></div></div>
+<div><div class="qq">“Give one overall sign-off. One unit may have 20–30 defects.”</div><div class="qn">Lim Yap Cheong, 57</div><div class="qr">House owner, Taman Prestij III</div></div></div></div><div class="paper changed" style="transform:rotate(.8deg)"><div class="tape b" style="left:40%; top:-7mm; transform:rotate(-3deg)"></div>
+<div class="cl">WHAT WE CHANGED</div>
+<div class="ch"><span class="ok">✓</span><div><b>No more booking by the buyer</b><br>Visits auto-book the first free technician.</div></div>
+<div class="ch"><span class="ok">✓</span><div><b>One sign-off per unit</b><br>Buyer verifies each defect, then signs once.</div></div>
+</div></div></div>
+
+<div class="rel"><div class="stepn">7</div><div class="sh "><div class="script">Roadmap</div><div class="sub">Prove on one phase, then scale across townships</div></div><div class="road"><svg class="roadline" viewBox="0 0 1000 40" preserveAspectRatio="none"><path d="M 20 20 C 120 0, 180 40, 280 20 S 460 0, 560 20 S 740 40, 840 20 S 960 10, 990 20" fill="none" stroke="#D98B6A" stroke-width="5" stroke-dasharray="14 10"/></svg><div class="stop"><div class="pin on">0</div><div class="snote" style="transform:rotate(-1.5deg)">
+<div class="sn">Prototype</div><div class="sw">Now<span class="here">WE ARE HERE</span></div><div class="sb">End-to-end multi-agent system, 4 live defect scenarios</div><div class="sc">✓ 750+ tests passing</div></div></div><div class="stop"><div class="pin">1</div><div class="snote" style="transform:rotate(1.2deg)">
+<div class="sn">Shadow pilot</div><div class="sw">Months 1–3</div><div class="sb">Runs silently beside the CCC on one handover phase</div><div class="sc">✓ Target &gt; 90% staff alignment</div></div></div><div class="stop"><div class="pin">2</div><div class="snote" style="transform:rotate(-1deg)">
+<div class="sn">Live pilot</div><div class="sw">Months 4–6</div><div class="sb">Waterproofing, leaks and electrical, live booking + verification</div><div class="sc">✓ Measure repeats &amp; reopens</div></div></div><div class="stop"><div class="pin">3</div><div class="snote" style="transform:rotate(1.4deg)">
+<div class="sn">Township scale</div><div class="sw">Months 6–12</div><div class="sb">Multi-township rollout with CCC and Procore, all trades</div><div class="sc">✓ Contractor benchmarking</div></div></div><div class="stop"><div class="pin">4</div><div class="snote" style="transform:rotate(-1.2deg)">
+<div class="sn">Portfolio</div><div class="sw">Year 2+</div><div class="sb">SDP’s asset portfolio (malls, KL East, industrial) after the DLP</div><div class="sc">✓ Recurring-income workflows</div></div></div></div>
+<div class="engine">One engine, many developments: <b>configurable rules.yaml</b> for categories and thresholds, <b>modular agents</b> for new trades and integrations.</div></div>
+
+<div class="teamrow"><div class="script" style="font-size:96pt">Meet<br>the team</div><div class="pols" style="grid-template-columns:repeat(4,1fr)"><div class="pol" style="transform:rotate(-3deg)"><div class="ph"><img src="assets/team-phoebe.jpg" style="width:190%;left:-48.8%;top:-11.9%"></div><div class="nm">Phoebe Angelina Surin</div><div class="rl">Team Leader · Frontend</div></div><div class="pol" style="transform:rotate(2deg)"><div class="ph"><img src="assets/team-nicol.jpg" style="width:164%;left:-40.2%;top:-46.4%"></div><div class="nm">Nicol Heng Si Yi</div><div class="rl">AI Developer</div></div><div class="pol" style="transform:rotate(-1.5deg)"><div class="ph"><img src="assets/team-synyee.jpg" style="width:150%;left:-28%;top:-6.25%"></div><div class="nm">Tan Syn Yee</div><div class="rl">AI Developer</div></div><div class="pol" style="transform:rotate(3deg)"><div class="ph"><img src="assets/team-xiaowen.jpg" style="width:225%;left:-62.5%;top:-7.4%"></div><div class="nm">Lim Xiao Wen</div><div class="rl">Backend Developer</div></div></div></div>
+<div class="foot">Sources: Yusof et al. (2025), Journal of Engineering, Design and Technology (104 Malaysian homebuyers); HBA via iProperty Malaysia, 2021.</div>
+</div>
+</body>
+</html>

@@ -166,7 +166,13 @@ export interface Case {
   similar: SimilarRef[];
   missingInfo: string[];
   followUpQuestion?: string;
-  verdict?: { outcome: "VALID" | "INVALID"; note: string; at: string };
+  verdict?: {
+    outcome: "VALID" | "INVALID";
+    note: string;
+    at: string;
+    measurement?: { ruleId: string; reading: number | boolean; unit: string | null } | null;
+    reasonCode?: string | null;
+  };
   repairNote?: string;
   /** VerificationAgent's check of the repair photo, for SDP's developer sign-off (null when the AI did not run). */
   photoCheck?: PhotoCheck | null;
@@ -176,7 +182,18 @@ export interface Case {
   verification?: { result: "FIXED" | "NOT_FIXED" | "CANNOT_VERIFY"; note: string; at: string };
   signoff?: { buyer?: { at: string; note: string }; developer?: { at: string; by: string } };
   /** Why an AI agent held the case for a person to check (PENDING_REVIEW only). */
-  review?: { agent: string; reason: string; confidence: number | null; previousStatus: string; at: string | null };
+  review?: {
+    agent: string;
+    reason: string;
+    confidence: number | null;
+    previousStatus: string;
+    at: string | null;
+    /** POSSIBLE_LATENT_DEFECT: reported after the DLP and recurs an earlier repaired case (same category and room). */
+    reasonCode?: "POSSIBLE_LATENT_DEFECT";
+    /** The earlier repaired case it recurs (null for reports held before this was recorded). */
+    earlierCaseId?: string | null;
+    earlierRepairedAt?: string | null;
+  };
   /** The 30-day repair clock: from the buyer's notice (report or latest reopen) to the repair. */
   repairClock?: { noticeAt: string; dueAt: string; doneAt: string | null };
   /** Buyer's satisfaction rating (1-5), asked after they sign off. */
