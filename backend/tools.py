@@ -1719,25 +1719,31 @@ def _room_label(unit_id: str, value: Optional[str]) -> Optional[str]:
     return matches[0].casefold() if len(matches) == 1 else None
 
 
-def _has_repaired_recurrence(conn: sqlite3.Connection, unit_id: str, category: Optional[str],
-                             room: Optional[str]) -> bool:
+LATENT_DEFECT_REVIEW = "POSSIBLE_LATENT_DEFECT"
+
+
+def _repaired_recurrence(conn: sqlite3.Connection, unit_id: str, category: Optional[str],
+                             room: Optional[str]) -> Optional[dict]:
+    """The most recent repaired case in this unit with the same category and room, or None.
+    Returns {case_id, repaired_at}: the earlier repair a post-DLP report recurs (#141, #144)."""
     if not category or not room:
-        return False
+        return None
     requested_category = category.strip().casefold()
     requested_room = _room_label(unit_id, room)
     if not requested_category or not requested_room:
-        return False
+        return None
 
     previous = conn.execute(
-        """SELECT category, pin_room, location_in_unit FROM cases
-           WHERE unit_id = ? AND status IN ('REPAIRED', 'CLOSED', 'FIXED')""",
+        """SELECT case_id, category, pin_room, location_in_unit, repaired_at, closed_at FROM cases
+           WHERE unit_id = ? AND status IN ('REPAIRED', 'CLOSED', 'FIXED')
+           ORDER BY COALESCE(repaired_at, closed_at, created_at) DESC, case_id DESC""",
         (unit_id,),
     ).fetchall()
-    return any(
-        (case["category"] or "").strip().casefold() == requested_category
-        and _room_label(unit_id, case["pin_room"] or case["location_in_unit"]) == requested_room
-        for case in previous
-    )
+    for case in previous:
+        if ((case["category"] or "").strip().casefold() == requested_category
+                and _room_label(unit_id, case["pin_room"] or case["location_in_unit"]) == requested_room):
+            return {"case_id": case["case_id"], "repaired_at": case["repaired_at"] or case["closed_at"]}
+    return None
 
 
 @_returns_errors
@@ -1758,8 +1764,8 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
 
         dlp = dlp_status(dict(unit), _now(conn))
         report_room = room or (pin.get("room") if pin else None)
-        is_post_dlp_recurrence = dlp["status"] == "after"
-        if is_post_dlp_recurrence and not _has_repaired_recurrence(conn, unit_id, category, report_room):
+        earlier = _repaired_recurrence(conn, unit_id, category, report_room) if dlp["status"] == "after" else None
+        if dlp["status"] == "after" and not earlier:
             # Keep the response code aligned with kb/invalid_defect_reasons.yaml.
             # RM4.8M latent-defect liability: only allow a documented same-category, same-room recurrence.
             raise ToolError(
@@ -1768,6 +1774,7 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
                 "repaired issue can be reported; brand-new issues must be referred to the developer directly."
             )
         # Issue #142: an accepted post-DLP recurrence requires SDP review before any visit is booked.
+        is_post_dlp_recurrence = earlier is not None
         case_status = "PENDING_REVIEW" if is_post_dlp_recurrence else "SUBMITTED"
         preferred = norm(preferred_slot) if preferred_slot else None
         case_id = _next_id(conn, "cases", "case_id", "C", 4)
@@ -1786,7 +1793,10 @@ def create_case(unit_id: str, buyer_id: str, description: str, preferred_slot: O
             _emit(
                 conn, case_id, "case.review_requested",
                 "Post-DLP recurrence detected. Flagged for SDP review to determine developer liability for latent defect.",
-                agent="create_case", confidence_score=1.0, previous_status="SUBMITTED"
+                agent="create_case", confidence_score=1.0, previous_status="SUBMITTED",
+                # Issue #144: the SDP review list shows the reason and links the earlier repair.
+                reason_code=LATENT_DEFECT_REVIEW, earlier_case_id=earlier["case_id"],
+                earlier_repaired_at=earlier["repaired_at"],
             )
     return {"ok": True, "case_id": case_id, "status": case_status, "preferred_visit_at": preferred, "photo": saved}
 

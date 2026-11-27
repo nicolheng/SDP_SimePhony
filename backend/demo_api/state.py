@@ -209,6 +209,10 @@ def build_state(ctx: Ctx, base_url: str) -> dict:
             c["review"] = {"agent": held.get("agent") or "AI agent", "reason": held.get("message") or "An AI agent was unsure and asked a person to check.",
                            "confidence": score if isinstance(score, (int, float)) else None,
                            "previousStatus": held.get("previous_status") or "SUBMITTED", "at": norm(held.get("at"))}
+            if held.get("reason_code") == tools.LATENT_DEFECT_REVIEW or (
+                    held.get("agent") == "create_case" and str(held.get("message") or "").startswith("Post-DLP")):
+                c["review"].update(reasonCode=tools.LATENT_DEFECT_REVIEW, earlierCaseId=held.get("earlier_case_id"),
+                                   earlierRepairedAt=norm(held.get("earlier_repaired_at")))
         if cid in briefs:
             b = _json(briefs[cid]["brief"], None)
             if isinstance(b, dict):
