@@ -51,7 +51,8 @@ SUBCONTRACTORS = [
 
 # Demo vacant possession per block (filled into units.vp_date by migrate.py). Block C's DLP ends soon after the
 # demo date and block B's within months, so the SDP overview shows each DLP state.
-DEMO_VP_DATES = {"A": "2025-04-01", "B": "2025-01-15", "C": "2024-11-20"}
+# Match data/seed.db, whose dates were moved 30 days forward for the 29 Nov recording (seed/shift_seed_dates.py).
+DEMO_VP_DATES = {"A": "2025-05-01", "B": "2025-02-14", "C": "2024-12-20"}
 
 
 def skills_for(category: str) -> list[str]:

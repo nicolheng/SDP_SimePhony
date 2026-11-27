@@ -100,12 +100,12 @@ def test_statutory_clocks(client):
     state = client.get("/api/state").json()["state"]
     s = state["analytics"]["statutory"]
     assert s["dlpMonths"] == 24 and s["repairDays"] == 30
-    assert {b["block"]: b["dlpExpiry"] for b in s["dlp"]} == {"A": "2027-04-01", "B": "2027-01-15", "C": "2026-11-20"}
+    assert {b["block"]: b["dlpExpiry"] for b in s["dlp"]} == {"A": "2027-05-01", "B": "2027-02-14", "C": "2026-12-20"}
     assert 0 <= s["onTimeRate"] <= 1
     c = _case(state, "C-0013")
     assert c["repairClock"]["noticeAt"] == c["createdAt"]
     unit = next(u for u in state["reference"]["units"] if u["id"] == "C-1-01")
-    assert unit["vpDate"] == "2024-11-20" and unit["dlpExpiry"] == "2026-11-20"
+    assert unit["vpDate"] == "2024-12-20" and unit["dlpExpiry"] == "2026-12-20"
 
 
 def test_no_new_reports_after_the_dlp_ends(client):
@@ -192,6 +192,6 @@ def test_dlp_block_row_is_worked_out_from_its_units(client):
         conn.execute("UPDATE units SET vp_date = '2020-01-01' WHERE unit_id = 'C-1-01'")
     dlp = {b["block"]: b for b in client.get("/api/state").json()["state"]["analytics"]["statutory"]["dlp"]}
     a, c = dlp["A"], dlp["C"]
-    assert (a["vpDate"], a["vpDateLast"], a["dlpExpiryLast"]) == ("2025-04-01", "2025-09-01", "2027-09-01")
+    assert (a["vpDate"], a["vpDateLast"], a["dlpExpiryLast"]) == ("2025-05-01", "2025-09-01", "2027-09-01")
     assert a["active"] == a["units"] == 150
     assert c["vpDate"] == "2020-01-01" and c["state"] == "expired" and c["expired"] == 1 and c["expired"] + c["expiring"] == 150
