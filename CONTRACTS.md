@@ -146,6 +146,15 @@ and `repair_hours`:
 - Shown on the case: `/api/state` → `verdict.measurement` (`{ruleId, reading, unit}` or `null`) and
   `verdict.reasonCode`; `get_case` → `verdict_measurement` (`{rule_id, reading, unit}`) and `verdict_reason_code`.
   The `verdict.recorded` event carries `measurement` and `reason_code` when given.
+- **`disagree_reason`** (#131, optional, at most 200 characters): with a `measurement`, the rule gives a suggestion
+  (`kb.check_measurement`): `likely_defect` points to VALID, `within_limit` to INVALID. A verdict that goes against it
+  is refused (400) unless it has a `disagree_reason`, one short line saying why. Saved in `cases.verdict_suggestion`,
+  `verdict_agreed` (1 / 0) and `verdict_disagree_reason` (only when they disagreed), and cleared with the rest of
+  the verdict. Shown as `/api/state` → `verdict.suggestion` (`{answer, agreed, disagreeReason}` or `null`) and
+  `get_case` → `verdict_suggestion_result`. The `verdict.recorded` event carries `agreed_with_rule` (and
+  `disagree_reason`), and SDP's review card for an Invalid verdict quotes the reason. No measurement: no
+  suggestion, nothing is asked. In the web app, `recordVerdict(..., {measurement, disagreeReason})` sends both, and
+  `goesAgainstSuggestion(answer, outcome)` says when to show the "why?" box.
 - `GET /api/kb`: the knowledge base for the technician's forms (0 AI tokens), from `kb.public_view()`:
   `{rules: [{id, category, condition, check, metric, question, unit, op, threshold, escalateOver, tool, howToMeasure,
   photoCanDecide, source: {id, title, authority, clause}, verified}], reasons: [{code, label, description}]}`.

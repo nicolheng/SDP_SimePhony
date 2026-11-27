@@ -264,3 +264,137 @@ def check_measurement(rule_id: str, reading) -> dict:
     escalate_over = rule.get("escalate_over")
     return {**result, "answer": LIKELY_DEFECT if exceeds else WITHIN_LIMIT,
             "escalate": escalate_over is not None and reading > escalate_over}
+
+
+# Structural defects always go to an engineer first, never to a step-by-step guide (research doc 3.3: a safety or
+# structural flag means human review, not a suggestion).
+ENGINEER_FIRST = {"structural_crack"}
+
+
+def _guide(method: dict, matched_by: str) -> dict:
+    kb = get()
+    return {
+        "kind": "guide", "method_id": method["id"], "title": method["title"], "matched_by": matched_by,
+        "steps": list(method["steps"]), "materials": list(method.get("materials") or []),
+        "needs_drying_or_curing": method["needs_drying_or_curing"], "drying_time": method.get("drying_time"),
+        "call_specialist_if": list(method.get("call_specialist_if") or []),
+        "specialist_trade": method.get("specialist_trade"), "licensed_only": bool(method.get("licensed_only")),
+        "sources": [{"id": s, "title": kb["sources"][s]["title"], "authority": kb["sources"][s]["authority"]}
+                    for s in method["sources"]],
+        "verified": method["verified"],
+    }
+
+
+def _referral(trade: str, engineer: bool = False) -> dict:
+    """No guide in the KB for this defect: say who should do it, without inventing steps."""
+    if engineer:
+        title, trade = "A structural engineer must assess this first", "structural engineer"
+        steps = ["Do not start a repair until a structural engineer has inspected it.",
+                 "Keep people away from anything that could fall."]
+        specialist = ["Always, for a structural defect."]
+    else:
+        title = f"Refer to the {trade} trade"
+        steps = ["There is no repair guide for this defect in the knowledge base yet.",
+                 f"Assign a qualified {trade} worker, who follows their trade's own method and the product labels."]
+        specialist = []
+    return {
+        "kind": "referral", "method_id": None, "title": title, "matched_by": "category", "steps": steps,
+        "materials": [], "needs_drying_or_curing": False, "drying_time": None, "call_specialist_if": specialist,
+        "specialist_trade": trade, "licensed_only": False, "sources": [], "verified": False,
+    }
+
+
+def repair_method_for(category: str | None, rule_id: str | None = None) -> dict | None:
+    """The repair guide (kb/repair_methods.yaml) for a defect, for the technician's repair card (#134). 0 AI tokens.
+
+    Most precise first:
+      1. the rule the technician measured against (verdict_rule_id), if it names a method;
+      2. a structural defect: always "a structural engineer must assess this first";
+      3. the one method that lists the category;
+      4. no method, or more than one (e.g. "ceiling" fits both crack filling and spalling): a referral to the trade
+         from rules.yaml repair_plan, with no invented steps.
+    Returns None for a category the app doesn't know. Technician-only: never send these steps to a buyer.
+    """
+    kb = get()
+    if rule_id:
+        rule = kb["rules"].get(rule_id)
+        if rule is None:
+            raise ValueError(f"Unknown rule {rule_id!r}")
+        if rule.get("repair_method_id"):
+            return _guide(kb["methods"][rule["repair_method_id"]], "rule")
+    plan = load_rules().get("repair_plan", {})
+    if category not in plan:
+        return None
+    if category in ENGINEER_FIRST:
+        return _referral(plan[category]["trade"], engineer=True)
+    matches = [m for m in kb["methods"].values() if category in m["categories"]]
+    if len(matches) == 1:
+        return _guide(matches[0], "category")
+    return _referral(plan[category]["trade"])
+
+
+# How each kind of source is named on the technician's screens, so a benchmark is never shown as if it were law.
+AUTHORITY_LABELS = {
+    "law": "Malaysian law",
+    "industry_standard": "Malaysian industry benchmark",
+    "intl_reference": "international reference, not a Malaysian contractual standard",
+    "manufacturer_guide": "manufacturer guide",
+}
+
+
+def _num(x) -> str:
+    return f"{x:g}"
+
+
+def _card_item(rule: dict) -> dict:
+    """One rule as fixed sentences. Every value comes from the rule, so the text can't say anything the KB doesn't."""
+    src = get()["sources"][rule["source"]["id"]]
+    source = f'Source: {src["title"]} ({AUTHORITY_LABELS[src["authority"]]}).'
+    if rule["check"] == "measure":
+        over = f' over {_num(rule["over_length_mm"] / 1000)} m' if rule.get("over_length_mm") else ""
+        side = "more" if rule["op"] == ">" else "less"
+        lines = [f'Measure the {rule["metric"]} with: {rule["tool"]}.', rule["how_to_measure"],
+                 f'Likely a real defect if {side} than {_num(rule["threshold"])} {rule["unit"]}{over}.']
+        if rule.get("escalate_over") is not None:
+            lines.append(f'Over {_num(rule["escalate_over"])} {rule["unit"]}: an engineer must assess it.')
+    else:
+        lines = [f'Check: {rule["question"]}', f'Use: {rule["tool"]}.', rule["how_to_measure"],
+                 'If yes, it is likely a real defect.']
+    if not rule["photo_can_decide"]:
+        lines.append("A photo can't decide this one: check it in person.")
+    return {"rule_id": rule["id"], "condition": rule["condition"], "check": rule["check"],
+            "lines": [*lines, source], "verified": rule["verified"]}
+
+
+def check_card(category: str | None) -> list[dict]:
+    """The "what to check" card for a defect category (#127, #128): one item per limit rule for that category,
+    built from fixed sentence templates (0 AI tokens, nothing invented). Empty when no rule covers the category."""
+    return [_card_item(r) for r in get()["rules"].values() if r["category"] == category]
+
+
+def technician_guide(case: dict) -> dict:
+    """What the technician's job page reads from GET /api/cases/{id}/technician-guide (#128, #134), camelCase like the
+    rest of the API. 0 AI tokens. Technician-only: it is not in /api/state, so buyer pages never receive the steps.
+
+    checkCard: the "what to check" items for the case's category (always, so it helps before the inspection).
+    repairMethod: the repair guide, only once the defect is confirmed Valid (the technician's verdict, or SDP
+    overturning an Invalid one). The intake's preliminary outcome doesn't count: it has no verdict_at.
+    """
+    category = case.get("category")
+    card = [{"ruleId": i["rule_id"], "condition": i["condition"], "check": i["check"], "lines": i["lines"],
+             "verified": i["verified"]} for i in check_card(category)]
+    confirmed = case.get("inspection_outcome") == "VALID_DEFECT" and bool(case.get("verdict_at"))
+    method = None
+    if confirmed:
+        try:
+            method = repair_method_for(category, case.get("verdict_rule_id"))
+        except ValueError:  # the measured rule has since left the KB: use the category
+            method = repair_method_for(category)
+    return {"caseId": case.get("case_id"), "checkCard": card, "repairMethod": method and {
+        "kind": method["kind"], "methodId": method["method_id"], "title": method["title"],
+        "matchedBy": method["matched_by"], "steps": method["steps"], "materials": method["materials"],
+        "needsDryingOrCuring": method["needs_drying_or_curing"], "dryingTime": method["drying_time"],
+        "callSpecialistIf": method["call_specialist_if"], "specialistTrade": method["specialist_trade"],
+        "licensedOnly": method["licensed_only"], "verified": method["verified"],
+        "sources": [{**s, "authorityLabel": AUTHORITY_LABELS[s["authority"]]} for s in method["sources"]],
+    }}

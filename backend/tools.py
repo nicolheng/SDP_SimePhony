@@ -779,6 +779,7 @@ def get_case(case_id: str) -> dict:
         ]
         case["repair_plan"] = _case_repair_plan(case)
         case["verdict_measurement"] = verdict_measurement(case)
+        case["verdict_suggestion_result"] = verdict_suggestion(case)
     return case
 
 
@@ -1929,7 +1930,12 @@ TECHNICIAN_ESTIMATE = "Set by the technician at the inspection"
 
 # Every verdict field. A new inspection (or SDP's own verdict) clears them all, so an old reading never sticks.
 VERDICT_FIELDS = ("inspection_outcome", "verdict_note", "verdict_at", "verdict_rule_id", "verdict_reading",
-                  "verdict_unit", "verdict_reason_code")
+                  "verdict_unit", "verdict_reason_code", "verdict_suggestion", "verdict_agreed",
+                  "verdict_disagree_reason")
+
+# The verdict each rule suggestion points to (#131). A suggestion only: the technician makes the final call.
+SUGGESTED_VERDICT = {"likely_defect": "VALID", "within_limit": "INVALID"}
+SUGGESTION_LABEL = {"likely_defect": "likely a real defect", "within_limit": "within the limit"}
 
 
 def _cleared_verdict(case: dict) -> dict:
@@ -1968,7 +1974,33 @@ def verdict_measurement(case: dict) -> Optional[dict]:
     return {"rule_id": case["verdict_rule_id"], "reading": bool(reading) if unit is None else reading, "unit": unit}
 
 
-def _invalid_review_message(tech_name: str, note: str, reason_code: Optional[str], reading: Optional[dict]) -> str:
+def _suggestion_fields(verdict: str, measurement: Optional[dict], disagree_reason: Optional[str]) -> dict:
+    """Did the technician agree with the rule's suggestion for their measurement (#131)? Returns the columns to save.
+    Going against it needs one short line of reason, so SDP can see where the rules and the technicians disagree.
+    No measurement means no suggestion: nothing is saved and no reason is asked for."""
+    if measurement is None:
+        return {}
+    from agents.simephony import kb
+    answer = kb.check_measurement(measurement["rule_id"], measurement["reading"])["answer"]
+    agreed = SUGGESTED_VERDICT.get(answer) == verdict
+    reason = (disagree_reason or "").strip()
+    if not agreed and not reason:
+        raise ToolError(f"The rule suggests {SUGGESTION_LABEL[answer]}, but you chose {verdict.title()}. "
+                        "Add one short line saying why.")
+    return {"verdict_suggestion": answer, "verdict_agreed": 1 if agreed else 0,
+            "verdict_disagree_reason": None if agreed else reason}
+
+
+def verdict_suggestion(case: dict) -> Optional[dict]:
+    """The saved rule suggestion and whether the technician agreed: {answer, agreed, disagree_reason}, or None."""
+    if not case.get("verdict_suggestion"):
+        return None
+    return {"answer": case["verdict_suggestion"], "agreed": bool(case.get("verdict_agreed")),
+            "disagree_reason": case.get("verdict_disagree_reason")}
+
+
+def _invalid_review_message(tech_name: str, note: str, reason_code: Optional[str], reading: Optional[dict],
+                            disagree_reason: Optional[str] = None) -> str:
     """What SDP reads on the review card for a technician's Invalid verdict: the note, the reason and the reading."""
     from agents.simephony import kb
     text = f'{tech_name} marked this not a defect: "{note}"'
@@ -1981,13 +2013,15 @@ def _invalid_review_message(tech_name: str, note: str, reason_code: Optional[str
                  f' (a defect {side} {rule["threshold"]:g} {rule["unit"]}).')
     elif rule:
         text += f' {rule["question"]} {"Yes" if reading["reading"] else "No"}.'
+    if disagree_reason:
+        text += f" Went against the rule's suggestion: \"{disagree_reason}\""
     return text
 
 
 @_returns_errors
 def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] = None,
                    repair_hours: Optional[float] = None, measurement: Optional[dict] = None,
-                   reason_code: Optional[str] = None) -> dict:
+                   reason_code: Optional[str] = None, disagree_reason: Optional[str] = None) -> dict:
     """Technician's inspection result (the visit must be accepted). VALID -> buyer books a repair.
     INVALID -> PENDING_REVIEW: SDP confirms it (-> INVALID, closed) or overturns it (-> VALID) with resolve_review,
     because rejecting a defect is the developer's decision. repair_hours (VALID only): the technician's
@@ -1996,7 +2030,10 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
     measurement (optional, either verdict): {rule_id, reading} for a rule in kb/tolerances.yaml; reading is a
     number in the rule's unit, or true / false for a yes/no rule. The unit is taken from the rule.
     reason_code (optional, INVALID only): why it is not the developer's fault, a code in
-    kb/invalid_defect_reasons.yaml (e.g. WEAR_AND_TEAR). Returns {ok, status} (PENDING_REVIEW for INVALID)."""
+    kb/invalid_defect_reasons.yaml (e.g. WEAR_AND_TEAR).
+    disagree_reason (#131): one short line, required when a measurement's rule suggests the opposite verdict
+    (likely a real defect -> INVALID, or within the limit -> VALID). Whether the technician agreed is saved.
+    Returns {ok, status} (PENDING_REVIEW for INVALID)."""
     with _connect() as conn:
         case = _get_case(conn, case_id)
         _require_status(case, ("VISIT_SCHEDULED", "EXTRA_INSPECTION"), "record a verdict", "This case isn't waiting for an inspection result.")
@@ -2012,10 +2049,11 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
             if reason_code not in kb.get()["reasons"]:
                 raise ToolError(f"Unknown reason code {reason_code!r}.")
         measured = _verdict_measurement_fields(measurement)
+        suggested = _suggestion_fields(verdict, measurement, disagree_reason)
         _save_photo(conn, case_id, photo, "verdict")
         _finish(conn, case_id, "visit")
         now = _now(conn)
-        fields = {**_cleared_verdict(case), **measured,
+        fields = {**_cleared_verdict(case), **measured, **suggested,
                   "inspection_outcome": "VALID_DEFECT" if verdict == "VALID" else "NOT_A_DEFECT", "verdict_note": note.strip(),
                   "verdict_at": now, "inspector_id": case["technician_id"], "status": verdict}
         if reason_code:
@@ -2036,11 +2074,18 @@ def record_verdict(case_id: str, verdict: str, note: str, photo: Optional[str] =
         if reason_code:
             details += f"; reason {reason_code}"
             extra["reason_code"] = reason_code
+        if suggested:
+            extra["agreed_with_rule"] = bool(suggested["verdict_agreed"])
+            if not suggested["verdict_agreed"]:
+                label = SUGGESTION_LABEL[suggested["verdict_suggestion"]]
+                details += f'; went against the rule ({label}): "{suggested["verdict_disagree_reason"]}"'
+                extra["disagree_reason"] = suggested["verdict_disagree_reason"]
         _emit(conn, case_id, "verdict.recorded", f'Technician marked {verdict}: "{note.strip()}"{details}', verdict=verdict, **extra)
         if verdict == "INVALID":
             tech = _worker(conn, case["technician_id"])
             _emit(conn, case_id, "case.review_requested",
-                  _invalid_review_message(tech["name"] if tech else "The technician", note.strip(), reason_code, reading),
+                  _invalid_review_message(tech["name"] if tech else "The technician", note.strip(), reason_code, reading,
+                                          suggested.get("verdict_disagree_reason")),
                   agent="Technician", confidence_score=None, previous_status="INVALID")
     return {"ok": True, "status": fields["status"]}
 

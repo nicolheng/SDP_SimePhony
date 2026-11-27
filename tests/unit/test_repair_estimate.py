@@ -26,7 +26,9 @@ def test_hours_rules(base, facts, recurring, hours):
 
 
 def _state(**extra):
-    return {"case_id": "C-1", "current_status": "VALID", "intake_result": {"category": "water_leak"},
+    # ceiling: normal time 3 h (2 blocks, like a water leak) and no KB repair guide with drying time, so these tests
+    # check the LLM's scope facts alone. The KB drying time (#135) is tested below.
+    return {"case_id": "C-1", "current_status": "VALID", "intake_result": {"category": "ceiling"},
             "verdict_note": "Pipe joint above wardrobe leaking; about 1 m2 of ceiling board soaked, needs replacing and repainting.",
             **extra}
 
@@ -47,7 +49,7 @@ def test_node_saves_estimate_with_reason(fake_llm, monkeypatch):
 def test_bad_llm_answer_falls_back_to_normal_time(fake_llm):
     fake_llm.responses = ["I think about three hours"]
     r = repair_estimate_node(_state())["repair_estimate"]
-    assert r["hours"] == 4  # water_leak normal time
+    assert r["hours"] == 4  # ceiling normal time (3 h, rounded up to 2 blocks)
     assert "standard time" in r["reason"].lower()
 
 
@@ -99,3 +101,53 @@ def test_history_lookup_error_is_not_recurring(fake_llm, monkeypatch, escalation
     from agents.simephony import backend_tools
     monkeypatch.setattr(backend_tools, "check_escalation", lambda c: {"ok": False, "error": "not found"})
     assert _hours_with(fake_llm, monkeypatch)["hours"] == 4
+
+
+# ---------- #135: the KB repair guide's drying / curing time ----------
+
+def _rule_based(monkeypatch, category, **extra):
+    """The estimate without the LLM (the web app's rule fallback), with saving stubbed out."""
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "set_repair_estimate", lambda *a: {"ok": True})
+    return repair_estimate_node({"case_id": "C-1", "current_status": "VALID", "intake_result": {"category": category},
+                                 "_skip_scope_facts": True, **extra})["repair_estimate"]
+
+
+def test_repair_with_drying_time_gets_a_longer_estimate(monkeypatch):
+    # tiles and ceiling both have a 4-hour normal time (2 blocks); only the tile guide needs curing time
+    with_drying = _rule_based(monkeypatch, "tiles")
+    without = _rule_based(monkeypatch, "ceiling")
+    assert without["hours"] == 4 and without["kb_method_id"] is None
+    assert with_drying["hours"] == 8 and with_drying["kb_method_id"] == "REP-TILE-RELAY"
+    assert "drying or curing time (re-lay hollow or uneven tiles)" in with_drying["reason"]
+
+
+def test_waterproofing_gets_drying_time_without_the_llm(monkeypatch):
+    r = _rule_based(monkeypatch, "water_leak")
+    assert r["hours"] == 8 and r["kb_method_id"] == "REP-WET-AREA-LEAK"
+
+
+def test_no_drying_guide_keeps_the_normal_time(monkeypatch):
+    r = _rule_based(monkeypatch, "electrical")  # 1.5 h -> one 2-hour block; the electrical guide has no drying time
+    assert r["hours"] == 2 and r["kb_method_id"] is None
+    assert "standard time" in r["reason"].lower()
+
+
+def test_measured_rule_picks_the_guide(monkeypatch):
+    # tiles measured against the hollow-tile rule -> REP-TILE-RELAY via the rule, not the category
+    r = _rule_based(monkeypatch, "tiles", verdict_rule_id="TOL-TILE-HOLLOW")
+    assert r["kb_method_id"] == "REP-TILE-RELAY"
+
+
+def test_unknown_rule_falls_back_to_the_category(monkeypatch):
+    r = _rule_based(monkeypatch, "tiles", verdict_rule_id="TOL-REMOVED-RULE")
+    assert r["kb_method_id"] == "REP-TILE-RELAY" and r["hours"] == 8
+
+
+def test_kb_drying_is_added_to_the_llm_facts(fake_llm, monkeypatch):
+    from agents.simephony import backend_tools
+    monkeypatch.setattr(backend_tools, "set_repair_estimate", lambda *a: {"ok": True})
+    fake_llm.responses = [json.dumps(_facts())]  # the note says nothing about drying
+    r = repair_estimate_node(_state(intake_result={"category": "water_leak"}))["repair_estimate"]
+    assert r["facts"]["needs_drying_or_curing"] is True
+    assert r["hours"] == 8 and "drying or curing time" in r["reason"]

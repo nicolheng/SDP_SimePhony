@@ -37,6 +37,7 @@ import {
 import { PhotoInput, PhotoRounds, PhotoThumb } from "@/components/photo";
 import { REPORT_PHOTO_KINDS, WORK_PHOTO_KINDS } from "@/lib/photos";
 import { RepairClockBadge } from "@/components/repair-clock";
+import { RepairGuideCard } from "@/components/repair-guide";
 import { SimilarDefects } from "@/components/similar-defects";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { markRepaired, recordVerdict } from "@/lib/api";
@@ -325,6 +326,11 @@ export function JobDetail() {
                   </button>
                 </div>
               </Section>
+            )}
+
+            {/* Repair guide from the knowledge base, once the defect is confirmed Valid (#134) */}
+            {c.verdict?.outcome === "VALID" && (
+              <RepairGuideCard caseId={c.id} refreshKey={`${c.verdict.at}|${c.status}`} />
             )}
 
             {repairing && (
