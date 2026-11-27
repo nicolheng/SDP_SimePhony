@@ -71,12 +71,14 @@ export interface VerdictMeasurement { ruleId: string; reading: number | boolean 
  *  extra.measurement: optional reading. extra.disagreeReason: one short line, required by the backend when the
  *  outcome goes against the rule's suggestion for that reading (see goesAgainstSuggestion, #131). */
 export async function recordVerdict(caseId: string, outcome: "VALID" | "INVALID", note: string, photoUrl: string | null, repairHours?: 2 | 4 | 8,
-                                    extra?: { measurement?: VerdictMeasurement; disagreeReason?: string }) {
+                                    extra?: { measurement?: VerdictMeasurement; disagreeReason?: string; reasonCode?: string }) {
   await apiAction(`/api/cases/${caseId}/verdict`, {
     outcome, note, photo: photoUrl,
     ...(outcome === "VALID" && repairHours ? { repair_hours: repairHours } : {}),
     ...(extra?.measurement ? { measurement: { rule_id: extra.measurement.ruleId, reading: extra.measurement.reading } } : {}),
     ...(extra?.disagreeReason?.trim() ? { disagree_reason: extra.disagreeReason.trim() } : {}),
+    // INVALID only: why it is not a defect, a code from kb/invalid_defect_reasons.yaml.
+    ...(outcome === "INVALID" && extra?.reasonCode ? { reason_code: extra.reasonCode } : {}),
   });
 }
 

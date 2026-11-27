@@ -64,7 +64,8 @@ export function JobAssignment({ c, me }: { c: Case; me: string }) {
             <Clock className="size-4" /> {c.handover ? "Reassigned Job: Confirmation Required" : "Confirmation Required"}
           </p>
           {c.handover && <p className="mt-1 text-sm text-zinc-700">{workerLabel(c.handover.fromId)} couldn&apos;t make it.</p>}
-          <AiValidityNote c={c} className="mt-2" />
+          {/* Inspection jobs only: a repair job is already a confirmed (Valid) defect. */}
+          {(c.status === "VISIT_SCHEDULED" || c.status === "EXTRA_INSPECTION") && <AiValidityNote c={c} className="mt-2" />}
           {!open && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button

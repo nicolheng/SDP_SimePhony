@@ -10,7 +10,7 @@ import { type Page, SwipePager } from "./swipe-pager";
 const H3 = "mb-2 text-xs font-semibold text-zinc-500";
 
 /**
- * The inspection brief. paged: a few parts per view (checklist, suggested repair, where to look, timeline) that the
+ * The inspection brief. paged: a few parts per view (checklist, suggested verify method or repair, where to look, timeline) that the
  * technician swipes or taps through; otherwise every part stacked, as SDP staff see it.
  */
 export function InspectionBriefView({
@@ -18,23 +18,23 @@ export function InspectionBriefView({
   interactive,
   paged,
   nearby,
-  suggestedRepair,
+  suggested,
 }: {
   c: Case;
   interactive?: boolean;
   paged?: boolean;
   /** paged only: same-stack defects, shown under "Where to Look" in place of the brief's neighbouring units. */
   nearby?: ReactNode;
-  /** paged only: the suggested repair method, shown after the checklist. */
-  suggestedRepair?: ReactNode;
+  /** paged only: the suggested verify method (inspection) or repair (after Valid), shown after the checklist. */
+  suggested?: { title: string; content: ReactNode };
 }) {
   const b = c.inspectionBrief;
   const [done, setDone] = useState<number[]>([]);
   if (!b) {
     if (!paged) return null;
-    // No brief (not a recurring defect): just the suggested repair and the neighbouring units' cases.
+    // No brief (not a recurring defect): just the suggestion and the neighbouring units' cases.
     const pages: Page[] = [
-      ...(suggestedRepair ? [{ title: "Suggested Repair", content: suggestedRepair }] : []),
+      ...(suggested ? [suggested] : []),
       ...(nearby
         ? [{ title: "Neighbouring Units", content: (
             <div>
@@ -44,7 +44,7 @@ export function InspectionBriefView({
           ) }]
         : []),
     ];
-    return pages.length ? <SwipePager pages={pages} viewClassName="h-[28rem]" /> : null;
+    return pages.length ? <SwipePager pages={pages} fit /> : null;
   }
   const original = c.photos.find((p) => p.kind === "original");
   const reopen = [...c.photos].reverse().find((p) => p.kind === "reopen");
@@ -147,7 +147,7 @@ export function InspectionBriefView({
   if (paged) {
     const pages: Page[] = [
       { title: "Checklist", badge: `${done.length}/${b.checklist.length}`, content: checklist },
-      ...(suggestedRepair ? [{ title: "Suggested Repair", content: suggestedRepair }] : []),
+      ...(suggested ? [suggested] : []),
       { title: "Where to Look", content: (
         <div className="space-y-4">
           <div>
@@ -162,10 +162,10 @@ export function InspectionBriefView({
           )}
         </div>
       ) },
-      { title: "Timeline", content: timeline },
+      { title: "Timeline", content: <div className="max-h-[28rem] overflow-y-auto overscroll-contain p-0.5 pr-1.5">{timeline}</div> },
     ];
     // Same height for every view; a longer one (checklist, timeline) scrolls inside the card.
-    return <SwipePager pages={pages} viewClassName="h-[28rem]" />;
+    return <SwipePager pages={pages} fit />;
   }
 
   return (

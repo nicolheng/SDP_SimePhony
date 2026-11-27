@@ -27,6 +27,7 @@ RULE_FIELDS = ("id", "category", "condition", "check", "tool", "how_to_measure",
                "repair_method_id", "verified")
 METHOD_FIELDS = ("id", "title", "categories", "for_rules", "steps", "needs_drying_or_curing", "sources", "verified")
 REASON_FIELDS = ("code", "label", "description", "source_ids")
+VERIFY_FIELDS = ("id", "category", "tool", "steps", "defect_if", "sources", "verified")
 
 _kb: dict | None = None
 
@@ -84,7 +85,7 @@ def _check_source_ref(ref, where: str, sources: dict, withdrawn: dict, errors: l
 
 
 def load(kb_dir: Path = KB_DIR) -> dict:
-    """Read and check the kb/ files. Returns {sources, withdrawn, rules, methods, reasons}, each {id: item}.
+    """Read and check the kb/ files. Returns {sources, withdrawn, rules, methods, reasons, verify}, each {id: item}.
 
     Raises KBError listing every problem, so one run shows everything that needs fixing.
     """
@@ -96,6 +97,8 @@ def load(kb_dir: Path = KB_DIR) -> dict:
     methods = _index(_read(kb_dir / "repair_methods.yaml", "methods"), "repair_methods.yaml", errors)
     reasons = _index(_read(kb_dir / "invalid_defect_reasons.yaml", "invalid_defect_reasons"),
                      "invalid_defect_reasons.yaml", errors, key="code")
+    verify_path = kb_dir / "verify_methods.yaml"
+    verify = _index(_read(verify_path, "methods"), "verify_methods.yaml", errors) if verify_path.exists() else {}
     categories = set(load_rules().get("category_to_skill", {}))
 
     for sid, src in sources.items():
@@ -155,6 +158,26 @@ def load(kb_dir: Path = KB_DIR) -> dict:
             elif rules[rid].get("repair_method_id") != mid:
                 errors.append(f"{where}: lists {rid}, but {rid} points to {rules[rid].get('repair_method_id')}")
 
+    seen_categories: dict = {}
+    for vid, vm in verify.items():
+        where = f"verify_methods.yaml: {vid}"
+        _missing(vm, VERIFY_FIELDS, where, errors)
+        cat = vm.get("category")
+        if cat is not None and cat not in categories:
+            errors.append(f"{where}: category {cat!r} is not in rules.yaml category_to_skill")
+        elif cat in seen_categories:
+            errors.append(f"{where}: category {cat!r} already has {seen_categories[cat]}")
+        elif cat is not None:
+            seen_categories[cat] = vid
+        if any(r.get("category") == cat for r in rules.values()):
+            errors.append(f"{where}: {cat!r} has a limit rule in tolerances.yaml, which already says how to check it")
+        if "steps" in vm and not vm["steps"]:
+            errors.append(f"{where}: needs at least one step")
+        if "sources" in vm and not vm["sources"]:
+            errors.append(f"{where}: needs at least one source")
+        for ref in vm.get("sources") or []:
+            _check_source_ref(ref, where, sources, withdrawn, errors)
+
     for code, reason in reasons.items():
         where = f"invalid_defect_reasons.yaml: {code}"
         _missing(reason, REASON_FIELDS, where, errors)
@@ -163,7 +186,8 @@ def load(kb_dir: Path = KB_DIR) -> dict:
 
     if errors:
         raise KBError(f"Knowledge base has {len(errors)} problem(s):\n  - " + "\n  - ".join(errors))
-    return {"sources": sources, "withdrawn": withdrawn, "rules": rules, "methods": methods, "reasons": reasons}
+    return {"sources": sources, "withdrawn": withdrawn, "rules": rules, "methods": methods, "reasons": reasons,
+            "verify": verify}
 
 
 def init(kb_dir: Path = KB_DIR) -> dict:
@@ -207,6 +231,12 @@ def public_view() -> dict:
     return {
         "rules": [rule(r) for r in kb["rules"].values()],
         "methods": [method(m) for m in kb["methods"].values()],
+        # How to verify a defect type with no limit rule on the inspection visit (technician only).
+        "verifyMethods": [
+            {"id": v["id"], "category": v["category"], "tool": v["tool"], "steps": v["steps"], "defectIf": v["defect_if"],
+             "sources": [kb["sources"][s]["title"] for s in v["sources"]], "verified": v["verified"]}
+            for v in kb.get("verify", {}).values()
+        ],
         "reasons": [{"code": x["code"], "label": x["label"], "description": x["description"]}
                     for x in kb["reasons"].values()],
     }

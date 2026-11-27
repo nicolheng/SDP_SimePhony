@@ -38,9 +38,22 @@ export interface KbMethod {
   specialistTrade: string | null;
 }
 
+/** How to verify a defect type that has no limit rule (kb/verify_methods.yaml). Technicians only. */
+export interface KbVerifyMethod {
+  id: string;
+  category: string;
+  tool: string;
+  steps: string[];
+  defectIf: string;
+  /** Source titles. */
+  sources: string[];
+  verified: boolean;
+}
+
 export interface Kb {
   rules: KbRule[];
   methods: KbMethod[];
+  verifyMethods?: KbVerifyMethod[];
   reasons: { code: string; label: string; description: string }[];
 }
 

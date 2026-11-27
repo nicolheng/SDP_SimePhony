@@ -4,8 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const ROLES = [
-  // start: where switching to the role opens (SDP lands on Approvals); href: the section it covers.
-  { href: "/sdp", start: "/sdp/approvals", label: "Sime Darby Property Staff" },
+  { href: "/sdp", label: "Sime Darby Property Staff" },
   { href: "/buyer", label: "Buyer" },
   { href: "/technician", label: "Technician / Subcontractor" },
   { href: "/split", label: "Buyer + Technician (side by side)" },
@@ -23,7 +22,7 @@ export function RoleSwitcher({ dark, className }: { dark?: boolean; className?: 
         value={current}
         onChange={(e) => {
           if (e.target.value === "/split" && window.top && window.top !== window) window.top.location.href = "/split";
-          else router.push(ROLES.find((r) => r.href === e.target.value)?.start ?? e.target.value);
+          else router.push(e.target.value);
         }}
         aria-label="Switch role"
         className={cn(

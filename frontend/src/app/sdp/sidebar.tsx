@@ -87,7 +87,6 @@ export function SdpSidebar() {
     // "Do the work" pages first (staff), then "understand the project" pages (managers), split by a divider.
     { href: "/sdp", label: "Today", icon: ListTodo },
     { href: "/sdp/approvals", label: "Approvals", icon: ShieldCheck, badge: pending },
-    { href: "/sdp", label: "Overview", icon: LayoutDashboard },
     { href: "/sdp/defects", label: "Defects", icon: ClipboardList },
     { href: "/sdp/insights", label: "Insights", icon: BarChart3, divider: true },
     { href: "/sdp/systemic", label: "Systemic Issues", icon: Layers },

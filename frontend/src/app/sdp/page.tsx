@@ -304,5 +304,5 @@ function Summary({ icon: Icon, tile, n, label, bad }: { icon: typeof Inbox; tile
 
 function waited(since: string, now: string) {
   const d = Math.floor(daysBetween(since, now));
-  return d <= 0 ? "today" : `${d} day${d === 1 ? "" : "s"}`;
+  return d <= 0 ? "Today" : `${d} day${d === 1 ? "" : "s"}`;
 }

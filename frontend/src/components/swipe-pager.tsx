@@ -1,6 +1,6 @@
 "use client";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export interface Page {
@@ -10,10 +10,20 @@ export interface Page {
   badge?: ReactNode;
 }
 
+/** The element that scrolls this one: the nearest scrolling ancestor, else the page. */
+function scrollerOf(el: HTMLElement): HTMLElement {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if ((y === "auto" || y === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return (document.scrollingElement as HTMLElement) ?? document.documentElement;
+}
+
 /**
  * A few views in one card: swipe left/right on touch screens, or tap the arrows or a dot.
  * Every view sits in the same grid cell (the others hidden), so the card is always as tall as its tallest
- * view and switching never moves the card or the page under the user's finger.
+ * view. With fit, the card is as tall as the open view instead; it grows or shrinks below, and its top stays
+ * where it was on screen.
  */
 export function SwipePager({
   pages,
@@ -31,11 +41,50 @@ export function SwipePager({
   const [index, setIndex] = useState(0);
   const start = useRef<{ x: number; y: number } | null>(null);
   const i = Math.min(index, pages.length - 1);
-  const go = (n: number) => setIndex(Math.max(0, Math.min(pages.length - 1, n)));
+  const root = useRef<HTMLDivElement>(null);
+  // Room added at the bottom of the page (never inside the card) when a shorter view would otherwise leave too
+  // little page to keep the card in place: {element, its own padding}.
+  const padded = useRef<{ el: HTMLElement; was: string } | null>(null);
+  const unpad = () => {
+    if (padded.current) padded.current.el.style.paddingBottom = padded.current.was;
+    padded.current = null;
+  };
+  const anchorTop = useRef<number | null>(null);
+  const go = (n: number) => {
+    const next = Math.max(0, Math.min(pages.length - 1, n));
+    if (next === i) return;
+    // Measure first: removing earlier room can itself move the card, and the effect puts it back.
+    anchorTop.current = root.current?.getBoundingClientRect().top ?? null;
+    unpad();
+    setIndex(next);
+  };
   const page = pages[i];
 
+  // Keep the card's top where it was: the new view only changes how far it reaches down.
+  useLayoutEffect(() => {
+    const el = root.current;
+    const before = anchorTop.current;
+    anchorTop.current = null;
+    if (!el || before === null) return;
+    const scroller = scrollerOf(el);
+    let drift = el.getBoundingClientRect().top - before;
+    if (Math.abs(drift) < 1) return;
+    // Near the bottom of the page a shorter view can't be scrolled back into place: add the missing room below.
+    const room = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+    if (drift > room) {
+      if (!padded.current) padded.current = { el: scroller, was: scroller.style.paddingBottom };
+      const current = parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
+      scroller.style.paddingBottom = `${current + drift - room}px`;
+    }
+    scroller.scrollTop += drift;
+    drift = el.getBoundingClientRect().top - before;
+    if (Math.abs(drift) >= 1) scroller.scrollTop += drift;
+  }, [i]);
+  // Drop the added room when the pager goes away (e.g. leaving the page).
+  useLayoutEffect(() => unpad, []);
+
   return (
-    <div className={className}>
+    <div ref={root} className={className} style={{ overflowAnchor: "none" }}>
       <div className="mb-3 flex select-none items-center gap-2">
         <ArrowButton dir="left" disabled={i === 0} onClick={() => go(i - 1)} />
         <div className="min-w-0 flex-1 text-center">

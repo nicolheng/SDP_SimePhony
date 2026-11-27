@@ -1,0 +1,88 @@
+# Verify methods: how a technician confirms on the inspection visit that a reported defect is real, for defect
+# types with no limit rule in tolerances.yaml. A type that has a rule uses the rule's tool and how_to_measure instead.
+# Shown to TECHNICIANS ONLY, as "Suggested Verify Method" on the inspection visit.
+#
+# A verify method gives no number and never decides the verdict: it says what to check and what a real defect
+# looks like. Limits belong in tolerances.yaml, with a source that sets them.
+# sources: ids from sources.yaml that cover the check. verified: false until the steps are checked against them (#121).
+# Changes need a PR, like rules.yaml.
+
+version: 1
+
+methods:
+  - id: VER-PAINT
+    category: paint
+    tool: Moisture meter, torch, scraper
+    steps:
+      - Look along the whole wall for bubbling, peeling or white powder, and note how large the area is.
+      - Check the wall with a moisture meter. Damp behind the paint is the usual cause.
+      - Gently scrape the edge of a blister to see whether the paint is lifting off the plaster.
+    defect_if: The paint is bubbling, peeling or powdery on a wall the owner has not repainted or damaged.
+    sources: [NIPPON-MY-PAINT]
+    verified: false
+
+  - id: VER-CEILING
+    category: ceiling
+    tool: Torch, ladder, moisture meter
+    steps:
+      - Look at the ceiling for stains, sagging boards, cracks or pieces coming loose. Keep people clear of loose pieces.
+      - Check any stain with a moisture meter. If it is safe, look above the ceiling through the access panel for a wet pipe or slab.
+      - Ask whether the unit above has had a leak in the same position.
+    defect_if: The ceiling is stained, sagging, cracked or loose, and the cause is in the building, not damage by the occupant.
+    sources: [HDB-HOMECARE]
+    verified: false
+
+  - id: VER-STRUCTURAL-CRACK
+    category: structural_crack
+    tool: Crack width gauge, torch, camera
+    steps:
+      - Keep people away from any loose concrete before you check.
+      - Find where the crack is (beam, column or slab) and whether concrete is flaking or rusty steel is showing.
+      - Measure the widest part with the crack gauge and photograph it with the gauge in view.
+    defect_if: Any crack in a beam, column or slab, or concrete flaking with rusty steel showing. Refer it to a structural engineer.
+    sources: [BRE-DG251, HDB-HOMECARE]
+    verified: false
+
+  - id: VER-PLUMBING
+    category: plumbing
+    tool: Torch, dry tissue, the unit's water meter
+    steps:
+      - Turn off every tap and check whether the water meter is still moving.
+      - Wipe the pipe joints and fittings dry, then look for fresh drops.
+      - Run the taps, then check the flow and the pipes underneath for leaks.
+    defect_if: Water leaks from a pipe or joint, or the meter moves with every tap off.
+    sources: [HDB-HOMECARE]
+    verified: false
+
+  - id: VER-SANITARY-FITTINGS
+    category: sanitary_fittings
+    tool: Torch, dry tissue
+    steps:
+      - Check the fitting is fixed firmly and is not cracked.
+      - Use the fitting (flush, run the tap, drain the basin) and look for leaks at the base and the connections.
+      - Check the toilet cistern stops filling after a flush.
+    defect_if: The fitting leaks, is loose or cracked, or does not work as it should, and was not damaged by the occupant.
+    sources: [HDB-HOMECARE]
+    verified: false
+
+  - id: VER-ELECTRICAL
+    category: electrical
+    tool: Licensed electrician only
+    steps:
+      - If you are not a licensed electrician, do not open or test anything. Note what the buyer reports and refer it.
+      - The licensed electrician isolates the circuit before inspecting.
+      - The electrician tests the circuit and finds why it fails or trips.
+    defect_if: A licensed electrician confirms a fault in the original wiring, socket, switch or fitting.
+    sources: [ST-ESR-2024]
+    verified: false
+
+  - id: VER-OTHER
+    category: other
+    tool: Torch, camera
+    steps:
+      - Find the spot the buyer pinned and compare it with the buyer's photo.
+      - Check whether it affects how the unit is used, or only how it looks.
+      - Look for signs the occupant caused it, such as renovation or impact damage.
+    defect_if: The problem comes from the original construction or materials, not from use, damage or renovation by the occupant.
+    sources: [HDR-1989-SPA]
+    verified: false

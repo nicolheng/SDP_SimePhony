@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 type Tab = "review" | "extra" | "signoff" | "decided";
 
-/** Clickable summary row with the full decision panel underneath: open by default, a click collapses it. */
+/** Compact, clickable summary row; the full decision panel opens underneath, one at a time. */
 function QueueRow({ open, onToggle, id, title, meta, badge, children }: { open: boolean; onToggle: () => void; id: string; title: string; meta: string; badge?: ReactNode; children: ReactNode}) {
   return (
     <li className="rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200">
@@ -63,12 +63,7 @@ function Approvals() {
   const [openId, setOpenId] = useState<string | null>(() => params.get("open"));
   // Default to the first queue with work in it.
   const tab: Tab = picked ?? (held.length ? "review" : signoffCount ? "signoff" : pending.length ? "extra" : "decided");
-  const toggle = (id: string) =>
-    setClosed((cur) => {
-      const next = new Set(cur);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
 
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "review", label: "Held for Review", count: held.length },
@@ -88,6 +83,7 @@ function Approvals() {
             type="button"
             onClick={() => {
               setTab(t.id);
+              setOpenId(null);
             }}
             className={cn(
               "inline-flex items-center gap-2 rounded-full px-4 py-2 text-base font-medium ring-1 transition",
@@ -112,7 +108,7 @@ function Approvals() {
                 <QueueRow
                   key={c.id}
                   id={c.id}
-                  open={!closed.has(c.id)}
+                  open={openId === c.id}
                   onToggle={() => toggle(c.id)}
                   title={`${c.unitId} · ${c.summary}`}
                   badge={
@@ -157,7 +153,7 @@ function Approvals() {
                 <QueueRow
                   key={a.id}
                   id={c.id}
-                  open={!closed.has(a.id)}
+                  open={openId === a.id}
                   onToggle={() => toggle(a.id)}
                   title={`Extra Inspection for ${c.unitId} · ${c.summary}`}
                   meta={[a.id, si?.id, si ? `${Math.round(si.confidence * 100)}% match` : null, `raised ${fmtDateTime(a.createdAt)}`].filter(Boolean).join(" · ")}

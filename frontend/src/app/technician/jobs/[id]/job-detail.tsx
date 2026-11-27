@@ -36,7 +36,6 @@ import {
 import { PhotoInput, PhotoRounds, PhotoThumb } from "@/components/photo";
 import { REPORT_PHOTO_KINDS, WORK_PHOTO_KINDS } from "@/lib/photos";
 import { RepairClockBadge } from "@/components/repair-clock";
-import { RepairGuideCard } from "@/components/repair-guide";
 import { SimilarDefects } from "@/components/similar-defects";
 import { StatusBadge, UrgencyBadge } from "@/components/status-badge";
 import { SwipePager } from "@/components/swipe-pager";
@@ -49,7 +48,7 @@ import { useTechnicianId } from "@/lib/session";
 import { useDemo, useOffline } from "@/lib/store";
 import { jobSlot } from "../../use-my-jobs";
 import { JobAssignment } from "./assignment";
-import { SuggestedRepair } from "@/components/suggested-repair";
+import { SuggestedRepair, SuggestedVerify, SuggestedVerifyMethod } from "@/components/suggested-repair";
 import {
   INVALID_REASON_CHOICES,
   INVALID_REASON_LABEL,
@@ -169,10 +168,20 @@ export function JobDetail() {
     accepted;
   const repairing = c.status === "REPAIR_BOOKED" && accepted;
   const sameStack = c.similar.some((s) => s.unitId !== c.unitId);
-  // The suggested repair: from the inspection until the repair is done.
+  // Inspection visit: how to verify the defect (its limit rules). After Valid, until the repair is done: the suggested repair.
+  const atInspection = c.status === "VISIT_SCHEDULED" || c.status === "EXTRA_INSPECTION";
+  const verifyRules = kb && atInspection ? kb.rules.filter((r) => r.category === c.category) : [];
+  // A defect type with no limit rule has a verify method instead.
+  const verifyMethod =
+    kb && atInspection && !verifyRules.length ? kb.verifyMethods?.find((v) => v.category === c.category) : undefined;
   const repairMethod =
-    kb && ["VISIT_SCHEDULED", "EXTRA_INSPECTION", "VALID", "REPAIR_BOOKED"].includes(c.status)
-      ? methodFor(kb, c.category)
+    kb && (c.status === "VALID" || c.status === "REPAIR_BOOKED") ? methodFor(kb, c.category) : undefined;
+  const suggested = verifyRules.length
+    ? { title: "Suggested Verify Method", content: <SuggestedVerify rules={verifyRules} /> }
+    : verifyMethod
+      ? { title: "Suggested Verify Method", content: <SuggestedVerifyMethod method={verifyMethod} /> }
+      : repairMethod
+      ? { title: "Suggested Repair", content: <SuggestedRepair method={repairMethod} /> }
       : undefined;
 
   async function run(fn: () => Promise<void>, msg: string) {
@@ -382,7 +391,7 @@ export function JobDetail() {
                               [why, note.trim()].filter(Boolean).join(". ").slice(0, 500),
                               photo,
                               undefined,
-                              reason === OTHER_REASON ? undefined : reason!,
+                              { reasonCode: reason === OTHER_REASON ? undefined : reason! },
                             ),
                           "Marked invalid: sent to SDP to review",
                         );
@@ -394,11 +403,6 @@ export function JobDetail() {
                   </div>
                 )}
               </Section>
-            )}
-
-            {/* Repair guide from the knowledge base, once the defect is confirmed Valid (#134) */}
-            {c.verdict?.outcome === "VALID" && (
-              <RepairGuideCard caseId={c.id} refreshKey={`${c.verdict.at}|${c.status}`} />
             )}
 
             {repairing && (
@@ -536,7 +540,7 @@ export function JobDetail() {
             </Section>
 
             {/* What the other agents worked out for this job: one swipe card (brief views, then same-stack defects). */}
-            {(c.inspectionBrief || sameStack || repairMethod) && (
+            {(c.inspectionBrief || sameStack || suggested) && (
               <Section>
                 <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
                   <Sparkles className="size-4 text-violet-600" /> AI Assistance
@@ -546,7 +550,7 @@ export function JobDetail() {
                   interactive={inspecting}
                   paged
                   nearby={sameStack ? <SimilarDefects c={c} /> : undefined}
-                  suggestedRepair={repairMethod ? <SuggestedRepair method={repairMethod} /> : undefined}
+                  suggested={suggested}
                 />
               </Section>
             )}
