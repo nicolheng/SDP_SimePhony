@@ -152,6 +152,9 @@ def test_post_dlp_recurrence_waits_for_sdp_before_booking(client, monkeypatch, u
     assert held["review"]["agent"] == "create_case"
     assert held["review"]["previousStatus"] == "SUBMITTED"
     assert "Post-DLP recurrence detected" in held["review"]["reason"]
+    # #144: the SDP review list shows the reason and links the earlier repair
+    assert held["review"]["reasonCode"] == "POSSIBLE_LATENT_DEFECT"
+    assert held["review"]["earlierCaseId"] == previous["case_id"]
     with db.get_conn() as conn:
         assert not conn.execute("SELECT 1 FROM slots WHERE case_id = ?", (case_id,)).fetchone()
         events = conn.execute(
@@ -161,6 +164,8 @@ def test_post_dlp_recurrence_waits_for_sdp_before_booking(client, monkeypatch, u
     review_event = json.loads(events[1]["payload"])
     assert review_event["agent"] == "create_case"
     assert review_event["confidence_score"] == 1.0 and review_event["previous_status"] == "SUBMITTED"
+    assert review_event["reason_code"] == "POSSIBLE_LATENT_DEFECT"
+    assert review_event["earlier_case_id"] == previous["case_id"]
     assert review_event["message"] == (
         "Post-DLP recurrence detected. Flagged for SDP review to determine developer liability for latent defect."
     )
