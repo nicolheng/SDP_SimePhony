@@ -5,6 +5,7 @@
 backend/google-credentials.json
 backend/oauth-credentials.json
 backend/token.json
+backend/token*.json
 backend/token.json.tmp
 
 # Python
