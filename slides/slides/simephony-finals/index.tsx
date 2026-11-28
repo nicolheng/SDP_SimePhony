@@ -23,12 +23,19 @@ import testimonialLim from './assets/testimonial-lim.jpg';
 // ---------------------------------------------------------------------------
 
 export const design: DesignSystem = {
-  palette: { bg: '#FAF6F1', text: '#1C1814', accent: '#C64A1F' },
+  palette: {
+    bg: '#FAF6F1',
+    text: '#000000',
+    accent: '#C64A1F',
+  },
   fonts: {
     display: '"Inter", system-ui, -apple-system, sans-serif',
     body: '"Inter", system-ui, -apple-system, sans-serif',
   },
-  typeScale: { hero: 104, body: 30 },
+  typeScale: {
+    hero: 104,
+    body: 30,
+  },
   radius: 20,
 };
 
@@ -273,7 +280,7 @@ const PageNo = ({ color = soft }: { color?: string }) => {
   );
 };
 
-const RAIL_W = 132;
+const RAIL_W = 168;
 
 const RailLabel = ({ i, active, children }: { i: number; active: number; children: ReactNode }) => (
   <div
@@ -290,16 +297,13 @@ const RailLabel = ({ i, active, children }: { i: number; active: number; childre
   </div>
 );
 
-/** Chapter rail for the main pitch. The marker morphs smoothly across adjacent slides. */
+/** Chapter rail for the main pitch: the four parts of the brief (problem · solution · value · pilot & ask). */
 const Rail = ({ active }: { active: number }) => (
   <div style={{ position: 'relative', display: 'flex' }}>
-    <RailLabel i={0} active={active}>STAKES</RailLabel>
-    <RailLabel i={1} active={active}>PROBLEM</RailLabel>
-    <RailLabel i={2} active={active}>SOLUTION</RailLabel>
-    <RailLabel i={3} active={active}>INNOVATION</RailLabel>
-    <RailLabel i={4} active={active}>IMPACT</RailLabel>
-    <RailLabel i={5} active={active}>FEASIBILITY</RailLabel>
-    <RailLabel i={6} active={active}>SCALE</RailLabel>
+    <RailLabel i={0} active={active}>PROBLEM</RailLabel>
+    <RailLabel i={1} active={active}>SOLUTION</RailLabel>
+    <RailLabel i={2} active={active}>VALUE</RailLabel>
+    <RailLabel i={3} active={active}>PILOT &amp; ASK</RailLabel>
     <div style={{ position: 'absolute', left: 0, right: 0, bottom: -12, height: 3, background: '#EDE3D8', borderRadius: 2 }} />
     <MorphElement id="rail-marker">
       <div
@@ -347,15 +351,7 @@ const Eyebrow = ({ children }: { children: ReactNode }) => (
 
 const Title = ({ children, size = 64 }: { children: ReactNode; size?: number }) => (
   <h1
-    style={{
-      fontFamily: 'var(--osd-font-display)',
-      fontSize: size,
-      fontWeight: 800,
-      lineHeight: 1.12,
-      letterSpacing: '-0.02em',
-      margin: '18px 0 0',
-      color: 'var(--osd-text)',
-    }}
+    style={{ fontFamily: 'var(--osd-font-display)', fontSize: size, fontWeight: 800, lineHeight: 1.12, letterSpacing: '-0.02em', margin: '18px 0 0', color: 'var(--osd-text)', minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexShrink: '0', flexGrow: '0', flexBasis: 'auto', width: '1718.22px', height: '71.68px', translate: '0px 0px' }}
   >
     {children}
   </h1>
@@ -377,6 +373,7 @@ const Frame = ({
   overlay,
   mark,
   chapter,
+  titleSize,
 }: {
   eyebrow: string;
   title: ReactNode;
@@ -388,6 +385,7 @@ const Frame = ({
   overlay?: ReactNode;
   mark?: string;
   chapter?: number;
+  titleSize?: number;
 }) => {
   const h = 1080 - bodyTop - FOOT;
   const inner = <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 0, bottom: 0 }}>{children}</div>;
@@ -411,9 +409,9 @@ const Frame = ({
           {mark}
         </div>
       ) : null}
-      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 92 }}>
+      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 92, minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexShrink: '0', flexGrow: '0', flexBasis: 'auto', width: '1775.54px', height: '197.35px', translate: '0px 0px' }}>
         <Eyebrow>{eyebrow}</Eyebrow>
-        <Title>{title}</Title>
+        <Title size={titleSize}>{title}</Title>
         {subtitle ? (
           <p style={{ fontSize: 28, color: muted, margin: '12px 0 0', lineHeight: 1.4 }}>{subtitle}</p>
         ) : null}
@@ -536,9 +534,9 @@ const Cover: Page = () => {
             'linear-gradient(90deg, rgba(20,14,10,0.94) 0%, rgba(20,14,10,0.74) 45%, rgba(20,14,10,0.22) 100%)',
         }}
       />
-      <div style={{ position: 'absolute', left: PAD_X, top: 96, fontSize: 24, letterSpacing: '0.16em', opacity: 0.82, ...anim(live, 'sf-fade', 700, 150), translate: '1px 0px' }}>TOP 13 PITCH</div>
+      <div style={{ position: 'absolute', left: PAD_X, top: 96, fontSize: 24, letterSpacing: '0.16em', opacity: 0.82, ...anim(live, 'sf-fade', 700, 150), translate: '1px 0px' }}>TOP 5 PITCH</div>
       <div
-        style={{ position: 'absolute', right: 130, top: 60, fontFamily: '"Allura", cursive', fontSize: 230, lineHeight: 1, letterSpacing: '-0.045em', color: '#FBE3D3', paddingRight: 30, ...anim(live, 'sf-wipe', 1600, 260, 'cubic-bezier(0.5, 0, 0.3, 1)'), translate: '91.13px -5.22px' }}
+        style={{ position: 'absolute', right: 130, top: 60, fontFamily: '"Allura", cursive', fontSize: 230, lineHeight: 1, letterSpacing: '-0.045em', color: '#FBE3D3', paddingRight: 30, ...anim(live, 'sf-wipe', 1600, 260, 'cubic-bezier(0.5, 0, 0.3, 1)'), translate: '91.13px -5.22px', minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexShrink: '0', flexGrow: '0', flexBasis: 'auto', width: '789.93px', height: '274.86px' }}
       >
         Simephony
       </div>
@@ -588,26 +586,6 @@ const Cover: Page = () => {
 // ---------------------------------------------------------------------------
 // 03 · The problem (stats count up, then the buyer and developer journeys build)
 // ---------------------------------------------------------------------------
-
-/** The news lower-third band on slide 2. */
-const NEWS_BAND: CSSProperties = {
-  position: 'absolute',
-  left: 0,
-  right: 0,
-  bottom: 96,
-  height: 64,
-  display: 'flex',
-  alignItems: 'center',
-  overflow: 'hidden',
-  background: BLOCK,
-  borderTop: '3px solid #C64A1F',
-};
-
-const NewsBandLabel = ({ children }: { children: ReactNode }) => (
-  <div style={{ alignSelf: 'stretch', display: 'flex', alignItems: 'center', padding: `0 28px 0 ${PAD_X}px`, background: '#C64A1F', color: '#fff', fontSize: 20, fontWeight: 800, letterSpacing: '0.14em', flexShrink: 0 }}>
-    {children}
-  </div>
-);
 
 const Stat = ({ on, value, label }: { on: boolean; value: ReactNode; label: string }) => (
   <div style={{ flex: 1, display: 'flex', ...reveal(on, 0, 'translateY(18px)') }}>
@@ -747,14 +725,14 @@ const Problem: Page = () => {
   const arrived = useArrived();
   const piped = beat >= 1;
   return (
-    <Frame eyebrow="02 · The problem" title="House defects get closed but don’t always get resolved." bodyTop={316} mark="02" chapter={1}>
-      <div style={{ display: 'flex', gap: 32 }}>
+    <Frame eyebrow="02 · Problem · The evidence" title="House defects get closed but don’t always get resolved." bodyTop={316} mark="02" chapter={0}>
+      <div style={{ display: 'flex', gap: 32, translate: '0px -26.65px' }}>
         <Stat on={arrived} value={<CountUp to={95} suffix="%" go={arrived} />} label="of homebuyers faced problems with how complaints were handled" />
         <Stat on={arrived} value={<CountUp to={70} suffix="%" go={arrived} />} label="faced the same defect issues more than once" />
         <Stat on={arrived} value={<CountUp to={50} suffix="%" go={arrived} />} label="were unsatisfied with the developer’s response and speed" />
         <Stat on={arrived} value={<>1 in <CountUp to={2} go={arrived} /></>} label="were never asked to sign off a repair after it was done" />
       </div>
-      <div style={{ ...journeyGrid, marginTop: 42, translate: '0px 52.17px' }}>
+      <div style={{ ...journeyGrid, marginTop: 30 }}>
         <span style={{ justifySelf: 'start', fontSize: 22, fontWeight: 700, color: ink, lineHeight: 1.25, ...reveal(piped, 0, 'translateX(-16px)') }}>
           The Buyer’s Journey:
         </span>
@@ -793,7 +771,7 @@ const Problem: Page = () => {
             </div>
           </span>
       </div>
-      <p style={{ position: 'absolute', bottom: 0, left: 0, right: 0, fontSize: 20, color: soft, lineHeight: 1.45, margin: 0, ...reveal(piped, 1300, 'none') }}>
+      <p style={{ position: 'absolute', bottom: 0, left: 0, right: 0, fontSize: 20, color: soft, lineHeight: 1.45, margin: 0, ...reveal(piped, 1300, 'none'), translate: '0px -76.35px' }}>
         Sources: Yusof et al. (2025), <i>Journal of Engineering, Design and Technology</i>, study of 104 Malaysian
         homebuyers; National House Buyers Association (HBA) via iProperty Malaysia, 2021.
       </p>
@@ -802,123 +780,405 @@ const Problem: Page = () => {
 };
 
 // ---------------------------------------------------------------------------
-// 02 · In the news (opens the pitch over a news sting: breaking-news headline, the ruling, a scrolling ticker)
+// 01 · Problem: why it matters (sy) — the D'Island ruling, plus why it matters to SDP
 // ---------------------------------------------------------------------------
 
-const DefectChip = ({ on, delay, children }: { on: boolean; delay: number; children: ReactNode }) => (
-  <span style={{ display: 'inline-block', padding: '10px 22px', borderRadius: 999, border: `2px solid ${line}`, background: card, fontSize: 24, fontWeight: 700, color: ink, ...reveal(on, delay, 'translateY(10px)') }}>
-    {children}
-  </span>
-);
-
-const TICKER =
-  'Court of Appeal upholds ruling against the developer  ·  Liability for latent defects may extend beyond the 24-month Defect Liability Period  ·  Defects included water seepage, cracks, burst pipes and poor electrical wiring  ·  Source: Court of Appeal judgment, Civil Appeal B-02(C)(W)-591-04/2023, 30 Jan 2026 (eFiling, Kehakiman Malaysia)  ·  ';
-
-/**
- * Wireframe globe behind the news slide. Meridians are recomputed each frame (orthographic projection,
- * front half only, fading towards the rim) so it really turns. Thumbnails and exports show a still frame.
- */
-const GLOBE = { cx: 1530, cy: 520, r: 400 };
-const GLOBE_MERIDIANS = 18; // every 20°
-const GLOBE_LATS = [-60, -40, -20, 0, 20, 40, 60];
-
-const meridianPath = (lon: number) => {
-  const { cx, cy, r } = GLOBE;
-  const rx = Math.abs(Math.sin(lon)) * r;
-  const sweep = Math.sin(lon) >= 0 ? 1 : 0;
-  return `M ${cx} ${cy - r} A ${rx.toFixed(1)} ${r} 0 0 ${sweep} ${cx} ${cy + r}`;
-};
-
-const Globe = () => {
-  const live = useIsActivePage();
-  const refs = useRef<(SVGPathElement | null)[]>([]);
-  useEffect(() => {
-    const draw = (t: number) => {
-      refs.current.forEach((el, i) => {
-        if (!el) return;
-        const lon = (i / GLOBE_MERIDIANS) * Math.PI * 2 + t;
-        const front = Math.cos(lon);
-        el.setAttribute('d', meridianPath(lon));
-        el.style.opacity = front > 0 ? String(0.25 + 0.75 * front) : '0';
-      });
-    };
-    draw(0.35);
-    if (!live) return;
-    let raf = 0;
-    const t0 = performance.now();
-    const tick = (now: number) => {
-      draw(0.35 + ((now - t0) / 1000) * 0.18); // ~35 s per turn
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [live]);
-  const { cx, cy, r } = GLOBE;
-  return (
-    <svg aria-hidden width={1920} height={1080} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-      <g fill="none" stroke="#C64A1F" strokeWidth={2} opacity={0.16}>
-        <circle cx={cx} cy={cy} r={r} strokeWidth={3} />
-        {GLOBE_LATS.map((lat) => {
-          const y = cy - Math.sin((lat * Math.PI) / 180) * r;
-          const w = Math.cos((lat * Math.PI) / 180) * r;
-          return <line key={lat} x1={cx - w} y1={y} x2={cx + w} y2={y} />;
-        })}
-        {Array.from({ length: GLOBE_MERIDIANS }, (_, i) => (
-          <path key={i} ref={(el) => { refs.current[i] = el; }} />
-        ))}
-      </g>
-    </svg>
-  );
-};
-
 const WhyItMatters: Page = () => {
-  // No clicks: "breaking news" pill, then the headline, the case, the defects, and the ticker starts rolling.
   const live = useIsActivePage();
   const arrived = useArrived();
   return (
     <div style={{ ...fill, background: 'var(--osd-bg)', color: 'var(--osd-text)' }}>
-      <Globe />
-      <div aria-hidden style={{ position: 'absolute', right: 50, bottom: 170, fontSize: 360, fontWeight: 900, lineHeight: 0.85, letterSpacing: '-0.05em', color: watermark, fontFamily: 'var(--osd-font-display)' }}>
-        01
-      </div>
-      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 92 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18, ...reveal(arrived, 0, 'translateY(10px)') }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: '#C64A1F', color: '#fff', borderRadius: 8, padding: '8px 18px', fontSize: 22, fontWeight: 800, letterSpacing: '0.14em', translate: '0px 125px' }}>
-            <span style={{ width: 12, height: 12, borderRadius: 6, background: '#fff', ...(live ? { animation: 'sf-blink 1.2s ease-in-out infinite' } : {}) }} />
-            IN THE NEWS
-          </span>
-          <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: '0.12em', color: muted, translate: '0px 121px' }}>COURT OF APPEAL · 30 JAN 2026</span>
-        </div>
-        <h1 style={{ fontFamily: 'var(--osd-font-display)', fontSize: 64, fontWeight: 800, lineHeight: 1.12, letterSpacing: '-0.02em', margin: '34px 0 0', whiteSpace: 'nowrap' }}>
-          <span style={{ display: 'block', ...reveal(arrived, 250, 'translateY(16px)'), translate: '0px 121px' }}>Developers may stay liable for latent defects,</span>
-          <span style={{ display: 'block', color: 'var(--osd-accent)', ...reveal(arrived, 450, 'translateY(16px)'), translate: '0px 121px' }}>even after the 24-month Defect Liability Period.</span>
+      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 140 }}>
+        <Eyebrow>01 · Problem · Why it matters</Eyebrow>
+        <h1 style={{ fontFamily: 'var(--osd-font-display)', fontSize: 60, fontWeight: 800, lineHeight: 1.12, letterSpacing: '-0.02em', margin: '18px 0 0', whiteSpace: 'nowrap' }}>
+          <span style={{ display: 'inline-block', ...reveal(arrived, 250, 'translateY(16px)') }}>When repairs can’t be trusted,&nbsp;</span>
+          <span style={{ display: 'inline-block', color: 'var(--osd-accent)', ...reveal(arrived, 450, 'translateY(16px)') }}>liability lasts for years.</span>
         </h1>
-        <div style={{ fontSize: 30, fontWeight: 700, marginTop: 34, color: ink, ...reveal(arrived, 750, 'translateY(12px)'), translate: '0px 121px' }}>
-          Sime Darby Property (Bukit Jelutong) Sdn Bhd v Ooi Cheng Huat @ Ooi Peng Huat &amp; 2 Ors
-        </div>
-        <p style={{ fontSize: 27, lineHeight: 1.5, color: muted, margin: '12px 0 0', maxWidth: 1400, ...reveal(arrived, 850, 'translateY(12px)'), translate: '0px 121px' }}>
-          The Court of Appeal upheld the ruling. The case shows why defect rectification needs evidence and long-term accountability.
-        </p>
-        <div style={{ display: 'flex', gap: 14, marginTop: 30, flexWrap: 'wrap', translate: '0px 121px' }}>
-          <DefectChip on={arrived} delay={1000}>Water seepage</DefectChip>
-          <DefectChip on={arrived} delay={1080}>Structural cracks</DefectChip>
-          <DefectChip on={arrived} delay={1160}>Plumbing</DefectChip>
-          <DefectChip on={arrived} delay={1240}>Electrical</DefectChip>
-        </div>
-      </div>
-      <MorphElement id="news-band">
-        <div style={NEWS_BAND}>
-          <NewsBandLabel>LATEST</NewsBandLabel>
-          <div style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            <div style={{ display: 'inline-block', paddingLeft: 28, fontSize: 22, fontWeight: 600, color: ink, ...(live ? { animation: 'sf-ticker 26s linear 0.6s infinite' } : {}) }}>
-              {TICKER}
-              {TICKER}
+        <div style={{ display: 'flex', gap: 30, marginTop: 40 }}>
+          <div style={{ width: 480, borderRadius: 20, background: blueSoft, border: '2px solid #C9D8EC', color: ink, padding: '32px 36px', ...reveal(arrived, 700, 'translateY(12px)') }}>
+            <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '0.12em', color: blue }}>THE RULING</div>
+            <div style={{ fontSize: 46, fontWeight: 900, color: blue, marginTop: 14, lineHeight: 1.1 }}>Beyond the DLP</div>
+            <div style={{ fontSize: 24, lineHeight: 1.4, color: muted, marginTop: 12 }}>Where repairs did not resolve a defect, responsibility may continue after the DLP ends.</div>
+          </div>
+          <div style={{ flex: 1, borderRadius: 20, border: `2px solid ${line}`, background: card, padding: '30px 36px', ...reveal(arrived, 850, 'translateY(12px)') }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}>
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--osd-accent)' }}>THE CASE</div>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, background: '#C64A1F', color: '#fff', borderRadius: 8, padding: '6px 14px', fontSize: 18, fontWeight: 800, letterSpacing: '0.12em' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: '#fff', ...(live ? { animation: 'sf-blink 1.2s ease-in-out infinite' } : {}) }} />
+                HIGH COURT · 18 NOV 2026
+              </span>
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.25, marginTop: 12 }}>
+              Astana Modal (M) Sdn Bhd — D’Island Residence, Puchong
+            </div>
+            <div style={{ fontSize: 24, lineHeight: 1.5, color: muted, marginTop: 16 }}>
+              Two lawsuits covered 69 purchasers and recurring cracks, leaks, staining and uneven finishes. Astana repaired defects repeatedly, but the problems persisted after the DLP expired.
             </div>
           </div>
         </div>
-      </MorphElement>
+      </div>
+
+      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, bottom: 150, display: 'flex', alignItems: 'center', gap: 28, background: BLOCK, color: BLOCK_TEXT, borderRadius: 16, padding: '18px 28px', ...reveal(arrived, 1150, 'translateY(12px)'), translate: '0px -51.23px', minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexShrink: '0', flexGrow: '0', flexBasis: 'auto', width: '1680px', height: '209.43px' }}>
+        <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '0.12em', color: BLOCK_HI, flexShrink: 0, lineHeight: 1.3 }}>
+          WHY IT MATTERS
+          <br />
+          TO SDP
+        </div>
+        <div style={{ fontSize: 23, lineHeight: 1.4 }}>
+          SDP aims for <b>“zero defects in end products”</b>, set up a Command &amp; Contact Centre for{' '}
+          <b>“customer communications, disputes and defects”</b>, and plans to <b>“deepen AI integration across all business functions”</b>.
+        </div>
+      </div>
+      <p style={{ position: 'absolute', left: PAD_X, right: PAD_X, bottom: 108, fontSize: 17, color: soft, margin: 0, translate: '2px -27.23px' }}>
+        Sources: High Court ruling, New Straits Times, 18 Nov 2026 · SDP Sustainability Report 2024 · SDP Integrated Annual Report 2024.
+      </p>
       <Footer chapter={0} />
     </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// 03 · Solution: overall flow (video) + one feature per slide (video / image slots)
+// ---------------------------------------------------------------------------
+
+/**
+ * A slot for a screen recording or screenshot.
+ * Empty → a dashed placeholder. To fill it, put the file in ./assets/, import it at the top of this file
+ * (e.g. `import flowVideo from './assets/flow.mp4'`) and pass `video={flowVideo}` (or `image={...}` for a still).
+ * Videos play muted from the start each time the slide opens and pause when you leave.
+ */
+const MediaSlot = ({ w, h, hint, video, image, loop = true }: { w: number; h: number; hint: string; video?: string; image?: string; loop?: boolean }) => {
+  const live = useIsActivePage();
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (live) {
+      v.currentTime = 0;
+      v.play().catch(() => {});
+    } else {
+      v.pause();
+    }
+  }, [live]);
+  const frame: CSSProperties = { width: w, height: h, flexShrink: 0, borderRadius: 18, border: `2px solid ${line}`, boxShadow: '0 30px 60px -30px rgba(28,24,20,0.45)', overflow: 'hidden', background: '#fff' };
+  const media: CSSProperties = { width: '100%', height: '100%', display: 'block', objectFit: 'cover', objectPosition: 'top left' };
+  if (video) {
+    return (
+      <div style={frame}>
+        <video ref={ref} src={video} muted loop={loop} playsInline preload="auto" style={media} />
+      </div>
+    );
+  }
+  if (image) {
+    return (
+      <div style={frame}>
+        <img src={image} alt={hint} style={media} />
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{ width: '1100px', height: '630.55px', flexShrink: '0', boxSizing: 'border-box', borderRadius: 18, border: '3px dashed #D9B8A6', background: '#F6EFE7', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, textAlign: 'center', padding: 40, minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexGrow: '0', flexBasis: 'auto', translate: '0px 0px' }}
+    >
+      <div style={{ width: 92, height: 92, borderRadius: 46, background: '#C64A1F', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg viewBox="0 0 24 24" width={40} height={40}>
+          <path d="M8 5v14l11-7z" fill="#fff" />
+        </svg>
+      </div>
+      <div style={{ fontSize: 30, fontWeight: 800, color: ink }}>{hint}</div>
+      <div style={{ fontSize: 21, color: muted }}>
+        Video or screenshot · {w} × {h} · {loop ? 'loops, muted' : 'plays once, muted'}
+      </div>
+    </div>
+  );
+};
+
+type Actor = 'BUYER' | 'AI' | 'TECHNICIAN' | 'SDP' | 'DONE';
+const ACTOR_COLOR: Record<Actor, string> = { BUYER: '#C64A1F', AI: blue, TECHNICIAN: green, SDP: ink, DONE: green };
+
+/** One step of the overall flow (left rail on the Solution page). */
+const FlowStep = ({ n, who, title, on, delay, last }: { n: string; who: Actor; title: string; on: boolean; delay: number; last?: boolean }) => (
+  <div style={{ position: 'relative', display: 'flex', gap: 18, alignItems: 'flex-start', paddingBottom: last ? 0 : 22, ...reveal(on, delay, 'translateX(-12px)') }}>
+    {last ? null : <div style={{ position: 'absolute', left: 21, top: 44, bottom: 0, width: 3, background: line }} />}
+    <div
+      style={{ width: 45, height: 45, borderRadius: 23, flexShrink: 0, background: who === 'DONE' ? green : card, border: `3px solid ${ACTOR_COLOR[who]}`, color: who === 'DONE' ? '#fff' : ACTOR_COLOR[who], fontSize: 20, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
+    >
+      {who === 'DONE' ? '✓' : n}
+    </div>
+    <div>
+      <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.12em', color: ACTOR_COLOR[who] }}>{who === 'DONE' ? 'CLOSED' : who}</div>
+      <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.25, marginTop: 2, color: ink }}>{title}</div>
+    </div>
+  </div>
+);
+
+const SOL_VIDEO_W = 1156;
+const SOL_VIDEO_H = 650;
+
+/** One stage box on the Solution page (sy layout). All boxes share the same white card. */
+const FlowStage = ({ i, name, detail, on, last }: { i: number; name: string; detail: string; on: boolean; last?: boolean }) => (
+  <div style={{ position: 'relative', textAlign: 'center', ...reveal(on, i * 120, 'translateY(14px)') }}>
+    <div style={{ height: 82, borderRadius: 18, border: `2px solid ${line}`, background: card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: muted }}>STEP {i + 1}</div>
+        <div style={{ fontSize: 25, fontWeight: 800, marginTop: 4 }}>{name}</div>
+      </div>
+    </div>
+    <div style={{ fontSize: 19, lineHeight: 1.35, color: muted, marginTop: 12 }}>{detail}</div>
+    {last ? null : <div style={{ position: 'absolute', right: -16, top: 41, transform: 'translate(50%, -50%)', fontSize: 30, color: soft }}>→</div>}
+  </div>
+);
+
+const SimephonyFlow: Page = () => {
+  const arrived = useArrived();
+  return (
+    <div style={{ ...fill, background: 'var(--osd-bg)', color: 'var(--osd-text)' }}>
+      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 78 }}>
+        <Eyebrow>03 · Solution · Simephony</Eyebrow>
+      </div>
+      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 125, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 32, alignItems: 'start', translate: '0px 12.56px' }}>
+        <FlowStage on={arrived} i={0} name="Report" detail="Buyer snaps a photo" />
+        <FlowStage on={arrived} i={1} name="Analyse" detail="Valid / invalid + history" />
+        <FlowStage on={arrived} i={2} name="Technician fix" detail="AI repair guide" />
+        <FlowStage on={arrived} i={3} name="SDP verify" detail="Human approval" />
+        <FlowStage on={arrived} i={4} name="Buyer verify" detail="Checklist sign-off" />
+        <FlowStage on={arrived} i={5} name="Closed" detail="Both parties confirm" last />
+      </div>
+      <div style={{ position: 'absolute', left: PAD_X, right: PAD_X, top: 330, height: '690.22px', borderRadius: 20, border: `3px dashed ${soft}`, background: '#FFFDFA', display: 'flex', alignItems: 'center', justifyContent: 'center', ...reveal(arrived, 760, 'translateY(12px)'), minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexShrink: '0', flexGrow: '0', flexBasis: 'auto', width: '1680px', translate: '0px -41.26px' }}>
+        <div style={{ position: 'absolute', left: 28, top: 24, background: '#C64A1F', color: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 17, fontWeight: 800, letterSpacing: '0.12em' }}>VIDEO PLACEHOLDER · 20–30 SEC</div>
+        <div style={{ width: 86, height: 86, borderRadius: 43, background: '#1C1814', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, marginRight: 24 }}>▶</div>
+        <div style={{ fontSize: 31, fontWeight: 800 }}>Team to record: report → triage → repair → approvals → close</div>
+      </div>
+      <Footer chapter={1} />
+    </div>
+  );
+};
+
+/**
+ * Innovation points (one per slide): screen recording on the left; on the right, who it is for,
+ * a box with the live components (from the sy deck) and what is different.
+ */
+const FeatureSlide = ({ n, area, title, who, diff, media, fit, children }: { n: string; area: string; title: string; who: string; diff: ReactNode; media: ReactNode; fit?: boolean; children: ReactNode }) => {
+  const arrived = useArrived();
+  return (
+    <Frame eyebrow={`03 · Solution · Innovation point ${n} of 3 · ${area}`} title={title} bodyTop={290} chapter={1}>
+      <div style={{ display: 'flex', gap: 44, height: 619 }}>
+        <div style={reveal(arrived, 0, 'translateY(16px)')}>{media}</div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 18, ...reveal(arrived, 180, 'translateY(16px)') }}>
+          <span style={{ alignSelf: 'flex-start', fontSize: 18, fontWeight: 800, letterSpacing: '0.12em', color: '#A63A14', background: orangeSoft, padding: '7px 14px', borderRadius: 8 }}>
+            FOR {who}
+          </span>
+          <div style={{ flex: fit ? 'none' : 1, background: card, border: `2px solid ${line}`, borderRadius: 18, padding: '20px 22px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 14, minWidth: '0px', minHeight: '0px', maxWidth: 'none', maxHeight: 'none', flexShrink: '0', flexGrow: '0', flexBasis: 'auto', width: '536px', height: fit ? 'auto' : '440.97px' }}>
+            {children}
+          </div>
+          <div style={{ background: BLOCK, color: BLOCK_TEXT, borderRadius: 16, padding: '16px 22px' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: BLOCK_HI }}>WHAT’S DIFFERENT</div>
+            <div style={{ fontSize: 20, lineHeight: 1.4, marginTop: 6 }}>{diff}</div>
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+};
+
+const PanelHead = ({ n, children }: { n: string; children: ReactNode }) => (
+  <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--osd-accent)' }}>
+    INNOVATION {n} · {children}
+  </div>
+);
+
+/** Human-in-the-loop decision point (sy "Human-in-the-loop" page). */
+const LoopRow = ({ n, title, detail }: { n: string; title: string; detail: string }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 16, borderRadius: 14, border: `2px solid ${line}`, background: '#fff', padding: '12px 16px' }}>
+    <div style={{ width: 50, height: 50, flexShrink: 0, borderRadius: 25, background: orangeSoft, color: '#C64A1F', fontSize: 20, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{n}</div>
+    <div>
+      <div style={{ fontSize: 23, fontWeight: 800 }}>{title}</div>
+      <div style={{ fontSize: 18, color: muted, marginTop: 2 }}>{detail}</div>
+    </div>
+  </div>
+);
+
+/** One console signal (sy "SDP insights" page). */
+const InsightStat = ({ n, title, detail, bg, color }: { n: string; title: string; detail: string; bg: string; color: string }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 16, borderRadius: 14, background: bg, border: `2px solid ${line}`, padding: '12px 16px' }}>
+    <div style={{ width: 50, height: 50, flexShrink: 0, borderRadius: 25, background: '#fff', color, fontSize: 20, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{n}</div>
+    <div>
+      <div style={{ fontSize: 23, fontWeight: 800 }}>{title}</div>
+      <div style={{ fontSize: 18, lineHeight: 1.3, color: muted, marginTop: 2 }}>{detail}</div>
+    </div>
+  </div>
+);
+
+const FEAT_W = 1100;
+const FEAT_H = 619;
+
+const FeatToday: Page = () => (
+  <FeatureSlide
+    n="1"
+    area="SDP console"
+    title="Actions: Human in the Loop"
+    who="CCC OFFICERS"
+    media={<MediaSlot w={FEAT_W} h={FEAT_H} hint="SDP console · Actions queue" />}
+    diff="Some tools let AI agents act without an approval step. Here every verdict, rejection and escalation has a named person behind it."
+  >
+    <PanelHead n="01">HUMAN-IN-THE-LOOP</PanelHead>
+    <LoopRow n="01" title="Approvals" detail="Staff approve every sign offs and review low confidence AI's verdict." />
+    <LoopRow n="02" title="DLP deadlines" detail="Cases nearing the DLP end are flagged early." />
+    <LoopRow n="03" title="Buyer’s comment" detail="Buyer feedback reaches staff before closure." />
+    <div style={{ fontSize: 17, lineHeight: 1.35, color: muted, marginTop: 'auto' }}>{''}<br />{''}</div>
+  </FeatureSlide>
+);
+
+const FeatInsights: Page = () => (
+  <FeatureSlide
+    n="2"
+    area="SDP console"
+    title="Insights: Know the unknown"
+    who="PROJECT & QUALITY MANAGERS"
+    media={<MediaSlot w={FEAT_W} h={FEAT_H} hint="SDP console · Insights" />}
+    diff="Most defect apps stop at the ticket. Insights turn closed cases into decisions for the next phase."
+  >
+    <PanelHead n="02">CONSOLE INSIGHTS</PanelHead>
+    <InsightStat n="01" title="What drives low rating" detail="Shows which defects and delays pull buyer ratings down." bg={blueSoft} color={blue} />
+    <InsightStat n="02" title="Contractor scorecard" detail="Ranks contractors on repeat repairs and response time." bg={orangeSoft} color="#C64A1F" />
+    <InsightStat n="03" title="Lessons for next building" detail="Feeds recurring issues into the next design and tender." bg={greenSoft} color={green} />
+  </FeatureSlide>
+);
+
+const FeatSystemic: Page = () => (
+  <FeatureSlide
+    n="3"
+    area="Systemic issues"
+    title="Systemic Issues: Tackle Underlying Defects"
+    who="QUALITY & TECHNICAL TEAMS"
+    fit
+    media={<MediaSlot w={FEAT_W} h={FEAT_H} hint="Similar-defect linking · block heatmap" />}
+    diff="Dashboards count recurring issues. Simephony links the actual cases, so one root-cause fix replaces repeat repairs."
+  >
+    <PanelHead n="03">RECURRENCE DETECTION</PanelHead>
+    <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.35, color: ink }}>Detects recurring defects and provides suggested actions.</div>
+  </FeatureSlide>
+);
+
+// ---------------------------------------------------------------------------
+// 03 · Solution · Impact (sy): verify, connect, escalate
+// ---------------------------------------------------------------------------
+
+const ImpactCard = ({ n, icon, title, on, children }: { n: string; icon: 'camera' | 'link' | 'alert' | 'chart'; title: string; on: boolean; children: ReactNode }) => (
+  <div style={{ flex: 1, display: 'flex', ...reveal(on, 0, 'translateY(18px)') }}>
+    <Card style={{ flex: 1, padding: 34 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ width: 70, height: 70, borderRadius: 20, background: orangeSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={icon} size={38} />
+        </div>
+        <span style={{ fontSize: 44, fontWeight: 900, color: '#EADFD3' }}>{n}</span>
+      </div>
+      <div style={{ fontSize: 32, fontWeight: 800, marginTop: 20 }}>{title}</div>
+      <ul style={{ fontSize: 24, lineHeight: 1.45, color: muted, margin: '14px 0 0', paddingLeft: 28, listStyleType: 'disc' }}>{children}</ul>
+    </Card>
+  </div>
+);
+
+const ValueTile = ({ who, what, on, delay }: { who: string; what: string; on: boolean; delay: number }) => (
+  <div style={{ flex: 1, padding: '0 32px', ...reveal(on, delay) }}>
+    <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '0.12em', color: BLOCK_HI }}>{who}</div>
+    <div style={{ fontSize: 26, fontWeight: 600, marginTop: 8, lineHeight: 1.35 }}>{what}</div>
+  </div>
+);
+
+const Impact: Page = () => {
+  // Two automatic batches: the three cards together, then the values bar (all in about 2 s).
+  const arrived = useArrived();
+  const done = useTimeline([1000]) >= 1;
+  return (
+    <Frame
+      eyebrow="03 · Solution · Impact"
+      title="Closed doesn’t mean resolved"
+      subtitle="Simephony verifies defects, connects recurrence and suggests improvements."
+      bodyTop={296}
+      chapter={1}
+    >
+      <div style={{ display: 'flex', gap: 32 }}>
+        <ImpactCard on={arrived} n="01" icon="camera" title="Verify Actual Defect">
+          <li style={{ marginBottom: 8 }}>AI agents help verify that the defect is valid and the repair is real</li>
+          <li>Suggests how to verify the defect and how to repair it</li>
+        </ImpactCard>
+        <ImpactCard on={arrived} n="02" icon="link" title="Connect the Pattern">
+          <li style={{ marginBottom: 10 }}>Connect related cases across units, floors, stacks and repair histories</li>
+          <li>A returning defect counts as a recurrence, not a new ticket</li>
+        </ImpactCard>
+        <ImpactCard on={arrived} n="03" icon="chart" title="Suggests Improvements">
+          <li style={{ marginBottom: 10 }}>Turns recurring defects into suggested root-cause fixes for SDP to approve</li>
+          <li>Recommends design and contractor improvements for the next phase</li>
+        </ImpactCard>
+      </div>
+      <div
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 20, display: 'flex', alignItems: 'center', background: BLOCK, color: BLOCK_TEXT, borderRadius: 'var(--osd-radius)', padding: '26px 0', ...reveal(done, 0, 'translateY(18px)'), translate: '0px -90.47px' }}
+      >
+        <div style={{ padding: '0 40px', fontSize: 30, fontWeight: 800, color: BLOCK_HI }}>Values</div>
+        <ValueTile on={done} delay={160} who="RESIDENTS" what="Clearer updates and greater confidence" />
+        <ValueTile on={done} delay={300} who="OPERATIONS" what="Less duplicated investigation and repeat work" />
+        <ValueTile on={done} delay={440} who="QUALITY" what="Better design and contractor choices next phase" />
+      </div>
+    </Frame>
+  );
+};
+
+/** Differentiation table row: what today's defect apps do vs Simephony. */
+const DiffRow = ({ cap, today, last }: { cap: string; today: string; last?: boolean }) => {
+  const has = today === '✓';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', borderBottom: last ? 'none' : `2px solid ${line}`, minHeight: 74 }}>
+      <div style={{ flex: 1, padding: '10px 22px', fontSize: 23, fontWeight: 600, color: ink, lineHeight: 1.3 }}>{cap}</div>
+      <div style={{ width: 200, padding: '10px 16px', textAlign: 'center', fontSize: has ? 28 : 20, fontWeight: 700, color: has ? green : soft, borderLeft: `2px solid ${line}` }}>{today}</div>
+      <div style={{ width: 170, padding: '10px 16px', textAlign: 'center', fontSize: 28, fontWeight: 800, color: green, borderLeft: `2px solid ${line}`, background: greenSoft, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
+    </div>
+  );
+};
+
+const ScaleStep = ({ n, title, body, last }: { n: string; title: string; body: string; last?: boolean }) => (
+  <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', position: 'relative', paddingBottom: last ? 0 : 22 }}>
+    {last ? null : <div style={{ position: 'absolute', left: 21, top: 46, bottom: 0, width: 3, background: '#E9B9A3' }} />}
+    <NumBadge n={n} />
+    <div style={{ paddingTop: 4 }}>
+      <div style={{ fontSize: 24, fontWeight: 800 }}>{title}</div>
+      <div style={{ fontSize: 20, lineHeight: 1.38, color: muted, marginTop: 2 }}>{body}</div>
+    </div>
+  </div>
+);
+
+const Different: Page = () => {
+  const arrived = useArrived();
+  return (
+    <Frame eyebrow="Appendix H · Differentiation & scale" title="Different by design, built to scale" mark="H">
+      <div style={{ display: 'flex', gap: 44 }}>
+        <div style={{ width: 990, ...reveal(arrived, 0, 'translateY(16px)') }}>
+          <div style={{ border: `2px solid ${ink}`, borderRadius: 16, overflow: 'hidden', background: card }}>
+            <div style={{ display: 'flex', background: '#F2EBE3', borderBottom: `2px solid ${line}`, fontSize: 17, fontWeight: 800, letterSpacing: '0.1em' }}>
+              <div style={{ flex: 1, padding: '12px 22px', color: muted }}>CAPABILITY</div>
+              <div style={{ width: 200, padding: '12px 16px', textAlign: 'center', color: 'var(--osd-accent)', borderLeft: `2px solid ${line}` }}>DEFECT APPS TODAY</div>
+              <div style={{ width: 170, padding: '12px 16px', textAlign: 'center', color: green, borderLeft: `2px solid ${line}` }}>SIMEPHONY</div>
+            </div>
+            <DiffRow cap="Photo report, status tracking, PDF export" today="✓" />
+            <DiffRow cap="AI validity check against DLP rules, with a reason code" today="—" />
+            <DiffRow cap="Step-by-step repair guide for the technician" today="—" />
+            <DiffRow cap="Closes only after SDP and the buyer both verify" today="Sign-off only" />
+            <DiffRow cap="Links recurring cases across units, with evidence" today="Dashboards" last />
+          </div>
+          <p style={{ fontSize: 18, lineHeight: 1.45, color: soft, margin: '14px 0 0' }}>
+            “Defect apps today”: public features of Malaysian developer apps (including SDP’s) and defect platforms we reviewed in Nov 2026.
+            None we found applies AI to homebuyer defect reports.
+          </p>
+        </div>
+        <Card style={{ flex: 1, padding: '26px 30px', ...reveal(arrived, 180, 'translateY(16px)') }}>
+          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--osd-accent)', marginBottom: 20 }}>ONE ENGINE, MANY DEVELOPMENTS</div>
+          <ScaleStep n="1" title="One handover phase" body="Pilot alongside the CCC" />
+          <ScaleStep n="2" title="All 27 townships" body="Rules, thresholds and workflows per township in one config file" />
+          <ScaleStep n="3" title="After the DLP" body="Strata buildings and SDP’s own assets" />
+          <ScaleStep n="4" title="Back into construction" body="Contractor scorecards and lessons for the next phase’s design" last />
+        </Card>
+      </div>
+    </Frame>
   );
 };
 
@@ -966,9 +1226,8 @@ const Solution: Page = () => {
   const done = useTimeline([900]) >= 1;
   return (
     <Frame
-      eyebrow="03 · Solution"
-      chapter={2}
-      mark="03"
+      eyebrow="Appendix H · The three apps"
+      mark="H"
       title={
         <>
           Simephony: From complaint <Arrow color={muted} size={56} /> resolution <Arrow color={muted} size={56} />{' '}
@@ -1052,7 +1311,7 @@ const HowItWorks: Page = () => {
   const [l, r] = STAGE_COLS[at];
   const MOVE = `600ms cubic-bezier(0.45, 0, 0.55, 1)`;
   return (
-    <Frame eyebrow="04 · How it works" title="One defect, four stages, one trusted record" bodyTop={250} chapter={2} mark="04">
+    <Frame eyebrow="Appendix H · How it works" title="One defect, four stages, one trusted record" bodyTop={250} mark="H">
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 56 }}>
         <div style={{ position: 'absolute', left: STAGE_MID[0], width: STAGE_MID[3] - STAGE_MID[0], top: 26, height: 4, background: line, borderRadius: 2 }} />
         <div style={{ position: 'absolute', left: STAGE_MID[0], width: STAGE_MID[at] - STAGE_MID[0], top: 26, height: 4, background: '#C64A1F', borderRadius: 2, transition: `width ${MOVE}` }} />
@@ -1122,7 +1381,7 @@ const Demo: Page = () => {
   }, [live]);
   const box: CSSProperties = { width: DEMO_W, height: DEMO_H, display: 'block', borderRadius: 18, background: '#000' };
   return (
-    <Frame eyebrow="Live demo" title="Buyer and technician, side by side." bodyTop={262} chapter={3}>
+    <Frame eyebrow="Appendix H · Full demo" title="Buyer and technician, side by side." bodyTop={262}>
       <div style={{ display: 'flex', justifyContent: 'center', ...reveal(arrived, 0, 'translateY(16px)') }}>
         <div style={{ borderRadius: 18, border: `2px solid ${line}`, boxShadow: '0 30px 60px -30px rgba(28,24,20,0.45)', overflow: 'hidden' }}>
           {live ? (
@@ -1279,12 +1538,11 @@ const Innovation: Page = () => {
   const right = beat >= 3;
   return (
     <Frame
-      eyebrow="05 · Innovation"
+      eyebrow="Appendix H · Innovation"
       title="What a normal ticket system can’t do"
       subtitle="From tracking complaints to detecting systemic risks."
       bodyTop={290}
-      mark="05"
-      chapter={3}
+      mark="H"
     >
       <div style={{ display: 'flex', gap: 48, height: 680 }}>
         <Card style={{ width: 640, padding: '22px 28px', flexShrink: 0, height: 680, display: 'flex', flexDirection: 'column', ...reveal(beat >= 0, 0, 'translateY(24px)') }}>
@@ -1361,72 +1619,6 @@ const Innovation: Page = () => {
 };
 
 // ---------------------------------------------------------------------------
-// 07 · Impact (PDF Page 8: updated copy, camera visits each card)
-// ---------------------------------------------------------------------------
-
-const ImpactCard = ({ n, icon, title, on, children }: { n: string; icon: 'camera' | 'link' | 'alert'; title: string; on: boolean; children: ReactNode }) => (
-  <div style={{ flex: 1, display: 'flex', ...reveal(on, 0, 'translateY(18px)') }}>
-    <Card style={{ flex: 1, padding: 34 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ width: 70, height: 70, borderRadius: 20, background: orangeSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name={icon} size={38} />
-        </div>
-        <span style={{ fontSize: 44, fontWeight: 900, color: '#EADFD3' }}>{n}</span>
-      </div>
-      <div style={{ fontSize: 32, fontWeight: 800, marginTop: 20 }}>{title}</div>
-      <ul style={{ fontSize: 24, lineHeight: 1.45, color: muted, margin: '14px 0 0', paddingLeft: 28, listStyleType: 'disc' }}>{children}</ul>
-    </Card>
-  </div>
-);
-
-const ValueTile = ({ who, what, on, delay }: { who: string; what: string; on: boolean; delay: number }) => (
-  <div style={{ flex: 1, padding: '0 32px', ...reveal(on, delay) }}>
-    <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '0.12em', color: BLOCK_HI }}>{who}</div>
-    <div style={{ fontSize: 26, fontWeight: 600, marginTop: 8, lineHeight: 1.35 }}>{what}</div>
-  </div>
-);
-
-const Impact: Page = () => {
-  // Two automatic batches: the three cards together, then the values bar (all in about 2 s).
-  const arrived = useArrived();
-  const done = useTimeline([1000]) >= 1;
-  return (
-    <Frame
-      eyebrow="06 · Impact"
-      title="Closed doesn’t mean resolved"
-      subtitle="Simephony verifies outcomes, connects recurrence and flags systemic risks."
-      bodyTop={296}
-      mark="06"
-      chapter={4}
-    >
-      <div style={{ display: 'flex', gap: 32 }}>
-        <ImpactCard on={arrived} n="01" icon="camera" title="Verify actual resolution">
-          <li style={{ marginBottom: 8 }}>AI compares the repair photo with the original and flags any mismatch for SDP</li>
-          <li style={{ marginBottom: 8 }}>Closes only after SDP and the buyer both sign off</li>
-          <li>Unresolved defects stay visible</li>
-        </ImpactCard>
-        <ImpactCard on={arrived} n="02" icon="link" title="Connect the pattern">
-          <li style={{ marginBottom: 10 }}>Connect related cases across units, floors, stacks and repair histories</li>
-          <li>A returning defect counts as a recurrence, not a new ticket</li>
-        </ImpactCard>
-        <ImpactCard on={arrived} n="03" icon="alert" title="Escalate early">
-          <li style={{ marginBottom: 10 }}>Repeated occurrence or units with defects in a stack → flagged as systemic</li>
-          <li>Route suspected systemic issues for Sime Darby Property approval before arranging an extra inspection</li>
-        </ImpactCard>
-      </div>
-      <div
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', background: BLOCK, color: BLOCK_TEXT, borderRadius: 'var(--osd-radius)', padding: '26px 0', ...reveal(done, 0, 'translateY(18px)'), translate: '0px -20px' }}
-      >
-        <div style={{ padding: '0 40px', fontSize: 30, fontWeight: 800, color: BLOCK_HI }}>Values</div>
-        <ValueTile on={done} delay={160} who="RESIDENTS" what="Clearer updates and greater confidence" />
-        <ValueTile on={done} delay={300} who="OPERATIONS" what="Less duplicated investigation and repeat work" />
-        <ValueTile on={done} delay={440} who="QUALITY" what="Earlier signals of systemic defects" />
-      </div>
-    </Frame>
-  );
-};
-
-// ---------------------------------------------------------------------------
 // 08 · Feasibility (PDF Page 9: 4 architecture layers + built-in human accountability + 3 pillars)
 // ---------------------------------------------------------------------------
 
@@ -1496,7 +1688,7 @@ const Feasibility: Page = () => {
   const at = Math.min(beat, 3);
   const st = (i: number): 'off' | 'active' | 'done' => (beat >= 4 ? 'done' : i === at ? 'active' : i < at ? 'done' : 'off');
   return (
-    <Frame eyebrow="07 · Feasibility" title="How it fits alongside SDP’s systems" mark="07" chapter={5}>
+    <Frame eyebrow="Appendix H · Readiness" title="Ready to pilot: built, tested, fits SDP’s systems" titleSize={60} mark="H">
       <div style={{ position: 'relative', height: 284, translate: '0.4px -11.69px' }}>
         <ArchBox x={ARCH_X[0]} icon="link" state={st(0)} tone="light" title="Core Data & Storage" body="SQLite, photo uploads and a full event log as the audit trail" />
         <ArchArrow x={288} on={at >= 1} />
@@ -1563,17 +1755,17 @@ const Feasibility: Page = () => {
         WHY IT’S FEASIBLE
       </div>
       <div style={{ display: 'flex', gap: 48, marginTop: 18 }}>
-        <WhyCol on={beat >= 4} delay={60} n="01" title="Built on an achievable technology stack">
-          <li style={{ marginBottom: 8 }}>Prototype: LangGraph, FastAPI / FastMCP, Next.js, SQLite. Local Ollama or Cloud Gemini AI Model, switched through config.</li>
-          <li>Falls back to rules or holds for SDP review if a model fails.</li>
+        <WhyCol on={beat >= 4} delay={60} n="01" title="Working today, not a mock-up">
+          <li style={{ marginBottom: 8 }}>4 defect scenarios run end to end; 750+ automated tests pass.</li>
+          <li>LangGraph, FastAPI / FastMCP, Next.js. Local or cloud AI model, switched in config; rules take over if a model fails.</li>
         </WhyCol>
         <WhyCol on={beat >= 4} delay={200} n="02" title="Human oversight built into every step">
           <li style={{ marginBottom: 8 }}>AI investigates and recommends; technicians record verdicts while SDP approves extra inspections.</li>
           <li>Backend rules enforce case statuses, bookings, permissions and alerts.</li>
         </WhyCol>
-        <WhyCol on={beat >= 4} delay={340} n="03" title="Middleware without replacing systems">
-          <li style={{ marginBottom: 8 }}>Integrates with existing systems and databases through APIs and FastMCP tools.</li>
-          <li>Uses event-driven processing and SSE for live case updates.</li>
+        <WhyCol on={beat >= 4} delay={340} n="03" title="Sits beside SDP’s systems">
+          <li style={{ marginBottom: 8 }}>Pilot: batch import from the CCC and Procore. Live APIs to them and the SDP app in Year 2.</li>
+          <li>Data can stay in Malaysia (Azure Malaysia West or AWS Malaysia region).</li>
         </WhyCol>
       </div>
     </Frame>
@@ -1581,38 +1773,453 @@ const Feasibility: Page = () => {
 };
 
 // ---------------------------------------------------------------------------
-// 09 · Scalability (PDF Page 10: winding road roadmap with 750+ tests & camera ride)
+// 04 · Business value (headline number with its build-up, then value over time + sensitivity)
 // ---------------------------------------------------------------------------
 
-const NODE_X = [148, 496, 844, 1192, 1532];
-const NODE_Y = [308, 378, 308, 378, 308];
+type TagKind = 'sdp' | 'bench' | 'est' | 'measured';
+const TAG_STYLE: Record<TagKind, { label: string; color: string; bg: string }> = {
+  sdp: { label: 'SDP DATA', color: blue, bg: blueSoft },
+  bench: { label: 'BENCHMARK', color: amber, bg: amberSoft },
+  est: { label: 'ESTIMATE', color: '#A63A14', bg: orangeSoft },
+  measured: { label: 'MEASURED', color: green, bg: greenSoft },
+};
 
-const WindingPhase = ({
-  n,
-  x,
-  y,
-  above,
-  name,
-  when,
-  body,
-  checks,
-  on,
-  current,
-  here,
-}: {
-  n: string;
-  x: number;
-  y: number;
-  above: boolean;
-  name: string;
-  when: string;
-  body: string;
-  checks: string[];
-  on: boolean;
-  current: boolean;
-  here?: boolean;
-}) => {
-  const cardLeft = Math.min(Math.max(x - 150, 0), 1680 - 336);
+/** Where a number comes from: SDP data, an external benchmark, our estimate, or measured on the prototype. */
+const Tag = ({ kind, children }: { kind: TagKind; children?: ReactNode }) => {
+  const t = TAG_STYLE[kind];
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: t.color, background: t.bg, padding: '4px 10px', borderRadius: 6, whiteSpace: 'nowrap' }}>
+      <b style={{ letterSpacing: '0.08em', fontWeight: 800 }}>{t.label}</b>
+      {children ? <span style={{ color: ink, fontWeight: 600 }}>{children}</span> : null}
+    </span>
+  );
+};
+
+/** One counted value line: what it is, the type of saving, the formula and where each input comes from. */
+const ValueLine = ({ k, title, kind, value, formula, on, delay, children }: { k: string; title: string; kind: string; value: string; formula: string; on: boolean; delay: number; children: ReactNode }) => (
+  <Card style={{ padding: '14px 24px', ...reveal(on, delay, 'translateX(24px)') }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: '#C64A1F', color: '#fff', fontSize: 20, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{k}</div>
+      <div style={{ fontSize: 26, fontWeight: 800 }}>{title}</div>
+      <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.1em', color: muted, border: `2px solid ${line}`, padding: '3px 9px', borderRadius: 6 }}>{kind}</span>
+      <div style={{ marginLeft: 'auto', fontSize: 38, fontWeight: 800, color: 'var(--osd-accent)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    </div>
+    <div style={{ fontSize: 21, color: ink, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{formula}</div>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{children}</div>
+  </Card>
+);
+
+const Uncounted = ({ title, body }: { title: string; body: string }) => (
+  <div>
+    <div style={{ fontSize: 21, fontWeight: 800, color: ink }}>{title}</div>
+    <div style={{ fontSize: 18, lineHeight: 1.35, color: muted, marginTop: 2 }}>{body}</div>
+  </div>
+);
+
+const HeadStat = ({ value, label }: { value: string; label: string }) => (
+  <div>
+    <div style={{ fontSize: 34, fontWeight: 800, color: BLOCK_HI, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{value}</div>
+    <div style={{ fontSize: 20, lineHeight: 1.35, marginTop: 2 }}>{label}</div>
+  </div>
+);
+
+// ---------------------------------------------------------------------------
+// 04 · Business value · Unit economics (sy), on the same inputs as the value headline:
+// 3,000 handovers × 4 visits a unit = 12,000 visits; 23% of visits are repeats; Simephony avoids 40% of them.
+// ---------------------------------------------------------------------------
+
+/** One cost line with a bar (bar length = value ÷ RM400). */
+const EconRow = ({ label, value, rm, color, track, bar, top }: { label: string; value: string; rm: number; color: string; track: string; bar: number; top: number }) => (
+  <div style={{ marginTop: top }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 800 }}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+    <div style={{ height: bar, borderRadius: bar / 2, background: track, marginTop: 7 }}>
+      <div style={{ width: `${Math.min(100, rm / 4)}%`, minWidth: 4, height: '100%', borderRadius: bar / 2, background: color }} />
+    </div>
+  </div>
+);
+
+const CostEfficiency: Page = () => {
+  const arrived = useArrived();
+  return (
+    <Frame
+      eyebrow="Appendix B · Unit economics"
+      mark="B"
+      title="Turning a cost centre into an efficiency engine"
+      subtitle="Cost per defect visit in the DLP · 3,000 handovers × 4 visits a unit = 12,000 visits a year"
+      
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 460px', gap: 28, height: 560 }}>
+        <div style={{ borderRadius: 20, border: `2px solid ${line}`, background: card, padding: '26px 28px', ...reveal(arrived, 100, 'translateY(12px)') }}>
+          <div style={{ fontSize: 21, fontWeight: 900, color: muted }}>MANUAL PROCESS</div>
+          <EconRow top={26} bar={22} track="#EDE6DE" color="#C64A1F" label="Admin · 45–60 min" value="RM15.00" rm={15} />
+          <EconRow top={22} bar={22} track="#EDE6DE" color="#C64A1F" label="Visit" value="RM350.00" rm={350} />
+          <EconRow top={22} bar={22} track="#EDE6DE" color="#C64A1F" label="Repeat visit · 23% of visits" value="RM80.50" rm={80.5} />
+          <div style={{ borderTop: `2px solid ${line}`, marginTop: 26, paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 20, fontWeight: 800 }}>Cost per visit</span>
+            <span style={{ fontSize: 54, fontWeight: 900 }}>RM445.50</span>
+          </div>
+        </div>
+        <div style={{ borderRadius: 20, border: '2px solid #BFD9C8', background: greenSoft, padding: '26px 28px', ...reveal(arrived, 240, 'translateY(12px)') }}>
+          <div style={{ fontSize: 21, fontWeight: 900, color: green }}>SIMEPHONY</div>
+          <EconRow top={18} bar={20} track="#D6E7DC" color={green} label="Admin · 5 min" value="RM2.00" rm={2} />
+          <EconRow top={16} bar={20} track="#D6E7DC" color={green} label="Visit" value="RM350.00" rm={350} />
+          <EconRow top={16} bar={20} track="#D6E7DC" color={green} label="AI, blended (incl. reopens)" value="RM0.08" rm={0.08} />
+          <EconRow top={16} bar={20} track="#D6E7DC" color={green} label="Repeat visit · 13.8% (40% avoided)" value="RM48.30" rm={48.3} />
+          <div style={{ borderTop: '2px solid #BFD9C8', marginTop: 20, paddingTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 20, fontWeight: 800 }}>Cost per visit</span>
+            <span style={{ fontSize: 54, fontWeight: 900, color: green }}>RM400.38</span>
+          </div>
+        </div>
+        <div style={{ borderRadius: 20, background: '#1C1814', color: '#fff', padding: '30px 34px', display: 'flex', flexDirection: 'column', justifyContent: 'center', ...reveal(arrived, 380, 'translateY(12px)') }}>
+          <div style={{ fontSize: 21, fontWeight: 900, letterSpacing: '0.12em', color: '#FBE3D6' }}>BOTTOM LINE</div>
+          <div style={{ fontSize: 76, fontWeight: 900, color: '#FF7A00', marginTop: 12 }}>RM45.12</div>
+          <div style={{ fontSize: 23, lineHeight: 1.45, marginTop: 4 }}>saved per defect visit</div>
+          <div style={{ height: 2, background: 'rgba(255,255,255,0.18)', margin: '22px 0' }} />
+          <div style={{ fontSize: 42, fontWeight: 900 }}>RM0.39m / yr</div>
+          <div style={{ fontSize: 20, lineHeight: 1.45, color: 'rgba(255,255,255,0.76)', marginTop: 8 }}>
+            counted: 12,000 visits × RM32.20 of repeat visits avoided (line A of the value headline)
+          </div>
+          <div style={{ fontSize: 18, lineHeight: 1.4, color: 'rgba(255,255,255,0.6)', marginTop: 12 }}>
+            The RM13 of admin saved per visit is freed staff time, not counted as cash.
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+};
+
+const ValueHeadline: Page = () => {
+  const arrived = useArrived();
+  const lines = useTimeline([350]) >= 1;
+  return (
+    <Frame
+      eyebrow="04 · Business value · Base case at full rollout"
+      title="RM0.78m a year of counted value, 2.6× its run cost"
+      titleSize={56}
+      bodyTop={270}
+      chapter={2}
+    >
+      <div style={{ display: 'flex', gap: 36 }}>
+        <div style={{ width: 500, flexShrink: 0, background: BLOCK, color: BLOCK_TEXT, borderRadius: 'var(--osd-radius)', padding: '30px 34px', boxSizing: 'border-box', ...reveal(arrived, 0, 'translateY(16px)') }}>
+          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '0.14em', color: BLOCK_HI }}>COUNTED VALUE PER YEAR</div>
+          <div style={{ fontSize: 90, fontWeight: 900, letterSpacing: '-0.04em', color: BLOCK_HI, lineHeight: 1.05, marginTop: 6 }}>RM0.78m</div>
+          <div style={{ fontSize: 22, lineHeight: 1.4, marginTop: 4 }}>at about 3,000 handovers a year, once every township is on Simephony</div>
+          <div style={{ height: 2, background: '#EFC3AE', margin: '22px 0' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <HeadStat value="RM0.30m" label="a year to run (build-up in Pilot & ask)" />
+            <HeadStat value="RM0.43m" label="downside, if both big estimates come in low (1.4×)" />
+            <HeadStat value="A + B + C only" label="cash saved and costs avoided; nothing soft is counted" />
+          </div>
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <ValueLine on={lines} delay={0} k="A" title="Fewer repeat visits" kind="CASH SAVING" value="RM0.39m" formula="12,000 visits × 23% repeat × 40% avoided × RM350 a visit">
+            <Tag kind="sdp">3,000 handovers</Tag>
+            <Tag kind="bench">23%: Aquant 2026</Tag>
+            <Tag kind="est">4 visits/unit, 40%, RM350</Tag>
+          </ValueLine>
+          <ValueLine on={lines} delay={120} k="B" title="Recurring defects stopped early" kind="COST AVOIDED" value="RM0.27m" formula="RM1.4bn residential build cost × 0.38% post-handover rework × 5% prevented">
+            <Tag kind="sdp">FY2025 cost of sales</Tag>
+            <Tag kind="bench">0.38%: Love 2026</Tag>
+            <Tag kind="est">5% prevented</Tag>
+          </ValueLine>
+          <ValueLine on={lines} delay={240} k="C" title="Disputes avoided" kind="COST AVOIDED" value="RM0.13m" formula="6 tribunal-scale disputes × ≈RM22k (average award + staff time)">
+            <Tag kind="bench">≈RM20k award: KPKT</Tag>
+            <Tag kind="est">6 a year</Tag>
+          </ValueLine>
+          <div style={{ border: `2px dashed ${line}`, borderRadius: 'var(--osd-radius)', padding: '12px 24px', ...reveal(lines, 380, 'translateX(24px)') }}>
+            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.12em', color: soft }}>NOT COUNTED IN THE TOTAL</div>
+            <div style={{ display: 'flex', gap: 28, marginTop: 8 }}>
+              <Uncounted title="≈3 people of CCC time" body="≈RM0.1m, redeployed" />
+              <Uncounted title="Referrals" body="RM4k–20k per sale" />
+              <Uncounted title="Court-scale cases" body="RM0.5m+ each" />
+              <Uncounted title="After the DLP" body="Strata and SDP assets" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+};
+
+// Value over time (RM m). One axis for value, cost and cumulative net, so they compare directly.
+const VT = { left: 80, right: 980, top: 70, bottom: 520 };
+const VT_ZERO = (VT.top + VT.bottom) / 2; // y of RM0
+const VT_K = (VT.bottom - VT.top) / 1.6; // px per RM1m (axis −0.8 … +0.8)
+const vtY = (v: number) => VT_ZERO - v * VT_K;
+const vtX = (i: number) => VT.left + (i + 0.5) * 180;
+const VT_VALUE = [0.04, 0.31, 0.78, 0.78, 0.78];
+const VT_COST = [0.5, 0.5, 0.3, 0.3, 0.3];
+const VT_CUM = [-0.46, -0.65, -0.17, 0.31, 0.79];
+
+/** One year: value bar and cost bar side by side, growing up from RM0. */
+const YearBars = ({ i, on, label, sub }: { i: number; on: boolean; label: string; sub: string }) => {
+  const cx = vtX(i);
+  const grow = (delay: number): CSSProperties => ({
+    transformBox: 'view-box',
+    transformOrigin: `${cx}px ${VT_ZERO}px`,
+    transform: on ? 'scaleY(1)' : 'scaleY(0)',
+    transition: `transform 800ms ${CAM_EASE} ${delay}ms`,
+  });
+  const v = VT_VALUE[i];
+  const c = VT_COST[i];
+  return (
+    <g>
+      <g style={grow(i * 120)}>
+        <rect x={cx - 60} y={vtY(v)} width={56} height={v * VT_K} rx={4} fill="#C64A1F" />
+        <rect x={cx + 4} y={vtY(c)} width={56} height={c * VT_K} rx={4} fill={blue} />
+      </g>
+      <text x={cx - 32} y={vtY(v) - 10} textAnchor="middle" fontSize="19" fontWeight="800" fill={ink} style={{ opacity: on ? 1 : 0, transition: `opacity 300ms ${EASE_OUT} ${i * 120 + 700}ms` }}>
+        {v.toFixed(2)}
+      </text>
+      <text x={cx} y={VT.bottom + 40} textAnchor="middle" fontSize="22" fontWeight="800" fill={ink}>{label}</text>
+      <text x={cx} y={VT.bottom + 66} textAnchor="middle" fontSize="18" fill={muted}>{sub}</text>
+    </g>
+  );
+};
+
+const CumPoint = ({ i, on }: { i: number; on: boolean }) => {
+  const v = VT_CUM[i];
+  const x = vtX(i);
+  const y = vtY(v);
+  return (
+    <g style={{ opacity: on ? 1 : 0, transition: `opacity 300ms ${EASE_OUT} ${900 + i * 120}ms` }}>
+      <circle cx={x} cy={y} r={9} fill={ink} stroke={card} strokeWidth={3} />
+      <text
+        x={i === 0 ? x - 14 : i === 1 ? x : x + 14}
+        y={i === 0 ? y + 6 : i === 4 ? y - 14 : y + 30}
+        textAnchor={i === 0 ? 'end' : i === 1 ? 'middle' : 'start'}
+        fontSize="19"
+        fontWeight="800"
+        fill={ink}
+        stroke={card}
+        strokeWidth={6}
+        paintOrder="stroke"
+        strokeLinejoin="round"
+      >
+        {v > 0 ? '+' : '−'}
+        {Math.abs(v).toFixed(2)}
+      </text>
+    </g>
+  );
+};
+
+const SensRow = ({ label, value, ratio, strong, shade }: { label: string; value: string; ratio: string; strong?: boolean; shade?: boolean }) => (
+  <div style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', background: shade ? '#F6EFE7' : 'transparent', borderRadius: 10 }}>
+    <span style={{ flex: 1, fontSize: 21, fontWeight: strong ? 800 : 500, color: ink, lineHeight: 1.3 }}>{label}</span>
+    <span style={{ width: 120, textAlign: 'right', fontSize: 23, fontWeight: 800, color: ink, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    <span style={{ width: 80, textAlign: 'right', fontSize: 23, fontWeight: 800, color: 'var(--osd-accent)', fontVariantNumeric: 'tabular-nums' }}>{ratio}</span>
+  </div>
+);
+
+const ValueOverTime: Page = () => {
+  const on = useArrived();
+  const cum = VT_CUM.map((v, i) => `${i === 0 ? 'M' : 'L'} ${vtX(i)} ${vtY(v)}`).join(' ');
+  const beX = vtX(2) + (0.17 / 0.48) * 180;
+  return (
+    <Frame eyebrow="04 · Business value · Over time" title="Value grows with scale: break-even in Year 4" titleSize={60} bodyTop={270} chapter={2}>
+      <div style={{ display: 'flex', gap: 40 }}>
+        <div style={{ flexShrink: 0 }}>
+          <svg viewBox="0 0 1000 600" style={{ width: 1000, height: 600, display: 'block', overflow: 'visible' }} role="img" aria-label="Counted value, cost and cumulative net by year, RM million. Value 0.04, 0.31, 0.78, 0.78, 0.78. Cost 0.50, 0.50, 0.30, 0.30, 0.30. Cumulative net −0.46, −0.65, −0.17, +0.31, +0.79.">
+            <text x="0" y="20" fontSize="18" fontWeight="700" fill={soft} letterSpacing="0.06em">RM MILLION A YEAR · BASE CASE</text>
+            <g transform="translate(470 6)">
+              <rect x="0" y="0" width="18" height="18" rx="3" fill="#C64A1F" />
+              <text x="26" y="16" fontSize="18" fontWeight="700" fill={ink}>Counted value</text>
+              <rect x="176" y="0" width="18" height="18" rx="3" fill={blue} />
+              <text x="202" y="16" fontSize="18" fontWeight="700" fill={ink}>Cost</text>
+              <line x1="278" x2="314" y1="9" y2="9" stroke={ink} strokeWidth="3" />
+              <circle cx="296" cy="9" r="6" fill={ink} />
+              <text x="324" y="16" fontSize="18" fontWeight="700" fill={ink}>Cumulative net</text>
+            </g>
+            <line x1={VT.left} x2={VT.right} y1={vtY(0.5)} y2={vtY(0.5)} stroke={line} strokeWidth="2" />
+            <line x1={VT.left} x2={VT.right} y1={vtY(-0.5)} y2={vtY(-0.5)} stroke={line} strokeWidth="2" />
+            <text x={VT.left - 12} y={vtY(0.5) + 6} textAnchor="end" fontSize="18" fill={soft}>+0.5</text>
+            <text x={VT.left - 12} y={VT_ZERO + 6} textAnchor="end" fontSize="18" fill={soft}>0</text>
+            <text x={VT.left - 12} y={vtY(-0.5) + 6} textAnchor="end" fontSize="18" fill={soft}>−0.5</text>
+            <YearBars i={0} on={on} label="Year 1" sub="Pilot + 1 township" />
+            <YearBars i={1} on={on} label="Year 2" sub="3 townships" />
+            <YearBars i={2} on={on} label="Year 3" sub="All townships" />
+            <YearBars i={3} on={on} label="Year 4" sub="Full run" />
+            <YearBars i={4} on={on} label="Year 5" sub="Full run" />
+            <line x1={VT.left} x2={VT.right} y1={VT_ZERO} y2={VT_ZERO} stroke={soft} strokeWidth="2" />
+            <g style={{ opacity: on ? 1 : 0, transition: `opacity 400ms ${EASE_OUT} 1500ms` }}>
+              <line x1={beX} x2={beX} y1={VT.top + 10} y2={VT.bottom} stroke={green} strokeWidth="2.5" strokeDasharray="8 6" />
+              <text x={beX + 10} y={VT.bottom - 8} fontSize="19" fontWeight="800" fill={green}>Break-even</text>
+            </g>
+            <path d={cum} fill="none" stroke={ink} strokeWidth="3" pathLength={1} strokeDasharray="1" strokeDashoffset={on ? 0 : 1} style={{ transition: `stroke-dashoffset 1000ms ${EASE_OUT} 900ms` }} />
+            <CumPoint i={0} on={on} />
+            <CumPoint i={1} on={on} />
+            <CumPoint i={2} on={on} />
+            <CumPoint i={3} on={on} />
+            <CumPoint i={4} on={on} />
+          </svg>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 18, ...reveal(on, 600, 'translateY(16px)') }}>
+          <Card style={{ padding: '20px 18px' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: muted, padding: '0 18px 8px' }}>IF OUR ESTIMATES ARE WRONG</div>
+            <SensRow strong shade label="Base case" value="RM0.78m" ratio="2.6×" />
+            <SensRow label="Visits avoided 20%, not 40%" value="RM0.59m" ratio="2.0×" />
+            <SensRow label="Rework prevented 2%, not 5%" value="RM0.62m" ratio="2.1×" />
+            <SensRow label="Both low" value="RM0.43m" ratio="1.4×" />
+            <div style={{ fontSize: 18, color: soft, padding: '6px 18px 0' }}>Ratio = counted value ÷ RM0.30m yearly run cost</div>
+          </Card>
+          <div style={{ background: BLOCK, color: BLOCK_TEXT, borderRadius: 16, padding: '20px 24px' }}>
+            <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.3 }}>
+              Avoiding one court-scale judgment <span style={{ color: BLOCK_HI }}>(≈RM0.5m)</span> pays for the whole pilot.
+            </div>
+            <div style={{ fontSize: 18, color: muted, marginTop: 6 }}>e.g. Agile Mont Kiara, High Court 2025: ≈RM0.51m in damages</div>
+          </div>
+          <div style={{ fontSize: 21, lineHeight: 1.4, color: ink }}>
+            <b>Five years, base case:</b> RM2.7m counted value for RM1.9m total cost (pilot, integration, running).
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// 05 · Pilot & ask (cost build-up, plan & resources, success measures, the decision)
+// ---------------------------------------------------------------------------
+
+/** A cost line with a bar sized by its share of the card total. */
+const CostRow = ({ label, sub, value, share, color = '#C64A1F' }: { label: string; sub?: string; value: string; share: number; color?: string }) => (
+  <div>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+      <span style={{ fontSize: 22, fontWeight: 700, color: ink }}>{label}</span>
+      <span style={{ marginLeft: 'auto', fontSize: 23, fontWeight: 800, color: ink, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    </div>
+    {sub ? <div style={{ fontSize: 17, color: muted, marginTop: 1 }}>{sub}</div> : null}
+    <div style={{ height: 8, background: '#F2EBE3', borderRadius: 4, marginTop: 6 }}>
+      <div style={{ width: `${Math.max(share * 100, 1.5)}%`, height: 8, background: color, borderRadius: 4 }} />
+    </div>
+  </div>
+);
+
+const ScenarioRow = ({ label, sub, value, hot }: { label: string; sub: string; value: string; hot?: boolean }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: `2px solid ${line}` }}>
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: ink }}>{label}</div>
+      <div style={{ fontSize: 17, color: muted, marginTop: 1 }}>{sub}</div>
+    </div>
+    <span style={{ fontSize: 23, fontWeight: 800, color: hot ? 'var(--osd-accent)' : ink, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{value}</span>
+  </div>
+);
+
+const CostHead = ({ label, total }: { label: string; total: string }) => (
+  <div style={{ marginBottom: 18 }}>
+    <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: muted }}>{label}</div>
+    <div style={{ fontSize: 40, fontWeight: 900, color: 'var(--osd-accent)', letterSpacing: '-0.02em', marginTop: 2 }}>{total}</div>
+  </div>
+);
+
+const Cost: Page = () => {
+  const arrived = useArrived();
+  return (
+    <Frame eyebrow="05 · Pilot & ask · Indicative cost" title="RM0.5m to pilot, RM0.3m a year to run" bodyTop={270} chapter={3}>
+      <div style={{ display: 'flex', gap: 28, height: 590 }}>
+        <Card style={{ flex: 1, padding: '24px 28px', display: 'flex', flexDirection: 'column', ...reveal(arrived, 0, 'translateY(16px)') }}>
+          <CostHead label="6-MONTH PILOT" total="RM500k" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <CostRow label="Team, 6 months" sub="Tech lead, full-stack, AI engineer, ½ QA" value="RM360k" share={0.72} />
+            <CostRow label="Change and training" sub="≈10% of project cost (Prosci)" value="RM40k" share={0.08} />
+            <CostRow label="Pen test and PDPA review" sub="CSA-licensed tester" value="RM25k" share={0.05} />
+            <CostRow label="Cloud in Malaysia + AI" value="RM10k" share={0.02} color={blue} />
+            <CostRow label="Contingency (15%)" value="RM65k" share={0.13} color={soft} />
+          </div>
+          <div style={{ fontSize: 17, lineHeight: 1.4, color: soft, marginTop: 'auto' }}>Salaries: Randstad 2026 guide × 1.3 for EPF, SOCSO, EIS, HRDF and bonus.</div>
+        </Card>
+
+        <Card style={{ flex: 1, padding: '24px 28px', display: 'flex', flexDirection: 'column', ...reveal(arrived, 120, 'translateY(16px)') }}>
+          <CostHead label="RUNNING COST, FROM YEAR 3" total="RM300k a year" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <CostRow label="Support team (1.5 people)" value="RM230k" share={0.77} />
+            <CostRow label="Yearly pen test" value="RM25k" share={0.083} />
+            <CostRow label="Malaysia-region cloud" value="RM21k" share={0.07} color={blue} />
+            <CostRow label="Monitoring and backup" value="RM15k" share={0.05} color={blue} />
+            <CostRow label="AI (≈75,000 defect items)" value="RM7k" share={0.023} color={blue} />
+            <CostRow label="WhatsApp updates" value="RM2k" share={0.007} color={blue} />
+          </div>
+          <div style={{ fontSize: 17, lineHeight: 1.4, color: soft, marginTop: 'auto' }}>Plus a one-off RM200k in Year 2 to connect to the CCC, Procore and the SDP app.</div>
+        </Card>
+
+        <Card style={{ flex: 1, padding: '24px 28px', display: 'flex', flexDirection: 'column', ...reveal(arrived, 240, 'translateY(16px)') }}>
+          <CostHead label="AI COST PER CASE, BY SCENARIO" total="≈RM0.08 blended" />
+          <ScenarioRow label="Rejected" sub="AI check, then SDP review" value="RM0.02–0.03" />
+          <ScenarioRow label="Fixed first time" sub="Check, booking, guide, verification" value="RM0.06–0.08" />
+          <ScenarioRow label="Reopened" sub="Second repair round, photos re-checked" value="RM0.09–0.13" />
+          <ScenarioRow label="Systemic" sub="Linked across units and escalated" value="RM0.12–0.18" hot />
+          <div style={{ fontSize: 20, lineHeight: 1.4, color: ink, marginTop: 12 }}>
+            Manual admin today: <b>RM13–27 a case</b>. Premium AI model: still under RM1.
+          </div>
+          <div style={{ fontSize: 17, lineHeight: 1.4, color: soft, marginTop: 'auto' }}>Gemini Flash-Lite list prices at RM4.11 to the US dollar.</div>
+        </Card>
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: BLOCK, color: BLOCK_TEXT, borderRadius: 14, padding: '14px 28px', textAlign: 'center', fontSize: 24, fontWeight: 800, ...reveal(arrived, 400, 'translateY(12px)') }}>
+        Only 2% of the pilot is cloud and AI. <span style={{ color: BLOCK_HI }}>The money goes on people, change and safeguards.</span>
+      </div>
+    </Frame>
+  );
+};
+
+/** One phase of the pilot plan. `ask` marks the phases this decision funds. */
+const PhaseCol = ({ when, name, body, gate, ask, on, delay }: { when: string; name: string; body: string; gate?: string; ask?: boolean; on: boolean; delay: number }) => (
+  <div
+    style={{ flex: 1, display: 'flex', flexDirection: 'column', background: ask ? card : 'transparent', border: ask ? `2px solid ${line}` : `2px dashed ${line}`, borderRadius: 16, padding: '16px 20px', boxSizing: 'border-box', ...reveal(on, delay, 'translateY(14px)') }}
+  >
+    <div style={{ height: 6, borderRadius: 3, background: ask ? '#C64A1F' : '#E3D7CA', marginBottom: 12 }} />
+    <div style={{ fontSize: 19, fontWeight: 800, color: ask ? 'var(--osd-accent)' : soft }}>{when}</div>
+    <div style={{ fontSize: 26, fontWeight: 800, color: ink, marginTop: 2 }}>{name}</div>
+    <div style={{ fontSize: 19, lineHeight: 1.38, color: muted, marginTop: 6 }}>{body}</div>
+    {gate ? (
+      <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+        <span style={{ display: 'inline-block', fontSize: 16, fontWeight: 800, letterSpacing: '0.06em', color: '#fff', background: green, padding: '5px 10px', borderRadius: 6 }}>◆ GATE: {gate}</span>
+      </div>
+    ) : null}
+  </div>
+);
+
+const NeedItem = ({ children }: { children: ReactNode }) => (
+  <li style={{ fontSize: 19, lineHeight: 1.35, color: ink }}>{children}</li>
+);
+
+const DepRow = ({ risk, fix }: { risk: string; fix: string }) => (
+  <div style={{ fontSize: 19, lineHeight: 1.35 }}>
+    <b style={{ color: ink }}>{risk}:</b> <span style={{ color: muted }}>{fix}</span>
+  </div>
+);
+
+// Winding-road roadmap (layout from the sy Scalability page): stops alternate above / below the road.
+const PLAN_X = [148, 496, 844, 1192, 1532];
+const PLAN_Y = [200, 250, 200, 250, 200];
+const PLAN_BELOW_TOP = 290;
+
+const PlanRoad = ({ d, on, color = '#C64A1F' }: { d: string; on: boolean; color?: string }) => (
+  <>
+    <path d={d} fill="none" stroke={line} strokeWidth="14" strokeLinecap="round" />
+    <path
+      d={d}
+      fill="none"
+      stroke={color}
+      strokeWidth="14"
+      strokeLinecap="round"
+      pathLength={1}
+      strokeDasharray="1"
+      strokeDashoffset={on ? 0 : 1}
+      style={{ transition: `stroke-dashoffset 340ms ${CAM_EASE}` }}
+    />
+  </>
+);
+
+/** One stop on the pilot road: node on the road, text above or below. `ask` = funded by this decision. */
+const PlanStop = ({ i, n, when, name, body, gate, ask, on }: { i: number; n: string; when: string; name: string; body: string; gate?: string; ask?: boolean; on: boolean }) => {
+  const x = PLAN_X[i];
+  const y = PLAN_Y[i];
+  const above = i % 2 === 0;
+  const lit = on && ask;
   return (
     <>
       <div
@@ -1623,200 +2230,203 @@ const WindingPhase = ({
           width: 60,
           height: 60,
           borderRadius: 30,
-          background: on ? '#C64A1F' : card,
-          color: on ? '#fff' : '#D5C8BA',
-          border: `3px solid ${on ? '#C64A1F' : '#E3D7CA'}`,
+          boxSizing: 'border-box',
+          background: lit ? '#C64A1F' : card,
+          color: lit ? '#fff' : on ? '#C64A1F' : '#D5C8BA',
+          border: `3px solid ${on ? '#C64A1F' : line}`,
           fontSize: 24,
           fontWeight: 800,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxSizing: 'border-box',
-          transform: current ? 'scale(1.18)' : 'scale(1)',
-          boxShadow: current ? '0 0 0 10px rgba(198,74,31,0.16)' : 'none',
-          transition: `background 400ms, color 400ms, border-color 400ms, transform 560ms ${SPRING}, box-shadow 400ms`,
+          transition: 'background 400ms, color 400ms, border-color 400ms',
           zIndex: 2,
         }}
       >
         {n}
       </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: cardLeft,
-          top: above ? 0 : 426,
-          width: 336,
-        }}
-      >
-        <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.18 }}>{name}</div>
-        <div style={{ fontSize: 21, fontWeight: 700, color: 'var(--osd-accent)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
-          {when}
-          {here ? (
-            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.1em', color: '#fff', background: '#C64A1F', padding: '4px 9px', borderRadius: 6 }}>
-              WE ARE HERE
-            </span>
-          ) : null}
-        </div>
-        <div style={{ fontSize: 20, lineHeight: 1.38, color: muted, marginTop: 8 }}>{body}</div>
-        <div style={{ fontSize: 20, lineHeight: 1.35, color: blue, fontWeight: 700, marginTop: 8 }}>
-          ✓ {checks[0]}
-          {checks[1] ? (
-            <div style={{ marginTop: 4 }}>✓ {checks[1]}</div>
-          ) : null}
-        </div>
+      <div style={{ position: 'absolute', left: Math.min(Math.max(x - 150, 0), 1680 - 336), top: above ? 0 : PLAN_BELOW_TOP, width: 336, ...reveal(on, 0, 'translateY(10px)') }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: ask ? 'var(--osd-accent)' : soft }}>{when}</div>
+        <div style={{ fontSize: 27, fontWeight: 800, lineHeight: 1.18, color: ink, marginTop: 2 }}>{name}</div>
+        <div style={{ fontSize: 19, lineHeight: 1.35, color: muted, marginTop: 6 }}>{body}</div>
+        {gate ? (
+          <span style={{ display: 'inline-block', marginTop: 10, fontSize: 16, fontWeight: 800, letterSpacing: '0.06em', color: '#fff', background: green, padding: '5px 10px', borderRadius: 6 }}>◆ GATE: {gate}</span>
+        ) : null}
       </div>
     </>
   );
 };
 
-const RoadSegment = ({ d, on, ms = CAM_MS }: { d: string; on: boolean; ms?: number }) => (
-  <>
-    <path d={d} fill="none" stroke={line} strokeWidth="14" strokeLinecap="round" />
-    <path
-      d={d}
-      fill="none"
-      stroke="#C64A1F"
-      strokeWidth="14"
-      strokeLinecap="round"
-      pathLength={1}
-      strokeDasharray="1"
-      strokeDashoffset={on ? 0 : 1}
-      style={{ transition: `stroke-dashoffset ${ms}ms ${CAM_EASE}` }}
-    />
-  </>
-);
-
-/** "Built to scale": the two points that make one engine work across developments (bottom-right of the roadmap). */
-const EngineCard = ({ on }: { on: boolean }) => (
-  <div
-    style={{
-      position: 'absolute',
-      left: 1396,
-      top: 430,
-      width: 284,
-      boxSizing: 'border-box',
-      background: BLOCK,
-      color: BLOCK_TEXT,
-      borderRadius: 18,
-      padding: '18px 22px',
-    }}
-  >
-    <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.12em', color: BLOCK_HI }}>ONE ENGINE, MANY DEVELOPMENTS</div>
-    <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-start' }}>
-      <Icon name="layers" color={BLOCK_HI} size={24} />
-      <div>
-        <div style={{ fontSize: 19, fontWeight: 800 }}>Configurable rules</div>
-        <div style={{ fontSize: 16, lineHeight: 1.35, opacity: 0.8 }}>Categories, thresholds and workflows in rules.yaml</div>
-      </div>
-    </div>
-    <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'flex-start' }}>
-      <Icon name="plug" color={BLOCK_HI} size={24} />
-      <div>
-        <div style={{ fontSize: 19, fontWeight: 800 }}>Modular agents</div>
-        <div style={{ fontSize: 16, lineHeight: 1.35, opacity: 0.8 }}>Add trade-specific agents and integrations</div>
-      </div>
-    </div>
+const PlanTag = ({ left, width, on, hot, children }: { left: number; width: number; on: boolean; hot?: boolean; children: ReactNode }) => (
+  <div style={{ position: 'absolute', left, width, top: 92, textAlign: 'center', ...reveal(on, 0, 'translateY(8px)') }}>
+    <span style={{ display: 'inline-block', fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', padding: '8px 16px', borderRadius: 999, color: hot ? '#fff' : muted, background: hot ? '#C64A1F' : '#F2EBE3' }}>
+      {children}
+    </span>
   </div>
 );
 
-const Scalability: Page = () => {
-  // No clicks, no zoom: the road and phases 0 → 4 colour in one after another (~2 s).
-  const beat = useTimeline([250, 600, 950, 1300, 1650]);
-  const at = Math.min(beat, 4);
+const PilotPlan: Page = () => {
+  // No clicks: the road and stops 0 → 4 colour in one after another (~2 s), then the two cards.
+  const beat = useTimeline([250, 600, 950, 1300, 1650, 1950]);
   return (
-    <Frame eyebrow="08 · Scalability & implementation" title="Prove on one phase, then scale across townships" mark="08" chapter={6}>
-      <svg viewBox="0 0 1680 690" style={{ position: 'absolute', left: 0, top: 0, width: 1680, height: 690, pointerEvents: 'none' }}>
-        <RoadSegment d="M 148 308 C 285 308, 359 378, 496 378" on={at >= 1} ms={340} />
-        <RoadSegment d="M 496 378 C 633 378, 707 308, 844 308" on={at >= 2} ms={340} />
-        <RoadSegment d="M 844 308 C 981 308, 1055 378, 1192 378" on={at >= 3} ms={340} />
-        <RoadSegment d="M 1192 378 C 1329 378, 1395 308, 1532 308" on={at >= 4} ms={340} />
+    <Frame eyebrow="05 · Pilot & ask · Plan and resources" title="Six months on one handover phase, two gates" titleSize={60} bodyTop={270} chapter={3}>
+      <svg viewBox="0 0 1680 460" style={{ position: 'absolute', left: 0, top: 0, width: 1680, height: 460, pointerEvents: 'none' }}>
+        <PlanRoad d="M 148 200 C 285 200, 359 250, 496 250" on={beat >= 1} />
+        <PlanRoad d="M 496 250 C 633 250, 707 200, 844 200" on={beat >= 2} />
+        <PlanRoad d="M 844 200 C 981 200, 1055 250, 1192 250" on={beat >= 3} color="#E9B9A3" />
+        <PlanRoad d="M 1192 250 C 1329 250, 1395 200, 1532 200" on={beat >= 4} color="#E9B9A3" />
       </svg>
 
-      <WindingPhase
-        n="0"
-        x={NODE_X[0]}
-        y={NODE_Y[0]}
-        above
-        here
-        on={beat >= 0}
-        current={false}
-        name="Prototype"
-        when="Now"
-        body="Working end-to-end multi-agent system with 4 live defect scenarios."
-        checks={['750+ automated tests passing']}
-      />
-      <WindingPhase
-        n="1"
-        x={NODE_X[1]}
-        y={NODE_Y[1]}
-        above={false}
-        on={beat >= 1}
-        current={false}
-        name="Shadow pilot"
-        when="Months 1–3"
-        body="Runs silently alongside the Command & Contact Centre (CCC) on one new handover phase."
-        checks={['AI recommends, staff decide', 'Target: > 90% staff alignment']}
-      />
-      <WindingPhase
-        n="2"
-        x={NODE_X[2]}
-        y={NODE_Y[2]}
-        above
-        on={beat >= 2}
-        current={false}
-        name="Live pilot"
-        when="Months 4–6"
-        body="Active deployment for waterproofing, leaks and electrical with real-time booking & verification."
-        checks={['Measure repeat visits & reopens']}
-      />
-      <WindingPhase
-        n="3"
-        x={NODE_X[3]}
-        y={NODE_Y[3]}
-        above={false}
-        on={beat >= 3}
-        current={false}
-        name="Township Scale"
-        when="Months 6–12"
-        body="Multi-township rollout integrated with CCC and Procore across all trades."
-        checks={['Contractor quality benchmarking']}
-      />
-      <WindingPhase
-        n="4"
-        x={NODE_X[4]}
-        y={NODE_Y[4]}
-        above
-        on={beat >= 4}
-        current={false}
-        name="Portfolio Expansion"
-        when="Year 2+"
-        body="Extends to SDP’s Investment & Asset Management portfolio (retail malls, KL East, industrial) post-DLP."
-        checks={['Recurring-income property workflows']}
-      />
-      <EngineCard on={beat >= 5} />
+      <PlanTag left={336} width={358} on={beat >= 2} hot>THIS ASK · RM0.5m</PlanTag>
+      <PlanTag left={1030} width={314} on={beat >= 4}>IF MONTH 6 SAYS GO</PlanTag>
+
+      <PlanStop i={0} n="0" ask on={beat >= 0} when="Month 0" name="Set up" body="Baseline from the last phase’s CCC and Procore tickets. PDPA sign-off, pen test." />
+      <PlanStop i={1} n="1" ask on={beat >= 1} when="Months 1–3" name="Shadow" body="Runs beside the CCC on ~300 units. AI recommends, staff decide; buyers see no change." gate="≥ 90% AGREEMENT" />
+      <PlanStop i={2} n="2" ask on={beat >= 2} when="Months 4–6" name="Live" body="Buyers report in the app, technicians use repair guides, buyers sign off." gate="GO / NO-GO" />
+      <PlanStop i={3} n="3" on={beat >= 3} when="Year 2" name="Townships" body="APIs to the CCC, Procore and the SDP app. More trades. ≈RM0.2m one-off." />
+      <PlanStop i={4} n="4" on={beat >= 4} when="Year 3+" name="Portfolio" body="All ~3,000 handovers a year. RM0.3m a year to run." />
+
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 502, display: 'flex', gap: 28 }}>
+        <Card style={{ flex: 1, padding: '14px 28px', ...reveal(beat >= 5, 0, 'translateY(14px)') }}>
+          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--osd-accent)' }}>WHAT WE NEED FROM SDP</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 4, listStyleType: 'disc' }}>
+            <NeedItem>A business owner: the Head of the Command &amp; Contact Centre</NeedItem>
+            <NeedItem>One newly handed-over phase (~300 units) in its DLP</NeedItem>
+            <NeedItem>2–3 CCC officers and 2 contractor technicians as pilot users</NeedItem>
+            <NeedItem>12 months of past defect tickets and photos, anonymised</NeedItem>
+            <NeedItem>One IT contact and a review by SDP’s data protection officer</NeedItem>
+          </ul>
+        </Card>
+        <Card style={{ flex: 1, padding: '14px 28px', display: 'flex', flexDirection: 'column', gap: 8, ...reveal(beat >= 5, 120, 'translateY(14px)') }}>
+          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: blue }}>DEPENDENCIES AND HOW WE HANDLE THEM</div>
+          <DepRow risk="Data and PDPA" fix="anonymised extract, kept in Malaysia, DPO sign-off first" />
+          <DepRow risk="Integration" fix="the pilot uses a batch import; live APIs only in Year 2" />
+          <DepRow risk="Contractor adoption" fix="one app, and the repair guide saves them time" />
+          <DepRow risk="AI mistakes" fix="SDP reviews every rejection; rules take over if a model fails" />
+        </Card>
+      </div>
+    </Frame>
+  );
+};
+
+const MeasureRow = ({ measure, base, target, how, primary, shade }: { measure: string; base: string; target: string; how: string; primary?: boolean; shade?: boolean }) => (
+  <div style={{ display: 'flex', alignItems: 'center', minHeight: 62, background: primary ? BLOCK : shade ? '#F6EFE7' : 'transparent', borderRadius: 10 }}>
+    <div style={{ flex: 1, padding: '8px 20px', fontSize: 22, fontWeight: primary ? 800 : 600, color: ink, lineHeight: 1.3 }}>
+      {primary ? <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.1em', color: '#fff', background: '#C64A1F', padding: '3px 8px', borderRadius: 5, marginRight: 12, verticalAlign: 3 }}>PRIMARY</span> : null}
+      {measure}
+    </div>
+    <div style={{ width: 330, padding: '8px 16px', fontSize: 20, color: muted }}>{base}</div>
+    <div style={{ width: 210, padding: '8px 16px', fontSize: 23, fontWeight: 800, color: primary ? BLOCK_HI : 'var(--osd-accent)' }}>{target}</div>
+    <div style={{ width: 330, padding: '8px 16px', fontSize: 20, color: muted }}>{how}</div>
+  </div>
+);
+
+const Success: Page = () => {
+  const arrived = useArrived();
+  const th: CSSProperties = { fontSize: 16, fontWeight: 800, letterSpacing: '0.12em', color: soft, padding: '0 16px 10px' };
+  return (
+    <Frame eyebrow="05 · Pilot & ask · Success measures" title="How we’ll know it works, agreed before day one" titleSize={58} bodyTop={270} chapter={3}>
+      <div style={reveal(arrived, 0, 'translateY(14px)')}>
+        <div style={{ display: 'flex', borderBottom: `2px solid ${line}`, marginBottom: 6 }}>
+          <div style={{ ...th, flex: 1, paddingLeft: 20 }}>MEASURE</div>
+          <div style={{ ...th, width: 330 }}>BASELINE</div>
+          <div style={{ ...th, width: 210 }}>TARGET</div>
+          <div style={{ ...th, width: 330 }}>HOW WE MEASURE IT</div>
+        </div>
+        <MeasureRow primary measure="Repeat-visit rate" base="SDP’s last comparable phase" target="−20% by M6" how="CCC and Procore visit logs" />
+        <MeasureRow measure="AI verdict matches SDP’s inspector" base="New measure" target="≥ 90%" how="Blind sample, months 1–3" />
+        <MeasureRow shade measure="Repairs done within the 30-day SPA window" base="Last comparable phase" target="≥ 90%" how="Case timestamps" />
+        <MeasureRow measure="Closed repairs signed off by the buyer" base="1 in 2 never asked today" target="≥ 80%" how="In-app sign-off" />
+        <MeasureRow shade measure="Recurring patterns accepted by QA" base="Not tracked today" target="≥ 1 by M6" how="QA review of flagged issues" />
+      </div>
+      <div style={{ display: 'flex', gap: 28, marginTop: 24 }}>
+        <Card style={{ flex: 1, padding: '20px 28px', ...reveal(arrived, 250, 'translateY(14px)') }}>
+          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: green }}>GUARDRAILS, ALWAYS ON</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 24, fontSize: 21, lineHeight: 1.45, color: ink , listStyleType: 'disc' }}>
+            <li>No valid defect rejected without SDP review</li>
+            <li>Buyer complaints and escalations no higher than baseline</li>
+            <li>Zero personal-data incidents</li>
+          </ul>
+        </Card>
+        <Card style={{ flex: 1, padding: '20px 28px', borderColor: '#E9B9A3', ...reveal(arrived, 350, 'translateY(14px)') }}>
+          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--osd-accent)' }}>WHEN WE STOP</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 24, fontSize: 21, lineHeight: 1.45, color: ink , listStyleType: 'disc' }}>
+            <li><b>Month 3:</b> agreement under 80%, or staff say it adds work → stop or rescope</li>
+            <li><b>Month 6:</b> repeat visits down less than 10% → no rollout</li>
+          </ul>
+        </Card>
+      </div>
+    </Frame>
+  );
+};
+
+const AskTile = ({ label, value, sub, on, delay }: { label: string; value: string; sub: string; on: boolean; delay: number }) => (
+  <div style={{ flex: 1, display: 'flex', ...reveal(on, delay, 'translateY(16px)') }}>
+    <Card style={{ flex: 1, padding: '24px 28px' }}>
+      <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.14em', color: muted }}>{label}</div>
+      <div style={{ fontSize: 52, fontWeight: 900, color: 'var(--osd-accent)', letterSpacing: '-0.02em', marginTop: 6, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 21, lineHeight: 1.4, color: ink, marginTop: 8 }}>{sub}</div>
+    </Card>
+  </div>
+);
+
+const Ask: Page = () => {
+  const arrived = useArrived();
+  const close = useTimeline([700]) >= 1;
+  return (
+    <Frame eyebrow="05 · Pilot & ask · The decision" title="Our ask: approve a 6-month pilot on one phase" titleSize={60} bodyTop={270} chapter={3}>
+      <div style={{ display: 'flex', gap: 24 }}>
+        <AskTile on={arrived} delay={0} label="BUDGET" value="RM0.5m" sub="≈RM60k a month for the team; 2% cloud and AI" />
+        <AskTile on={arrived} delay={100} label="SCOPE" value="~300 units" sub="One newly handed-over phase, defects in the DLP" />
+        <AskTile on={arrived} delay={200} label="OWNER" value="Head of CCC" sub="Business owner, with QA for systemic issues" />
+        <AskTile on={arrived} delay={300} label="NEXT DECISION" value="Month 6" sub="Go / no-go on rolling out to townships" />
+      </div>
+      <div style={{ display: 'flex', gap: 28, marginTop: 28 }}>
+        <Card style={{ flex: 1, padding: '22px 30px', ...reveal(arrived, 400, 'translateY(14px)') }}>
+          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--osd-accent)' }}>AT MONTH 6 YOU GET</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 24, fontSize: 22, lineHeight: 1.45, color: ink , listStyleType: 'disc' }}>
+            <li>Repeat visits, 30-day repairs and sign-offs, measured against your baseline</li>
+            <li>The value model re-run with SDP’s own cost per visit</li>
+            <li>A go / no-go recommendation you can check line by line</li>
+          </ul>
+        </Card>
+        <Card style={{ flex: 1, padding: '22px 30px', ...reveal(arrived, 500, 'translateY(14px)') }}>
+          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.12em', color: blue }}>IF IT WORKS, WHAT FOLLOWS</div>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 24, fontSize: 22, lineHeight: 1.45, color: ink , listStyleType: 'disc' }}>
+            <li>Year 2: ≈RM0.2m to connect the CCC, Procore and the SDP app</li>
+            <li>Year 3 on: RM0.3m a year to run, RM0.78m a year back</li>
+            <li>Break-even in Year 4 (base case)</li>
+          </ul>
+        </Card>
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: BLOCK, color: BLOCK_TEXT, borderRadius: 16, padding: '22px 32px', textAlign: 'center', fontSize: 30, fontWeight: 800, ...reveal(close, 0, 'translateY(14px)'), translate: '0px -53.84px' }}>
+        If it misses the month-3 targets, we stop. <span style={{ color: BLOCK_HI }}>You will have spent at most RM0.25m.</span>
+      </div>
     </Frame>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Closing
+// Closing: the human value (trust → word of mouth) and thank you
 // ---------------------------------------------------------------------------
 
-const ThankYou: Page = () => {
+const Closing: Page = () => {
+  // Layout from the sy "warm closing" page: full-bleed photo, dark gradient, headline + orange-rule line.
   const live = useIsActivePage();
   return (
     <div style={{ ...fill, background: ink, color: '#fff' }}>
-      <img src={closingImg} alt="" style={{ position: 'absolute', right: 0, top: 0, width: 860, height: '100%', objectFit: 'cover', ...anim(live, 'sf-fade', 1200, 0) }} />
-      <div style={{ position: 'absolute', right: 0, top: 0, width: 860, height: '100%', background: 'linear-gradient(90deg, #1C1814 0%, rgba(28,24,20,0) 40%)' }} />
-      <div style={{ position: 'absolute', left: PAD_X, top: 0, bottom: 0, width: 1020, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{ fontFamily: '"Allura", cursive', fontSize: 150, color: '#FBE3D3', lineHeight: 1, paddingRight: 30, alignSelf: 'flex-start', ...anim(live, 'sf-wipe', 1400, 180, 'cubic-bezier(0.5, 0, 0.3, 1)') }}>
-          Simephony
+      <img src={closingImg} alt="Happy family in a home" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', ...anim(live, 'sf-fade', 1200, 0) }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(28,24,20,0.96) 0%, rgba(28,24,20,0.74) 48%, rgba(28,24,20,0.12) 100%)' }} />
+      <div style={{ position: 'absolute', left: PAD_X, top: 92, fontSize: 24, fontWeight: 900, letterSpacing: '0.16em', color: '#FBE3D6', ...anim(live, 'sf-fade', 700, 300) }}>CLOSING</div>
+      <div style={{ position: 'absolute', left: PAD_X, top: 0, bottom: 0, width: 960, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <h1 style={{ fontSize: 160, fontWeight: 900, color: '#FF7A00', lineHeight: 1, letterSpacing: '-0.03em', margin: 0, ...anim(live, 'sf-rise', 850, 650), translate: '0px -72.18px' }}><span style={{ fontSize: '189px' }}>Thank you</span></h1>
+        <div style={{ marginTop: 48, borderLeft: '6px solid #FF7A00', paddingLeft: 28, fontSize: 32, lineHeight: 1.5, fontWeight: 700, ...anim(live, 'sf-rise', 850, 1050) }}>
+          When a buyer feels protected, they become advocates. That lowers future customer acquisition cost and protects the Sime Darby brand premium.
         </div>
-        <h1 style={{ fontSize: 120, fontWeight: 800, letterSpacing: '-0.03em', margin: '36px 0 0', lineHeight: 1, ...anim(live, 'sf-rise', 750, 750) }}>Thank you!</h1>
-        <p style={{ fontSize: 34, lineHeight: 1.4, margin: '36px 0 0', color: 'rgba(255,255,255,0.86)', ...anim(live, 'sf-rise', 750, 1100) }}>
-          Don’t just close the defect. <span style={{ color: bright, fontWeight: 700 }}>Prove the root cause is fixed.</span>
-        </p>
-        <p style={{ fontSize: 25, margin: '52px 0 0', color: 'rgba(255,255,255,0.62)', ...anim(live, 'sf-fade', 700, 1500) }}>Group We Hit The Token Limit · Questions welcome</p>
+      </div>
+      <div style={{ position: 'absolute', right: PAD_X, bottom: 72, textAlign: 'right', ...anim(live, 'sf-fade', 900, 1450) }}>
+        <div style={{ fontSize: 29, fontWeight: 800 }}>Trust becomes advocacy.</div>
+        <div style={{ fontSize: 22, color: 'rgba(255,255,255,0.72)', marginTop: 8 }}>Group We Hit The Token Limit</div>
       </div>
     </div>
   );
@@ -1841,12 +2451,13 @@ const AppendixDivider: Page = () => (
     </div>
     <div style={{ position: 'absolute', left: 1000, top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 22 }}>
       <AppendixRow k="A" label="Testimonials &amp; homeowner voices" />
-      <AppendixRow k="B" label="Value-added model &amp; sources" />
+      <AppendixRow k="B" label="Value model, recurring income &amp; sources" />
       <AppendixRow k="C" label="Target users" />
       <AppendixRow k="D" label="AI justification, AIGE &amp; NIST risks" />
       <AppendixRow k="E" label="Risks and mitigation" />
       <AppendixRow k="F" label="Future enhancements" />
       <AppendixRow k="G" label="Meet the team" />
+      <AppendixRow k="H" label="Product deep-dive: demo, workflow, differentiation" />
     </div>
     <div style={{ position: 'absolute', right: PAD_X, bottom: 48 }}>
       <PageNo color="rgba(255,255,255,0.6)" />
@@ -2030,7 +2641,7 @@ const ValueAdmin: Page = () => {
   const arrived = useArrived();
   return (
     <Frame
-      eyebrow="Appendix B · Value-added model"
+      eyebrow="Appendix B · Capacity released (not counted as cash)"
       title="Less admin, more time for judgement"
       subtitle="Simephony’s AI agents prepare the repetitive first pass on every defect case, so your team can review, approve and focus on work that needs care."
       bodyTop={332}
@@ -2078,256 +2689,89 @@ const ValueAdmin: Page = () => {
   );
 };
 
-const CycleStep = ({ n, title, body, color }: { n: string; title: string; body: string; color: string }) => (
-  <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start' }}>
-    <div style={{ width: 48, height: 48, borderRadius: 24, background: color, color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {n}
-    </div>
-    <div>
-      <div style={{ fontSize: 28, fontWeight: 800 }}>{title}</div>
-      <div style={{ fontSize: 24, lineHeight: 1.4, color: muted, marginTop: 4 }}>{body}</div>
-    </div>
+/** One recurring-income stream after the DLP (sy "Beyond the 24-month DLP" page). */
+const IncomeStream = ({ label, value, unit, detail, on, delay, upside }: { label: string; value: string; unit: string; detail: string; on: boolean; delay: number; upside?: boolean }) => (
+  <div style={{ borderRadius: 20, border: `2px solid ${line}`, background: upside ? orangeSoft : card, padding: '28px 30px', ...reveal(on, delay, 'translateY(12px)') }}>
+    <div style={{ fontSize: 21, fontWeight: 900, color: upside ? '#C64A1F' : blue }}>{label}</div>
+    <div style={{ fontSize: 70, fontWeight: 900, marginTop: 28, letterSpacing: '-0.03em' }}>{value}</div>
+    <div style={{ fontSize: 20, color: muted, marginTop: 4 }}>{unit}</div>
+    <div style={{ fontSize: 21, lineHeight: 1.45, marginTop: 24 }}>{detail}</div>
   </div>
 );
 
-const Arc = ({ d, color, delay, drawn }: { d: string; color: string; delay: number; drawn: boolean }) => (
-  <path
-    d={d}
-    fill="none"
-    stroke={color}
-    strokeWidth="18"
-    strokeLinecap="round"
-    pathLength={1}
-    strokeDasharray="1"
-    strokeDashoffset={drawn ? 0 : 1}
-    style={{ transition: `stroke-dashoffset 900ms ${EASE_OUT} ${delay}ms` }}
-  />
-);
-
-const ValueCycle: Page = () => {
-  const drawn = useArrived();
+const RecurringIncome: Page = () => {
+  const arrived = useArrived();
   return (
-    <Frame eyebrow="Appendix B · Value-added model" title="One handover, earning every year after" mark="B">
-      <div style={{ display: 'flex', gap: 96, alignItems: 'center', height: '100%' }}>
-        <svg viewBox="0 0 600 600" style={{ width: 560, height: 560, flexShrink: 0 }}>
-          <circle cx="300" cy="300" r="210" fill="none" stroke="#E3D7CA" strokeWidth="18" />
-          <Arc drawn={drawn} delay={100} color="#C64A1F" d="M300 90 A210 210 0 0 1 500 235" />
-          <Arc drawn={drawn} delay={500} color="#D56A46" d="M500 235 A210 210 0 0 1 423 470" />
-          <Arc drawn={drawn} delay={900} color="#24589E" d="M177 470 A210 210 0 0 1 100 235" />
-          <text x="300" y="290" textAnchor="middle" fontSize="38" fontWeight="800" fill="#1C1814">Every cohort</text>
-          <text x="300" y="336" textAnchor="middle" fontSize="38" fontWeight="800" fill="#1C1814">compounds</text>
-          <circle cx="300" cy="90" r="30" fill="#C64A1F" />
-          <text x="300" y="100" textAnchor="middle" fontSize="28" fontWeight="800" fill="#fff">1</text>
-          <circle cx="500" cy="235" r="30" fill="#C64A1F" />
-          <text x="500" y="245" textAnchor="middle" fontSize="28" fontWeight="800" fill="#fff">2</text>
-          <circle cx="423" cy="470" r="30" fill="#1C1814" />
-          <text x="423" y="480" textAnchor="middle" fontSize="28" fontWeight="800" fill="#fff">3</text>
-          <circle cx="177" cy="470" r="30" fill="#24589E" />
-          <text x="177" y="480" textAnchor="middle" fontSize="28" fontWeight="800" fill="#fff">4</text>
-          <circle cx="100" cy="235" r="30" fill="#1C1814" />
-          <text x="100" y="245" textAnchor="middle" fontSize="28" fontWeight="800" fill="#fff">5</text>
-        </svg>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 30 }}>
-          <CycleStep n="1" color="#C64A1F" title="Handover phase" body="Every new unit enters Simephony on day one." />
-          <CycleStep n="2" color="#C64A1F" title="Verify repairs (24-month DLP)" body="Buyer-verified repairs cut repeat visits, disputes and rework." />
-          <CycleStep n="3" color={ink} title="Build trust and data" body="Verified repairs earn trust; every case sharpens recurrence detection." />
-          <CycleStep n="4" color={blue} title="Paid plans after the DLP" body="Homes, strata buildings and SDP assets move onto recurring plans." />
-          <CycleStep n="5" color={ink} title="Better next phase" body="Recurrence patterns improve designs and contractor choice, then the loop repeats." />
+    <Frame eyebrow="Appendix B · Beyond the DLP" title="Beyond the 24-month DLP: unlocking recurring income" mark="B">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, height: 410 }}>
+        <IncomeStream on={arrived} delay={0} label="STRATA / JMB" value="RM236k" unit="per year" detail="Defect intelligence for JMBs and management corporations after stratification" />
+        <IncomeStream on={arrived} delay={180} label="ASSET MANAGEMENT" value="RM660k" unit="per year" detail="Workflow subscriptions for SDP malls and industrial assets" />
+        <IncomeStream on={arrived} delay={360} upside label="DEVELOPER LICENSING" value="RM700k" unit="upside / year" detail="White-label Simephony for developers outside the SDP ecosystem" />
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: 18, background: '#1C1814', color: '#fff', padding: '24px 30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...reveal(arrived, 620, 'translateY(12px)') }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#FBE3D6' }}>YEAR 5 RECURRING REVENUE</div>
+          <div style={{ fontSize: 38, fontWeight: 900, marginTop: 6 }}>RM1.596M potential annual streams</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 28, fontWeight: 900, color: '#FF7A00' }}>100%+ run-cost cover</div>
+          <div style={{ fontSize: 20, color: 'rgba(255,255,255,0.76)', marginTop: 4 }}>against RM300k annual platform cost</div>
         </div>
       </div>
     </Frame>
   );
 };
 
-const Stream = ({ k, title, body, value, color, upside }: { k: string; title: string; body: string; value: string; color: string; upside?: boolean }) => (
-  <Card style={{ display: 'flex', alignItems: 'center', gap: 22, padding: '22px 28px', ...(upside ? { background: 'transparent', border: `2px dashed ${line}`, boxShadow: 'none' } : {}) }}>
-    <div style={{ width: 46, height: 46, borderRadius: 10, background: color, color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {k}
+const AssumptionRow = ({ input, base, source, kind, shade }: { input: string; base: string; source: ReactNode; kind: TagKind; shade?: boolean }) => (
+  <div style={{ display: 'flex', alignItems: 'center', minHeight: 50, background: shade ? '#F6EFE7' : 'transparent', borderRadius: 8 }}>
+    <div style={{ width: 470, padding: '6px 18px', fontSize: 20, fontWeight: 700, color: ink }}>{input}</div>
+    <div style={{ width: 230, padding: '6px 14px', fontSize: 20, fontWeight: 800, color: ink, fontVariantNumeric: 'tabular-nums' }}>{base}</div>
+    <div style={{ flex: 1, padding: '6px 14px', fontSize: 18, color: muted, lineHeight: 1.3 }}>{source}</div>
+    <div style={{ width: 160, padding: '6px 14px' }}>
+      <Tag kind={kind} />
     </div>
-    <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 26, fontWeight: 800 }}>{title}</div>
-      <div style={{ fontSize: 21, lineHeight: 1.35, color: muted, marginTop: 4 }}>{body}</div>
-    </div>
-    <div style={{ fontSize: 34, fontWeight: 800, color, whiteSpace: 'nowrap' }}>{value}</div>
-  </Card>
-);
-
-const StreamHead = ({ label, total, color }: { label: string; total: string; color: string }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: `3px solid ${color}`, paddingBottom: 12 }}>
-    <span style={{ fontSize: 30, fontWeight: 800, color }}>{label}</span>
-    <span style={{ fontSize: 24, fontWeight: 700, color }}>{total}</span>
   </div>
 );
 
-const ValueStreams: Page = () => (
-  <Frame eyebrow="Appendix B · Value-added model" title="Save first, then earn: four value streams" mark="B">
-    <div style={{ display: 'flex', gap: 48 }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <StreamHead label="Saves during the DLP" total="Year 5: RM0.93m" color="#C64A1F" />
-        <Stream k="A" color="#9A3317" title="Fewer repeat visits" body="Repeat visits avoided × RM350, plus admin hours saved" value="RM669k" />
-        <Stream k="B" color="#D45B2C" title="Lower dispute risk" body="Evidence-backed records avoid a share of disputes" value="RM133k" />
-        <Stream k="C" color="#E9A060" title="Contractor back-charges" body="Failed-repair cost recovered with photo evidence" value="RM126k" />
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <StreamHead label="Earns after the DLP" total="Year 5: RM0.24m" color={blue} />
-        <Stream k="D" color={blue} title="Strata subscriptions" body="Annual fee per JMB / MC building" value="RM236k" />
-        <Stream upside k="E" color={soft} title="Developer licences (upside)" body="Not counted in totals; licensed to other developers from Year 3" value="RM700k" />
-        <div style={{ background: BLOCK, color: BLOCK_TEXT, borderRadius: 16, padding: '20px 26px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800 }}>Counted Year-5 value (A–D)</div>
-            <div style={{ fontSize: 19, opacity: 0.8, marginTop: 4 }}>≈ 3.9× the RM0.3m a year it costs to run</div>
-          </div>
-          <div style={{ fontSize: 40, fontWeight: 800, color: BLOCK_HI }}>RM1.16m</div>
-        </div>
-      </div>
-    </div>
+const ValueAssumptions: Page = () => (
+  <Frame eyebrow="Appendix B · Value model" title="Every input, and where it comes from" subtitle="Base case, downside in brackets. The pilot replaces every estimate with SDP’s own data." bodyTop={300} mark="B">
+    <AssumptionRow shade input="Handovers a year" base="≈3,000" source="SDP: 3,440 (FY2023) and 2,346 (FY2024) units delivered" kind="sdp" />
+    <AssumptionRow input="Repair visits per unit in the DLP" base="4" source="Team estimate; replace with CCC visit logs" kind="est" />
+    <AssumptionRow shade input="Share of visits that are repeats" base="23%" source="Aquant 2026 field-service benchmark: median first-time fix 77%" kind="bench" />
+    <AssumptionRow input="Repeat visits avoided" base="40% (20%)" source="Estimate; top-quartile first-time fix is 88% (Aquant)" kind="est" />
+    <AssumptionRow shade input="SDP cost per visit" base="RM350" source="Malaysian repair call-out rates; replace with SDP data" kind="est" />
+    <AssumptionRow input="Residential build cost a year" base="RM1.4bn" source="50% of FY2025 cost of sales (RM2.79bn), the residential share of sales" kind="sdp" />
+    <AssumptionRow shade input="Post-handover rework" base="0.38%" source="Love 2026, J. Constr. Eng. Manage. (measured on one contractor’s projects)" kind="bench" />
+    <AssumptionRow input="Rework prevented by early linking" base="5% (2%)" source="Estimate; tested by the pilot’s systemic-issue measure" kind="est" />
+    <AssumptionRow shade input="Tribunal-scale disputes avoided" base="6 × ≈RM22k" source="KPKT: RM26.4m awarded, 1,331 homebuyer cases resolved a year" kind="bench" />
+    <AssumptionRow input="AI cost per case" base="RM0.02–0.18" source="Gemini Flash-Lite list prices; 12k–70k tokens a case, by scenario" kind="bench" />
+    <AssumptionRow shade input="Team cost" base="× 1.3 loaded" source="Randstad 2026 salary guide; EPF, SOCSO, EIS and HRDF rates (Aniday)" kind="bench" />
   </Frame>
 );
 
-const BigStat = ({ value, label }: { value: string; label: string }) => (
-  <div style={{ background: BLOCK, color: BLOCK_TEXT, borderRadius: 16, padding: '22px 28px', flex: 1 }}>
-    <div style={{ fontSize: 44, fontWeight: 800, color: BLOCK_HI, letterSpacing: '-0.02em' }}>{value}</div>
-    <div style={{ fontSize: 21, marginTop: 6, opacity: 0.85, lineHeight: 1.3 }}>{label}</div>
-  </div>
-);
-
-// Year-5 value (RM thousand). 1250k = 440 px of plot height, baseline at y = 500.
-// Colours validated for colour-blind separation; every segment is also labelled.
-const Y5_BASE = 500;
-const Y5_K = 0.352;
-const Y5_BAR = 210;
-
-/** One stacked segment; `bottom` is where it starts, in RM k. */
-const Seg = ({ cx, bottom, value, k, color, ink: textInk = '#fff' }: { cx: number; bottom: number; value: number; k: string; color: string; ink?: string }) => {
-  const y = Y5_BASE - (bottom + value) * Y5_K;
-  const h = value * Y5_K - 2;
-  return (
-    <g>
-      <rect x={cx - Y5_BAR / 2} y={y} width={Y5_BAR} height={h} rx={4} fill={color} />
-      <text x={cx} y={y + h / 2 + 8} textAnchor="middle" fontSize="22" fontWeight="800" fill={textInk}>
-        {k} · {value}
-      </text>
-    </g>
-  );
-};
-
-/** A bar that grows up from the baseline once `on` turns true. */
-const GrowBar = ({ cx, on, delay, label, sub, children }: { cx: number; on: boolean; delay: number; label: string; sub: string; children: ReactNode }) => (
-  <g>
-    <g
-      style={{
-        transformBox: 'view-box',
-        transformOrigin: `${cx}px ${Y5_BASE}px`,
-        transform: on ? 'scaleY(1)' : 'scaleY(0)',
-        transition: `transform 900ms ${CAM_EASE} ${delay}ms`,
-      }}
-    >
-      {children}
-    </g>
-    <text x={cx} y={Y5_BASE + 40} textAnchor="middle" fontSize="23" fontWeight="800" fill={ink}>{label}</text>
-    <text x={cx} y={Y5_BASE + 70} textAnchor="middle" fontSize="20" fill={muted}>{sub}</text>
-  </g>
-);
-
-/** Brace on the right of the counted bar that groups segments (from / to in RM k). */
-const Brace = ({ x, from, to, label, value, color, on, delay }: { x: number; from: number; to: number; label: string; value: string; color: string; on: boolean; delay: number }) => {
-  const y1 = Y5_BASE - to * Y5_K + 3;
-  const y2 = Y5_BASE - from * Y5_K - 3;
-  return (
-    <g style={{ opacity: on ? 1 : 0, transition: `opacity 400ms ${EASE_OUT} ${delay}ms` }}>
-      <path d={`M${x} ${y1} h10 V${y2} h-10`} fill="none" stroke={color} strokeWidth="3" />
-      <text x={x + 22} y={(y1 + y2) / 2 - 4} fontSize="26" fontWeight="800" fill={color}>{value}</text>
-      <text x={x + 22} y={(y1 + y2) / 2 + 22} fontSize="18" fill={muted}>{label}</text>
-    </g>
-  );
-};
-
-const YearFive: Page = () => {
-  const on = useArrived();
-  const grid = (v: number) => (
-    <g key={v}>
-      <line x1="90" x2="900" y1={Y5_BASE - v * Y5_K} y2={Y5_BASE - v * Y5_K} stroke={line} strokeWidth="2" />
-      <text x="78" y={Y5_BASE - v * Y5_K + 7} textAnchor="end" fontSize="19" fill={soft}>{v}</text>
-    </g>
-  );
-  return (
-    <Frame eyebrow="Appendix B · Value-added model" title="Year 5: savings first, recurring earnings next" mark="B">
-      <div style={{ display: 'flex', gap: 48, height: '100%', alignItems: 'center' }}>
-        <div style={{ flexShrink: 0 }}>
-          <svg viewBox="0 0 920 590" style={{ width: 940, height: 603, display: 'block' }} role="img" aria-label="Year 5 value, RM thousand. Counted: A 669, B 133, C 126 saved during the DLP; D 236 earned after it; RM1.16m in total. Upside not counted: E 700.">
-            <text x="0" y="34" fontSize="20" fontWeight="700" fill={soft} letterSpacing="0.06em">YEAR 5 VALUE BY STREAM · RM THOUSAND</text>
-            {grid(250)}
-            {grid(500)}
-            {grid(750)}
-            {grid(1000)}
-            {grid(1250)}
-            <line x1="90" x2="900" y1={Y5_BASE} y2={Y5_BASE} stroke={soft} strokeWidth="2" />
-            <GrowBar cx={260} on={on} delay={150} label="Counted value" sub="A–D · RM1.16m">
-              <Seg cx={260} bottom={0} value={669} k="A" color="#9A3317" />
-              <Seg cx={260} bottom={669} value={133} k="B" color="#D45B2C" />
-              <Seg cx={260} bottom={802} value={126} k="C" color="#E9A060" ink={ink} />
-              <Seg cx={260} bottom={928} value={236} k="D" color={blue} />
-            </GrowBar>
-            <Brace x={378} from={0} to={928} value="RM0.93m" label="saved in the DLP" color="#C64A1F" on={on} delay={1100} />
-            <Brace x={378} from={928} to={1164} value="RM0.24m" label="earned after it" color={blue} on={on} delay={1300} />
-            <GrowBar cx={720} on={on} delay={600} label="Upside, not counted" sub="E · RM0.70m">
-              <rect x={720 - Y5_BAR / 2} y={Y5_BASE - 700 * Y5_K} width={Y5_BAR} height={700 * Y5_K - 2} rx={4} fill="none" stroke={soft} strokeWidth="2.5" strokeDasharray="8 7" />
-              <text x={720} y={Y5_BASE - 350 * Y5_K + 8} textAnchor="middle" fontSize="22" fontWeight="800" fill={muted}>E · 700</text>
-            </GrowBar>
-          </svg>
-          <p style={{ fontSize: 19, color: soft, margin: '6px 0 0' }}>
-            Stream key (A–E) and what each stream counts: next slide.
-          </p>
-        </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, ...reveal(on, 900) }}>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <BigStat value="RM1.16m" label="counted Year-5 value (A–D)" />
-            <BigStat value="≈ 3.9×" label="the RM0.3m yearly run cost" />
-          </div>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <BigStat value="+RM0.70m" label="licence upside, not counted (E)" />
-            <BigStat value="24 mo" label="statutory DLP period" />
-          </div>
-          <Card style={{ padding: '22px 28px' }}>
-            <div style={{ fontSize: 23, fontWeight: 800 }}>Key base-case assumptions</div>
-            <ul style={{ fontSize: 21, lineHeight: 1.5, color: muted, margin: '8px 0 0', paddingLeft: 26 }}>
-              <li>About 3,000 handovers a year</li>
-              <li>RM350 per repair visit; 20% → 40% of repeat visits avoided</li>
-              <li>Strata fee per JMB / MC building after the DLP</li>
-              <li>Build RM500k; run RM300k a year</li>
-            </ul>
-          </Card>
-        </div>
-      </div>
-    </Frame>
-  );
-};
-
-/** Where each named source lives (same links as the Canva deck's sources page). Clickable in the PDF export too. */
+/** Where each named source lives. Clickable in the PDF export too. */
 const SOURCE_URLS: Record<string, string> = {
-  'Gemini 3.1 Flash-Lite': 'https://openrouter.ai/google/gemini-3.1-flash-lite',
-  'Gemini 3.5 Flash-Lite': 'https://www.eesel.ai/blog/gemini-3-5-flash-lite-pricing',
-  AJobThing: 'https://www.ajobthing.com/resources/recruitment-tools/salary-comparison-tool/customer-service-executive-salary-in-kuala-lumpur',
+  'NST, 18 Nov 2026': 'https://www.nst.com.my/',
+  'SDP SR2024': 'https://www.simedarbyproperty.com/sites/default/files/2025-05/SR2024.pdf',
+  'SDP IAR2024': 'https://simedarbyproperty.com/annualreport2024/download/sdp-ir2024-gmd.pdf',
+  'SDP Key Highlights 2024': 'https://simedarbyproperty.com/annualreport2024/download/sdp-ir2024-key-highlights.pdf',
+  'SDP Q4 FY2025 briefing': 'https://www.simedarbyproperty.com/sites/default/files/2026-02/%5BANALYST%5D%20Q4%20FY2025%20Financial%20Results%20Briefings_no_video.pdf',
+  'SDP Introducer T&C': 'https://www.simedarbyproperty.com/introducer/',
+  'Aquant 2026': 'https://aquant.ai/resources/post/aquants-2026-field-service-benchmark-companies-can-unlock-up-to-26-in-service-cost-savings-by-scaling-knowledge-across-the-workforce',
+  'Love 2026 (ASCE)': 'https://www.asce.org/publications-and-news/civil-engineering-source/article/2026/01/22/how-much-does-field-rework-in-construction-actually-cost',
+  'KPKT via RTM': 'https://berita.rtm.gov.my/?p=164871',
+  'Agile Mont Kiara (SAYS)': 'https://says.com/my/news/mm2h-couple-wins-rm500k-suit-after-mont-kiara-condo-declared-uninhabitable',
+  'Gemini pricing': 'https://aistudio.google.com/docs/pricing',
+  Randstad: 'https://www.randstad.com.my/most-in-demand-jobs-malaysia-emerging-technology/',
   Aniday: 'https://aniday.com/en/malaysia/epf-socso-eis',
-  Wise: 'https://wise.com/au/currency-converter/usd-to-myr-rate',
-  NBER: 'https://www.nber.org/papers/w31161',
-  'Stanford GSB': 'https://www.gsb.stanford.edu/insights/generative-ai-boost-can-boost-productivity-without-replacing-workers',
-  EdgeProp: 'https://www.edgeprop.my/guides/buying/comprehensive-overview-defect-liability-period',
-  'iProperty (30-day repair)': 'https://www.iproperty.com.my/guides/defects-strata-buildings-in-malaysia-homebuyer-rights-legal-case',
-  FY2021: 'https://simedarbyproperty.com/annualreport2021/How-We-Added-Value-in-2021.html',
-  FY2022: 'https://api.edgeprop.my/content/1905406/sime-darby-propertys-4q-net-profit-surges-643-higher-property-sales',
-  FY2023: 'https://sdpvirtual.simedarbyproperty.com/annualreport2023/download/sdp-ir2023-gmd.pdf',
-  FY2024: 'https://simedarbyproperty.com/annualreport2024/download/sdp-ir2024-key-highlights.pdf',
-  'Aquant benchmark': 'https://customerthink.com/?p=1080461',
-  VSight: 'https://vsight.io/glossary/what-is-first-time-fix-rate-ftfr/',
-  'Recommend.my': 'https://recommend.my/blog/?p=15570',
-  'Tribunal claims': 'https://mahwengkwai.com/?p=36926',
-  'Claim volume': 'https://edgeprop.my/content/housing-tribunal-gets-back-rm400-million-disgruntled-buyers',
-  'Planning Malaysia': 'https://mail.planningmalaysia.org/index.php/pmj/article/download/1682/1361/2570',
-  SpeedHome: 'https://speedhome.com/blog/what-is-jmb-in-malaysia/',
-  Bernama: 'https://www.bernama.com/en/news.php?id=2401051',
-  MHub: 'https://www.mhub.my/vp-defect',
-  ProFix: 'https://www.malaysiakini.com/announcement/680057',
+  Prosci: 'https://prosci.com/blog/how-to-budget-for-change-management',
+  'Azure Malaysia West': 'https://azure.microsoft.com/en-us/explore/global-infrastructure/geographies/',
+  'Oski (integration)': 'https://oski.site/blog/cost-to-integrate-salesforce-crm',
+  'WhatsApp rates': 'https://respond.io/blog/whatsapp-api-pricing-malaysia',
+  'Pen test (Exabytes)': 'https://www.exabytes.my/enterprise/secure/vapt',
+  'NBER / QJE': 'https://www.nber.org/papers/w31161',
+  'Yusof et al. 2025': 'https://www.emerald.com/insight/content/doi/10.1108/JEDT-01-2024-0017/full/html',
+  'Chong et al. 2025': 'https://irep.iium.edu.my/125358/',
 };
 
 const SourceLink = ({ name }: { name: string }) => {
@@ -2341,7 +2785,7 @@ const SourceLink = ({ name }: { name: string }) => {
 };
 
 const SourceLine = ({ label, refs }: { label: string; refs: string }) => (
-  <li style={{ marginBottom: 10 }}>
+  <li style={{ marginBottom: 8 }}>
     <b style={{ color: ink }}>{label}:</b>{' '}
     <span style={{ color: muted }}>
       {refs.split(' · ').map((name, i) => (
@@ -2356,32 +2800,37 @@ const SourceLine = ({ label, refs }: { label: string; refs: string }) => (
 
 const ValueSources: Page = () => (
   <Frame eyebrow="Appendix B · Sources" title="Sources and evidence" mark="B">
-    <div style={{ display: 'flex', gap: 40, height: 540 }}>
-      <Card style={{ flex: 1, padding: '32px 36px' }}>
-        <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--osd-accent)' }}>AI cost and time</div>
-        <ul style={{ fontSize: 23, lineHeight: 1.55, margin: '20px 0 0', paddingLeft: 26 }}>
-          <SourceLine label="Model pricing" refs="Gemini 3.1 Flash-Lite · Gemini 3.5 Flash-Lite" />
-          <SourceLine label="KL salaries" refs="AJobThing" />
-          <SourceLine label="EPF and SOCSO rates" refs="Aniday" />
-          <SourceLine label="USD / MYR rate" refs="Wise" />
-          <SourceLine label="AI & support productivity" refs="NBER · Stanford GSB" />
+    <div style={{ display: 'flex', gap: 40, height: 590 }}>
+      <Card style={{ flex: 1, padding: '28px 36px' }}>
+        <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--osd-accent)' }}>Problem and value</div>
+        <ul style={{ fontSize: 22, lineHeight: 1.5, margin: '16px 0 0', paddingLeft: 26 }}>
+          <SourceLine label="D’Island ruling" refs="NST, 18 Nov 2026" />
+          <SourceLine label="SDP priorities" refs="SDP SR2024 · SDP IAR2024" />
+          <SourceLine label="SDP scale and costs" refs="SDP Key Highlights 2024 · SDP Q4 FY2025 briefing" />
+          <SourceLine label="Homebuyer surveys" refs="Yusof et al. 2025 · Chong et al. 2025" />
+          <SourceLine label="Repeat visits" refs="Aquant 2026" />
+          <SourceLine label="Post-handover rework" refs="Love 2026 (ASCE)" />
+          <SourceLine label="Tribunal awards" refs="KPKT via RTM" />
+          <SourceLine label="Court-scale case" refs="Agile Mont Kiara (SAYS)" />
+          <SourceLine label="Referral value" refs="SDP Introducer T&C" />
         </ul>
       </Card>
-      <Card style={{ flex: 1.2, padding: '32px 36px' }}>
-        <div style={{ fontSize: 26, fontWeight: 800, color: blue }}>Value model benchmarks</div>
-        <ul style={{ fontSize: 22, lineHeight: 1.5, margin: '20px 0 0', paddingLeft: 26 }}>
-          <SourceLine label="24-month DLP" refs="EdgeProp · iProperty (30-day repair)" />
-          <SourceLine label="SDP units delivered" refs="FY2021 · FY2022 · FY2023 · FY2024" />
-          <SourceLine label="Repeat visits" refs="Aquant benchmark · VSight" />
-          <SourceLine label="Malaysian repair prices" refs="Recommend.my" />
-          <SourceLine label="Homebuyer disputes" refs="Tribunal claims · Claim volume" />
-          <SourceLine label="Contractor DLP liability" refs="Planning Malaysia" />
-          <SourceLine label="Strata & defect platforms" refs="SpeedHome · Bernama · MHub · ProFix" />
+      <Card style={{ flex: 1, padding: '28px 36px' }}>
+        <div style={{ fontSize: 26, fontWeight: 800, color: blue }}>Cost</div>
+        <ul style={{ fontSize: 22, lineHeight: 1.5, margin: '16px 0 0', paddingLeft: 26 }}>
+          <SourceLine label="AI model prices" refs="Gemini pricing" />
+          <SourceLine label="Salaries and statutory cost" refs="Randstad · Aniday" />
+          <SourceLine label="Change management (10%)" refs="Prosci" />
+          <SourceLine label="Cloud in Malaysia" refs="Azure Malaysia West" />
+          <SourceLine label="Integration and upkeep" refs="Oski (integration)" />
+          <SourceLine label="Messaging" refs="WhatsApp rates" />
+          <SourceLine label="Penetration testing" refs="Pen test (Exabytes)" />
+          <SourceLine label="AI and support productivity" refs="NBER / QJE" />
         </ul>
       </Card>
     </div>
-    <p style={{ position: 'absolute', bottom: 0, left: 0, right: 0, fontSize: 20, color: soft, lineHeight: 1.45, margin: 0 }}>
-      Illustrative model baselines (internal estimates): 45–60 min manual handling per case, ~25k input / 5k output tokens per case, RM350 per visit, and projected RM stream totals.
+    <p style={{ position: 'absolute', bottom: 0, left: 0, right: 0, fontSize: 19, color: soft, lineHeight: 1.45, margin: 0 }}>
+      Exchange rate RM4.11 per US dollar (Bernama, 18 Nov 2026). Estimates are labelled on every value slide and in the input table.
     </p>
   </Frame>
 );
@@ -2719,11 +3168,8 @@ const Team: Page = () => (
 // ---------------------------------------------------------------------------
 
 Cover.transition = settle;
-ThankYou.transition = settle;
+Closing.transition = settle;
 AppendixDivider.transition = settle;
-
-// Only pages that carry an object across the cut morph (pipeline → Verified, motto chips). A morph holds the
-// previous page on screen while it glides, so every other page uses the quick default fade instead.
 
 export const meta: SlideMeta = {
   title: 'Simephony · Final pitch',
@@ -2732,54 +3178,94 @@ export const meta: SlideMeta = {
 };
 
 export const notes: (string | undefined)[] = [
-  'Open with the hook: closing a ticket is not the same as fixing the root cause. Introduce Simephony as an agentic resolution layer across buyers, SDP, and contractors.',
-  'Play the news sting. Read it like a news segment: on 30 January 2026 the Court of Appeal dismissed Sime Darby Property’s appeal in Sime Darby Property (Bukit Jelutong) v Ooi Cheng Huat — the 24-month Defect Liability Period covers patent defects only, so developers may stay liable for latent defects found later. The six bungalows had water seepage, cracks, burst pipes and poor electrical wiring. Source: the Court of Appeal judgment on eFiling (Kehakiman Malaysia).',
-  'Only the numbers: 95% of homebuyers had problems with how complaints were handled, 70% faced the same defect more than once, 50% were unhappy with the response and speed, and 1 in 2 were never asked to sign off a repair. Defects get closed, not resolved.',
-  'Simephony: from complaint to resolution to proof. The buyer app, the SDP console and the technician app. Land on: Simephony helps developers know the unknown — it connects the dots across reports, repairs and history.',
-  'Plays by itself: the Ceiling leak ticket for A-12-08 glides through the four stages while a frame follows it on the diagram — people on top, AI agents below. End on the motto: AI recommends, humans decide, the system records.',
-  'Plays by itself: water drips from the ceilings of five units in stack 08 — to a normal ticket system, five separate tickets. The shared riser lights up: one pattern, auto-escalated to SDP. Then the four innovations and normal system vs Simephony.',
-  'The demo plays by itself with sound (about 2 minutes). Buyer on the left reports the defect; the technician on the right sees it arrive, fixes it and sends proof back. Talk over it or let it run; use the player bar to skip ahead if time is short.',
-  'Plays by itself: the three impacts (verify, connect, escalate) land together, then the value bar for residents, operations and quality.',
-  'Plays by itself: a case runs through Data → FastMCP rules → AI agents → portals, with human accountability built in, then the three reasons it is feasible.',
-  'Plays by itself: the road colours in from the working prototype (750+ automated tests) through shadow pilot (>90% staff alignment), live pilot, township scale and portfolio expansion. Close on one engine: configurable rules.yaml and modular agents.',
-  'Close strong: Don’t just close the defect. Prove the root cause is fixed. Open the floor for Q&A.',
-  'Q&A Appendix directory — jump directly to any supporting deep-dive.',
-  'Appendix A1: User feedback from Kimberly and Lim and the exact product changes we shipped (plus next steps).',
-  'Appendix A2: Real Malaysian homeowner quotes from Lowyat Forum showing why audit trails, verification, and systemic alerts matter.',
-  'Appendix B1: Operational ROI — 100×+ cheaper AI first pass frees 375–500 staff hours per month for high-judgement work.',
-  'Appendix B2: Compounding handover value cycle across the 24-month DLP and post-DLP services.',
-  'Appendix B3: Year 5 brings RM1.16m of counted value — RM0.93m saved during the DLP plus RM0.24m of strata subscriptions after it — about 3.9 times the RM0.3m a year it costs to run. Developer licences (RM0.70m) are upside we do not count. The stream key is on the next slide.',
-  'Appendix B4: the four counted streams — fewer repeat visits, lower dispute risk and contractor back-charges during the DLP, then strata subscriptions after it. Developer licences are upside only.',
-  'Appendix B5: model pricing, salary, DLP and industry benchmark sources behind the ROI and value model.',
-  'Appendix C: Buyer, SDP staff, and Technician pains and gains.',
-  'Appendix C1: why we split messy inputs (AI), consistent decisions (rules) and final accountability (people). Runs on local or cloud models, switched in config.',
-  'Appendix C2: Step-by-step suitability matrix showing who decides every action.',
-  'Appendix C3: all seven AIGE principles checked against our code — four covered, three partly covered, and what is still next for each.',
-  'Appendix C4: NIST AI RMF failure modes we tested and the technical safeguards we built.',
-  'Appendix D: operational risks — disputed verifications, false systemic alerts, integration with SDP systems and photo privacy (PDPA). AI-specific failure modes are on the previous slide.',
-  'Appendix E: Four post-hackathon enhancements: technician calendar, in-app chat, AI quality insights, and live photo guidance.',
-  'Appendix G: Meet Group We Hit The Token Limit.',
+  // 01 Cover
+  'Hold for two seconds. “Don’t just close the defect. Prove the root cause is fixed.” Then straight into the ruling.',
+  // 02 Why it matters (0:00–0:25)
+  `[0:00–0:25] When records can’t be trusted, liability lasts for years. On 18 November the High Court ruled against Astana Modal at D’Island Residence, Puchong: two lawsuits, 69 purchasers, recurring leaks, cracks and staining that were repaired again and again and still persisted after the DLP expired.
+The court’s view, put gently: where repairs did not resolve a defect, responsibility may continue beyond the DLP.
+Close on the band: this is exactly what SDP set out to prevent — zero defects in end products, a Command & Contact Centre for disputes and defects, and AI across the business.`,
+  // 03 Problem (0:25–0:45)
+  `[0:25–0:45] And it is not one case. In a study of 104 Malaysian homebuyers, 95% had problems with how complaints were handled, 70% saw the same defect more than once, and 1 in 2 were never asked to sign off a repair.
+For buyers, “repaired” is not checked. For the developer, each report is an isolated ticket, so a recurring defect is nobody’s job to notice. Defects get closed, not resolved.`,
+  // 04 Solution flow (0:45–1:15)
+  `[0:45–1:15] Simephony. Let the recording run (20–30 s) and narrate the six steps across the top:
+the buyer reports with a photo; AI triages it — valid or invalid, with the unit’s history; the technician fixes it with an AI repair guide; SDP approves; the buyer signs off a checklist; the case closes only when both confirm.`,
+  // 05 Innovation 1 · Today (human-in-the-loop)
+  '[1:15–1:24] Innovation one: Actions, with a human in the loop. AI prepares each case; SDP staff own the actions — approvals of every AI verdict and repair, DLP deadlines flagged before they lapse, and the buyer’s comment read before a case closes. AI never rejects a buyer on its own.',
+  // 06 Innovation 2 · Insights
+  '[1:24–1:33] Innovation two: Insights. The console shows what drives low buyer ratings, scores every contractor on repeat repairs and response time, and turns recurring issues into lessons for the next building.',
+  // 07 Innovation 3 · Systemic
+  '[1:33–1:42] Innovation three: systemic issues — tackle the underlying defect. Simephony detects recurring defects, like three leaks in Block A, Stack 08, and suggests an action: investigate the shared riser and fix the root cause once.',
+  // 08 Impact
+  '[1:42–2:00] The impact: closed finally means resolved. AI agents help verify that each defect and repair is real and suggest how to verify and repair it; returning defects are connected as recurrences; and Simephony suggests improvements — root-cause fixes now, better design and contractor choices next phase.',
+  // 10 Value headline (2:00–2:50)
+  `[2:00–2:50] Headline first: at full rollout, about RM0.78 million a year of counted value — 2.6 times the RM0.3 million it costs to run.
+Three lines, each tagged by where the number comes from. A: fewer repeat visits, RM0.39m — the only cash line. B: recurring defects stopped before the next phase, RM0.27m. C: disputes avoided, RM0.13m.
+Everything orange-tagged is our estimate, and that is what the pilot measures. Freed staff time, referrals and court cases are NOT in the total.`,
+  // 11 Value over time (2:50–3:30)
+  `[2:50–3:30] Value grows with coverage: pilot and one township in Year 1, three townships in Year 2, all of them from Year 3. Break-even early in Year 4; RM2.7m of value for RM1.9m of cost over five years.
+If we are wrong on both big estimates, it is still 1.4× its running cost. And one court-scale judgment, about half a million ringgit, would pay for the whole pilot.`,
+  // 13 Cost (3:45–4:10)
+  `[3:45–4:10] RM0.5m for a six-month pilot: RM360k is the team, the rest is training, a licensed pen test, cloud, and 15% contingency. Running it is RM0.3m a year.
+AI cost depends on the case: two sen for a rejected report, about seven for a first-time fix, up to eighteen for a systemic case. Manual admin is RM13–27. Only 2% of the pilot is cloud and AI.`,
+  // 14 Pilot plan (4:10–4:25)
+  '[4:10–4:25] Month 0 we set the baseline from your last phase. Months 1–3 it runs in shadow beside the CCC — staff decide, buyers see nothing new. Months 4–6 it goes live. Two gates. What we need: a business owner, one phase of ~300 units, a few pilot users, anonymised history, and DPO sign-off.',
+  // 15 Success measures (4:25–4:40)
+  '[4:25–4:40] Agreed before day one. Primary: repeat visits down 20% against your last phase. Plus inspector agreement ≥90%, 30-day repairs ≥90%, buyer sign-off ≥80%, at least one systemic pattern QA accepts. And we say up front when we stop.',
+  // 16 Ask (4:40–4:52)
+  '[4:40–4:52] So our ask: approve a six-month pilot on one phase. RM0.5m, ~300 units, the Head of CCC as owner, and a go/no-go at month 6. If it misses the month-3 targets, we stop — you will have spent at most RM0.25m.',
+  // 17 Closing (4:52–5:00)
+  '[4:52–5:00] Remember the buyer with the same leak three times. When a buyer feels protected, they become advocates — that lowers future customer acquisition cost and protects the Sime Darby brand premium. Thank you. Questions welcome.',
+  // Appendix
+  'Q&A appendix directory — jump straight to any supporting page.',
+  'Appendix A1: user feedback from Kimberly and Lim and the product changes we shipped.',
+  'Appendix A2: Malaysian homeowner quotes (Lowyat Forum): why verification, audit trails and systemic alerts matter.',
+  'Appendix B1: every value input, its source, and whether it is SDP data, a benchmark or our estimate. Use for “where does that number come from?”',
+  `Appendix B: unit economics. One defect visit, on the same inputs as the value headline: 3,000 handovers × 4 visits a unit = 12,000 visits a year.
+Manual: RM15 admin, RM350 visit, and a 23% chance of a repeat visit — RM80.50 — so RM445.50. With Simephony: RM2 admin, the same visit, 8 sen of AI, and 40% of repeats avoided — RM400.38. RM45 saved per visit.
+Only the repeat-visit part is counted as cash: 12,000 × RM32.20 = RM0.39m, line A of the value headline. Admin time is freed capacity.`,
+  'Appendix B2: capacity released — AI first pass ≈RM0.06–0.08 vs RM13–27 of manual admin per case, ≈375–500 staff hours a month at 500 cases. Shown as capacity, not counted as cash.',
+  'Appendix B3: beyond the 24-month DLP — recurring income from strata/JMB (RM236k), SDP asset management (RM660k) and developer licensing upside (RM700k), against the RM300k run cost. Upside only; not in the counted value.',
+  'Appendix B4: sources for the problem, value and cost numbers.',
+  'Appendix C: buyer, SDP staff and technician pains and gains.',
+  'Appendix D1: why we split messy inputs (AI), consistent decisions (rules) and accountability (people).',
+  'Appendix D2: step-by-step suitability matrix — who decides every action.',
+  'Appendix D3: the seven AIGE principles checked against our code.',
+  'Appendix D4: NIST AI RMF failure modes we tested and the safeguards we built.',
+  'Appendix E: operational risks — disputed verifications, false systemic alerts, integration and PDPA.',
+  'Appendix F: post-hackathon enhancements.',
+  'Appendix G: meet the team.',
+  'Appendix H1: the full recorded walkthrough, buyer and technician side by side (about 2 minutes, with sound).',
+  'Appendix H2: the people / AI-agent workflow across report, inspect, verify and recurrence.',
+  'Appendix H3: the three apps — buyer, SDP console, technician.',
+  'Appendix H4: the stack-08 leak animation — five tickets become one pattern — and normal system vs Simephony.',
+  'Appendix H5: what’s different — today’s defect apps, SDP’s included, track tickets. None we found applies AI to homebuyer reports, verifies with the buyer, or links recurring cases. One engine, configured per township, scales across all 27 — and later past the DLP.',
+  'Appendix H6: readiness — four defect scenarios run end to end with 750+ automated tests. It sits beside the CCC and Procore — batch import in the pilot, APIs later — and data can stay in Malaysia.',
 ];
 
 export default [
   Cover,
   WhyItMatters,
   Problem,
-  Solution,
-  HowItWorks,
-  Innovation,
-  Demo,
+  SimephonyFlow,
+  FeatToday,
+  FeatInsights,
+  FeatSystemic,
   Impact,
-  Feasibility,
-  Scalability,
-  ThankYou,
+  ValueHeadline,
+  ValueOverTime,
+  Cost,
+  PilotPlan,
+  Success,
+  Ask,
+  Closing,
   AppendixDivider,
   Testimonials,
   HomeownerVoices,
+  ValueAssumptions,
+  CostEfficiency,
   ValueAdmin,
-  ValueCycle,
-  YearFive,
-  ValueStreams,
+  RecurringIncome,
   ValueSources,
   TargetUsers,
   AiHowWeDecided,
@@ -2789,4 +3275,10 @@ export default [
   Risks,
   Future,
   Team,
+  Demo,
+  HowItWorks,
+  Solution,
+  Innovation,
+  Different,
+  Feasibility,
 ] satisfies Page[];
