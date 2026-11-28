@@ -76,7 +76,7 @@ function WhatChanged() {
 }
 
 function Health() {
-  // Live, so it matches the Approvals badge in the sidebar: the manager sees the backlog size, staff work the list on Today.
+  // Live, so it matches the Approvals badge in the sidebar: the manager sees the backlog size, staff work the list on Actions.
   const approvals = useDemo((s) => s.approvals);
   const cases = useDemo((s) => s.cases);
   const waiting = useMemo(
@@ -108,9 +108,9 @@ function Health() {
         <Panel title="Team Backlog" className="flex flex-col">
           <p className="text-5xl font-semibold tabular-nums">{waiting}</p>
           <p className="mt-1 text-base text-zinc-600">{waiting === 1 ? "decision" : "decisions"} waiting on SDP staff right now</p>
-          <p className="mt-4 text-sm text-zinc-500">Cases held for review, extra inspections and sign-offs. Staff work through them on Today.</p>
+          <p className="mt-4 text-sm text-zinc-500">Cases held for review, extra inspections and sign-offs. Staff work through them on Actions.</p>
           <Link href="/sdp" className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-medium text-brand hover:underline">
-            Open Today <ArrowRight className="size-4" />
+            Open Actions <ArrowRight className="size-4" />
           </Link>
         </Panel>
       </div>

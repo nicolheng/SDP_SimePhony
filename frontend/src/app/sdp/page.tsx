@@ -25,9 +25,9 @@ const QUEUE_STYLE = {
   extra: { label: "Extra Inspections", tag: "bg-zinc-100 text-zinc-600 ring-zinc-200" },
 };
 
-/** Today, for SDP staff: what needs a decision, which legal deadlines are close, and which buyers to call back.
+/** Actions, for SDP staff: what needs a decision, which legal deadlines are close, and which buyers to call back.
  * Everything here is live (same counts as the Approvals badge); the manager's view is Insights. */
-export default function Today() {
+export default function Actions() {
   const now = useDemo((s) => s.now);
   const cases = useDemo((s) => s.cases);
   const approvals = useDemo((s) => s.approvals);
@@ -115,7 +115,7 @@ export default function Today() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <PageTitle title="Today" sub={`${PROJECT_NAME} · ${fmtDate(now)}`} />
+      <PageTitle title="Actions" sub={`${PROJECT_NAME} · ${fmtDate(now)}`} />
 
       {allClear ? (
         <div className="mb-6 flex items-center gap-3 rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200">

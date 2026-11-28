@@ -58,7 +58,7 @@ def seed_core():
                     unit_rows.append((u_id, block, floor, stack, contractor))
 
                     if u_id == "A-12-08":
-                        buyer_rows.append((f"B-{numeric_buyer_index:04d}", "Aisyah Rahman", "aisyah.demo@example.com", u_id))
+                        buyer_rows.append((f"B-{numeric_buyer_index:04d}", "Gozilla", "gozilla.demo@example.com", u_id))
                     else:
                         buyer_rows.append((f"B-{numeric_buyer_index:04d}", f"Resident {u_id}", f"buyer.{u_id.lower().replace('-', '.')}@example.com", u_id))
                     numeric_buyer_index += 1

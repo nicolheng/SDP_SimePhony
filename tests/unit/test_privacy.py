@@ -92,7 +92,7 @@ def test_a_whole_report_sends_no_personal_data_to_a_cloud_model(fake_llm, cloud,
     monkeypatch.setenv("USE_AI_AGENTS", "all")
     tools.get_clock()
     with db.get_conn() as conn:
-        buyer = dict(conn.execute("SELECT * FROM buyers WHERE name = 'Aisyah Rahman'").fetchone())
+        buyer = dict(conn.execute("SELECT * FROM buyers WHERE buyer_id = 'B-0118'").fetchone())
         case_id = workflow.submit_report(workflow.Ctx(conn), buyer["unit_id"], buyer["buyer_id"],
                                          "Water dripping from the master bedroom ceiling above the wardrobe.", None, None)["caseId"]
     with db.get_conn() as conn:
