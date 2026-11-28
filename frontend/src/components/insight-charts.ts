@@ -1,4 +1,4 @@
-// ECharts options for Today and Insights. Plain objects, rendered by <EChart>.
+// ECharts options for Actions and Insights. Plain objects, rendered by <EChart>.
 // Colour roles, kept flat (no gradients): brand red = the thing to act on; light red = the same measure, not
 // highlighted; greys = everything else; blue / aqua = identity only (one colour per contractor).
 import type { EChartsOption } from "echarts";
@@ -202,7 +202,7 @@ export function hbarOption(data: { name: string; count: number }[], series = "Co
   };
 }
 
-/** Today: open repairs by time left on the 30-day clock, as a doughnut with one number in the middle. */
+/** Actions: open repairs by time left on the 30-day clock, as a doughnut with one number in the middle. */
 export function clockOption(parts: { label: string; n: number; colour: string }[], centre: { value: number; label: string }): EChartsOption {
   return {
     tooltip: { trigger: "item", formatter: "{b}: <b>{c}</b> ({d}%)" },

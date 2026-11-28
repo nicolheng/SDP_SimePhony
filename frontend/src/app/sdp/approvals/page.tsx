@@ -46,7 +46,7 @@ export default function Page() {
   );
 }
 
-/** ?tab=review&open=C-0042 opens that queue with that row expanded (links from Today). */
+/** ?tab=review&open=C-0042 opens that queue with that row expanded (links from Actions). */
 function Approvals() {
   const params = useSearchParams();
   const approvals = useDemo((s) => s.approvals);

@@ -12,8 +12,8 @@ export function BrandMark({ className, size = "md" }: { className?: string; size
 }
 
 const AVATARS = {
-  buyer: { src: "/avatars/buyer.png", fit: "object-cover object-[50%_25%] scale-150" },
-  technician: { src: "/avatars/technician.png", fit: "object-cover object-top" },
+  buyer: { src: "/avatars/buyer.png", fit: "object-cover object-center" },
+  technician: { src: "/avatars/technician.png", fit: "object-cover object-center" },
 } as const;
 
 /** Round profile picture for the demo buyer / technician. */

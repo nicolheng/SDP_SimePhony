@@ -61,8 +61,8 @@ export const getUnit = (id: string): Unit => {
 /** The buyer signed in on the buyer app (demo login: always B-0118); name, email and unit come from the buyers table. */
 export const DEMO_BUYER: Buyer = {
   id: "B-0118",
-  name: "Aisyah Rahman",
-  email: "aisyah.demo@example.com",
+  name: "Gozilla",
+  email: "gozilla.demo@example.com",
   unitId: "A-12-08",
 };
 
